@@ -1,17 +1,15 @@
 import type { StaticOptions } from "@elysiajs/static/types";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
+import { getCachedCss } from "./css";
 import { getModuleVersion } from "./hmr/watcher.js";
 import type { ResolvedRoute } from "./router";
 import { Shell } from "./shell";
 
-// ISR Cache
 const isrCache = new Map<string, { html: string; generatedAt: number; revalidate: number }>();
 
-// SSG Cache (pre-rendered at startup)
 const ssgCache = new Map<string, string>();
 
-// Page module cache for dev mode
 declare global {
   var __elysionPageCache: Map<string, { page: unknown; timestamp: number }>;
 }
@@ -34,18 +32,12 @@ async function streamToString(stream: ReadableStream): Promise<string> {
 }
 
 const CLIENT_JS_PATH = "/_client/_hydrate.js";
-const CSS_PATH = "/public/global.css";
 
-/**
- * Load page module dynamically for HMR support
- * In dev mode, this reloads the module to get fresh code
- */
 async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   if (!dev && route.page) {
     return route.page;
   }
 
-  // In dev mode, always reload the page module with cache-busting
   if (dev) {
     try {
       const version = getModuleVersion(route.pagePath);
@@ -65,11 +57,11 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   return route.page;
 }
 
-function buildElement(
+async function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
   dev: boolean
-): ReactNode {
+): Promise<ReactNode> {
   const page = route.page;
   if (!page) {
     return <div>Loading...</div>;
@@ -86,8 +78,16 @@ function buildElement(
     }
   }
 
+  const cssContext = await getCachedCss(process.cwd());
+
   return (
-    <Shell clientJsPath={CLIENT_JS_PATH} cssPath={CSS_PATH} data={data} dev={dev}>
+    <Shell
+      clientJsPath={CLIENT_JS_PATH}
+      cssContent={cssContext?.mode === "inline" ? cssContext.code : undefined}
+      cssPath={cssContext?.mode === "external" ? "/_client/styles.css" : undefined}
+      data={data}
+      dev={dev}
+    >
       {element}
     </Shell>
   );
@@ -121,11 +121,10 @@ export async function renderToHTML(
   query: Record<string, string>,
   dev = false
 ) {
-  // Reload page module in dev mode for HMR
   await loadPageModule(route, dev);
 
   const data = await runLoaders(route, params, query);
-  const element = buildElement(route, { ...data, params, query }, dev);
+  const element = await buildElement(route, { ...data, params, query }, dev);
   const stream = await renderToReadableStream(element);
   await stream.allReady;
   return streamToString(stream);
@@ -137,11 +136,10 @@ export async function renderToStream(
   query: Record<string, string>,
   dev = false
 ) {
-  // Reload page module in dev mode for HMR
   await loadPageModule(route, dev);
 
   const data = await runLoaders(route, params, query);
-  const element = buildElement(route, { ...data, params, query }, dev);
+  const element = await buildElement(route, { ...data, params, query }, dev);
   return renderToReadableStream(element);
 }
 
@@ -252,18 +250,4 @@ function revalidateInBackground(
     .catch((err: unknown) => {
       console.error("[elysion] ISR background revalidation failed:", err);
     });
-}
-
-export async function loadPageAndRender(
-  route: ResolvedRoute,
-  ctx: { params?: Record<string, string>; query?: Record<string, string> },
-  config: StaticOptions<string>,
-  dev: boolean
-): Promise<Response> {
-  return await renderSSR(route, ctx, config, dev);
-}
-
-// HMR: Accept hot module replacement
-if (import.meta.hot) {
-  import.meta.hot.accept();
 }

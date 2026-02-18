@@ -60,6 +60,10 @@ const app = new Elysia()
         staticLimit: 1024,
         alwaysStatic: process.env.NODE_ENV === "production",
       },
+      css: {
+        input: "./src/styles/global.css",
+        mode: "auto",
+      },
     })
   )
   .post(

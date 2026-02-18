@@ -1,8 +1,9 @@
 import { watch } from "node:fs";
-import { relative, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import type { TSchema } from "elysia";
 import type { TypeCheck } from "elysia/type-system";
 import type { ServerWebSocket } from "elysia/ws/bun";
+import { getCssConfig, invalidateCssCache } from "../css";
 import { transformForReactRefresh } from "./transform";
 
 // Global state (survives bun --hot reloads)
@@ -32,7 +33,15 @@ export function getModuleVersion(fullPath: string): number {
   return globalThis.__elysionModuleVersions.get(fullPath) ?? 0;
 }
 
-export function setupHmrWatcher(pagesDir: string) {
+function invalidateCssCacheIfNeeded(): void {
+  const config = getCssConfig();
+  if (config) {
+    const absolutePath = resolve(process.cwd(), config.input);
+    invalidateCssCache(absolutePath);
+  }
+}
+
+export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
   // Close existing watchers
   for (const w of globalThis.__elysionHmrWatchers) {
     try {
@@ -45,7 +54,8 @@ export function setupHmrWatcher(pagesDir: string) {
 
   const recentlyBroadcast = new Map<string, number>();
 
-  const watcher = watch(pagesDir, { recursive: true }, (event, filename) => {
+  // Watch pages directory
+  const pagesWatcher = watch(pagesDir, { recursive: true }, (event, filename) => {
     if (!filename) {
       return;
     }
@@ -71,6 +81,9 @@ export function setupHmrWatcher(pagesDir: string) {
     const currentVersion = globalThis.__elysionModuleVersions.get(fullPath) ?? 0;
     globalThis.__elysionModuleVersions.set(fullPath, currentVersion + 1);
 
+    // Invalidate CSS cache since Tailwind classes might have changed
+    invalidateCssCacheIfNeeded();
+
     // Determine if this is a route file change (full reload) or page change (HMR)
     const isRouteFile = filename.endsWith("route.tsx") || filename.endsWith("route.ts");
     const messageType = isRouteFile ? "reload" : "update";
@@ -82,6 +95,7 @@ export function setupHmrWatcher(pagesDir: string) {
       type: messageType,
       path: `/pages/${normalizedFilename}`,
       modules: [`/pages/${normalizedFilename}`],
+      cssUpdate: true, // Signal that CSS might have changed
     });
 
     for (const client of globalThis.__elysionHmrClients) {
@@ -95,8 +109,56 @@ export function setupHmrWatcher(pagesDir: string) {
     );
   });
 
-  globalThis.__elysionHmrWatchers.push(watcher);
-  console.log("[hmr] File watcher started");
+  globalThis.__elysionHmrWatchers.push(pagesWatcher);
+  console.log("[hmr] File watcher started for pages");
+
+  // Watch CSS file if configured
+  if (cssInputPath) {
+    const absoluteCssPath = resolve(process.cwd(), cssInputPath);
+    const cssDir = dirname(absoluteCssPath);
+
+    const cssWatcher = watch(cssDir, { recursive: true }, (event, filename) => {
+      if (!filename) {
+        return;
+      }
+
+      // Check if the changed file is our CSS file
+      const changedPath = resolve(cssDir, filename);
+      if (changedPath !== absoluteCssPath && !filename.endsWith(".css")) {
+        return;
+      }
+
+      // Debounce
+      const now = Date.now();
+      const last = recentlyBroadcast.get(filename) || 0;
+      if (now - last < 100) {
+        return;
+      }
+      recentlyBroadcast.set(filename, now);
+
+      console.log(`[hmr] CSS file ${event}: ${filename}`);
+
+      // Invalidate CSS cache
+      invalidateCssCache(absoluteCssPath);
+
+      // Broadcast CSS update
+      const message = JSON.stringify({
+        type: "css-update",
+        path: filename,
+      });
+
+      for (const client of globalThis.__elysionHmrClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      }
+
+      console.log(`[hmr] Broadcast css-update to ${globalThis.__elysionHmrClients.size} client(s)`);
+    });
+
+    globalThis.__elysionHmrWatchers.push(cssWatcher);
+    console.log("[hmr] CSS watcher started");
+  }
 }
 
 export async function getTransformedModule(fullPath: string, pagesDir: string): Promise<string> {

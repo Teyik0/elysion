@@ -1,9 +1,10 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
 import type { StaticOptions } from "@elysiajs/static/types";
 import { Elysia } from "elysia";
 import { buildClient } from "./build";
+import { type CssOptions, getCachedCss, setCssConfig } from "./css";
 import { createHmrPlugin } from "./hmr/plugin";
 import { createRoutePlugin, scanPages } from "./router";
 
@@ -11,22 +12,56 @@ export interface ElysionProps {
   pagesDir?: string;
   staticOptions: StaticOptions<string>;
   dev?: boolean;
+  css?: CssOptions;
 }
 
 declare global {
   var __elysionClientBuilt: boolean;
+  var __elysionDev: boolean;
+}
+
+async function buildExternalCss(cwd: string): Promise<void> {
+  const result = await getCachedCss(cwd);
+  if (!result || result.mode !== "external") {
+    return;
+  }
+
+  const clientDir = resolve(cwd, ".elysion", "client");
+  if (!existsSync(clientDir)) {
+    mkdirSync(clientDir, { recursive: true });
+  }
+  await Bun.write(resolve(clientDir, "styles.css"), result.code);
+  console.log("[elysion] CSS built: /_client/styles.css");
 }
 
 export async function elysion({
   pagesDir,
   staticOptions,
   dev = process.env.NODE_ENV !== "production",
+  css,
 }: ElysionProps) {
-  const resolvedPagesDir = resolve(process.cwd(), pagesDir ?? "./src/pages");
+  const cwd = process.cwd();
+  const resolvedPagesDir = resolve(cwd, pagesDir ?? "./src/pages");
+
+  // Store CSS config (lightweight, survives bun --hot)
+  setCssConfig(css, dev);
+  globalThis.__elysionDev = dev;
+
+  // Log CSS mode
+  if (css?.input) {
+    const result = await getCachedCss(cwd);
+    if (result) {
+      if (result.mode === "external") {
+        await buildExternalCss(cwd);
+      } else {
+        console.log("[elysion] CSS inline mode enabled");
+      }
+    }
+  }
 
   const routes = await scanPages(resolvedPagesDir, dev);
 
-  const clientBundlePath = resolve(process.cwd(), ".elysion", "client", "_hydrate.js");
+  const clientBundlePath = resolve(cwd, ".elysion", "client", "_hydrate.js");
   const shouldBuildClient = !(
     dev &&
     globalThis.__elysionClientBuilt &&
@@ -53,7 +88,7 @@ export async function elysion({
   }
 
   const clientStaticPlugin = await staticPlugin({
-    assets: resolve(process.cwd(), ".elysion", "client"),
+    assets: resolve(cwd, ".elysion", "client"),
     prefix: "/_client",
   });
 
@@ -70,7 +105,7 @@ export async function elysion({
     .use(await staticPlugin(staticOptions));
 
   // Conditionally add HMR plugin
-  const appWithHmr = dev ? baseApp.use(createHmrPlugin(resolvedPagesDir)) : baseApp;
+  const appWithHmr = dev ? baseApp.use(createHmrPlugin(resolvedPagesDir, css?.input)) : baseApp;
 
   // Chain all route plugins
   return routePlugins.reduce((app, plugin) => app.use(plugin), appWithHmr);

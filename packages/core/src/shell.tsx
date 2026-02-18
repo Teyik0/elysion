@@ -10,6 +10,7 @@ interface ShellProps {
   bootstrapScripts?: string[];
   clientJsPath?: string;
   cssPath?: string;
+  cssContent?: string;
   dev?: boolean;
 }
 
@@ -41,6 +42,7 @@ export function Shell({
   bootstrapScripts = [],
   clientJsPath,
   cssPath,
+  cssContent,
   dev = false,
 }: ShellProps) {
   const title = extractTitle(headData?.meta);
@@ -66,7 +68,15 @@ export function Shell({
             />
           ))}
 
-        {cssPath && <link rel="stylesheet" href={cssPath} />}
+        {/* Inline CSS (dev mode, better FCP/LCP) */}
+        {cssContent && (
+          <style dangerouslySetInnerHTML={{ __html: cssContent }} id="__elysion_css__" />
+        )}
+
+        {/* External CSS (prod mode, better caching) */}
+        {cssPath && !cssContent && (
+          <link href={cssPath} id="__elysion_css_link__" rel="stylesheet" />
+        )}
 
         {headData?.links?.map((link, i) => (
           <link key={i} {...link} />

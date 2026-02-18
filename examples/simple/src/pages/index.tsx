@@ -9,11 +9,11 @@ export default page({
     const [count, setCount] = useState(0);
 
     return (
-      <div className="flex items-center justify-center">
-        <h1 className="font-bold text-2xl text-blue-600">Counter V9</h1>
+      <div className="flex h-screen items-center justify-center">
+        <h1 className="font-bold text-2xl text-blue-600">Counter V8</h1>
         <span className="ml-4 text-xl">{count}</span>
         <button
-          className="ml-4 rounded bg-blue-500 px-4 py-2 text-white"
+          className="ml-4 rounded bg-red-500 px-4 py-2 text-white"
           onClick={() => setCount((prev) => prev + 1)}
           type="button"
         >

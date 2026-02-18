@@ -18,6 +18,7 @@
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
     "@elysiajs/static": "^1.4.7",
+    "postcss": "^8.5.3",
     "react-refresh": "^0.14.2"
   },
   "peerDependencies": {

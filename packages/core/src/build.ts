@@ -261,10 +261,49 @@ let hmrUpdateId = 0;
         }
       }
 
+      // Also update CSS since Tailwind classes might have changed
+      if (data.cssUpdate) {
+        handleCssUpdate();
+      }
+
       scheduleRefresh();
+    } else if (data.type === "css-update") {
+      console.log("[hmr] CSS update received:", data.path);
+      handleCssUpdate();
     } else if (data.type === "reload") {
       location.reload();
     }
+  }
+
+  function handleCssUpdate() {
+    // Inline CSS mode - update <style> tag content
+    const styleEl = document.getElementById("__elysion_css__");
+    if (styleEl) {
+      fetch("/__elysion/css?v=" + Date.now())
+        .then((res) => res.text())
+        .then((css) => {
+          styleEl.textContent = css;
+          console.log("[hmr] CSS updated (inline mode)");
+        })
+        .catch((err) => {
+          console.error("[hmr] CSS update failed:", err);
+        });
+      return;
+    }
+
+    // External CSS mode - update <link> href with cache bust
+    const linkEl = document.getElementById("__elysion_css_link__");
+    if (linkEl) {
+      const currentHref = linkEl.getAttribute("href") || "";
+      const baseHref = currentHref.split("?")[0];
+      linkEl.setAttribute("href", baseHref + "?v=" + Date.now());
+      console.log("[hmr] CSS updated (external mode)");
+      return;
+    }
+
+    // Fallback: full reload
+    console.log("[hmr] No CSS element found, reloading page");
+    location.reload();
   }
 
   connect();

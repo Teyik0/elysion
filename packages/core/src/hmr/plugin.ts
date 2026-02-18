@@ -1,12 +1,13 @@
 import { resolve } from "node:path";
 import { Elysia, t } from "elysia";
+import { getCachedCss, getCssConfig, invalidateCssCache } from "../css";
 import { REFRESH_SETUP_CODE } from "./refresh-setup";
 import { getHmrClients, getTransformedModule, setupHmrWatcher } from "./watcher";
 
-export function createHmrPlugin(pagesDir: string) {
-  setupHmrWatcher(pagesDir);
+export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
+  setupHmrWatcher(pagesDir, cssInputPath);
 
-  return new Elysia({ name: "elysion-hmr" })
+  const hmrPlugin = new Elysia({ name: "elysion-hmr" })
     .ws("/__elysion/hmr", {
       body: t.Any(),
       open(ws) {
@@ -36,7 +37,6 @@ export function createHmrPlugin(pagesDir: string) {
       const relativePath = ctx.path.replace("/_modules/pages/", "");
       const fullPath = resolve(pagesDir, relativePath);
 
-      // Prevent path traversal outside pagesDir
       if (!fullPath.startsWith(pagesDir)) {
         return new Response("Forbidden", { status: 403 });
       }
@@ -57,4 +57,37 @@ export function createHmrPlugin(pagesDir: string) {
         });
       }
     });
+
+  // Add CSS endpoint for HMR
+  hmrPlugin.get("/__elysion/css", async () => {
+    const config = getCssConfig();
+    if (!config) {
+      return new Response("/* No CSS configured */", {
+        status: 404,
+        headers: { "Content-Type": "text/css" },
+      });
+    }
+
+    try {
+      // Invalidate cache to ensure fresh CSS
+      const absolutePath = resolve(process.cwd(), config.input);
+      invalidateCssCache(absolutePath);
+
+      const result = await getCachedCss(process.cwd());
+      return new Response(result?.code || "", {
+        headers: {
+          "Content-Type": "text/css",
+          "Cache-Control": "no-cache",
+        },
+      });
+    } catch (error) {
+      console.error("[hmr] CSS processing error:", error);
+      return new Response(`/* CSS Error: ${error} */`, {
+        status: 500,
+        headers: { "Content-Type": "text/css" },
+      });
+    }
+  });
+
+  return hmrPlugin;
 }
