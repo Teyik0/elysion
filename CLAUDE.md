@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Elysion** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, similar to Next.js but built on Elysia + Bun.
+**Elysion** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, nested layouts, HMR with React Fast Refresh, and full TypeScript type inference — similar to Next.js but built on Elysia + Bun.
 
 ## Commands
 
-- `bun run dev` — Run the example app with watch mode
+- `bun run dev` — Run the example app with HMR
 - `bun run build` — Build the library to `dist/`
 - `bun run check` — Lint with ultracite (biome-based)
 - `bun run fix` — Auto-fix lint issues
@@ -20,98 +20,209 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Runtime**: Bun only. Never use Node.js, npm, yarn, pnpm, dotenv, express, vite, or webpack.
 - **Linting**: Ultracite (wraps Biome). Config in `biome.jsonc`.
 - **CSS**: Tailwind v4 via `bun-plugin-tailwind` (configured in `bunfig.toml`).
-- **Path alias**: `"elysion"` maps to `./src/index.ts` (see `tsconfig.json` paths).
+- **Path alias**: `"elysion"` maps to `./packages/core/src/elysion.ts` (see `tsconfig.json` paths).
 
 ## Architecture
 
-The framework lives in `src/` and an example app lives in `example/`.
+Monorepo structure with framework in `packages/core/` and example app in `examples/simple/`.
 
-### Core (`src/`)
+### Core (`packages/core/src/`)
 
-- **`index.ts`** — Main entrypoint. Exports `elysion()` which scans pages, creates route plugins, mounts static file serving via `@elysiajs/static`, and starts the Elysia server. Also re-exports `page` from `page.ts`.
-- **`page.ts`** — Defines the `page(component, options?)` function that page files must use as their default export. Options include `loader`, `head`, `action`, `mode` (ssr/ssg/isr), and `revalidate`. The `PageModule` type is branded with `__brand: "elysion-react-page"`.
-- **`router.ts`** — File-based router. `scanPages()` globs `**/*.tsx` in the pages directory, imports each, and resolves routes. `createRoutePlugin()` creates an Elysia plugin per route with GET (and optionally POST for actions) handlers. Contains rendering logic for SSR/SSG/ISR modes with caching.
-- **`render.ts`** — (WIP) Server-side React rendering utilities.
+| File | Purpose |
+|------|---------|
+| `elysion.ts` | Main plugin. Exports `elysion()` which scans pages, builds client, creates route plugins, mounts static serving. |
+| `client.ts` | Client-side types. Exports `createRoute()`, `RouteRef`, `Route`, `RuntimePage`, `RuntimeRoute`, `HeadOptions`, `InferProps`. |
+| `router.ts` | File-based router. `scanPages()` globs `**/*.tsx` in pages directory, resolves routes, `createRoutePlugin()` creates Elysia plugin per route. |
+| `render.tsx` | SSR/SSG/ISR rendering logic. `buildElement()` wraps component in layout chain. Executes loaders, handles caching. |
+| `shell.tsx` | HTML template with head management, `__ELYSION_DATA__` hydration payload, script tags. |
+| `build.ts` | Client bundle generation via `Bun.build()`. Generates hydrate entry, includes React Refresh in dev. |
+| `types.ts` | Runtime type guards: `isElysionPage()`, `isElysionRoute()`, `collectRouteChain()`. |
 
-### Rendering Modes
+### HMR (`packages/core/src/hmr/`)
 
-Mode resolution in `router.ts` (`resolveMode`):
-- No loader → **SSG** (static generation)
-- Has loader → **SSR** (server-side rendering)
-- Has `revalidate > 0` → **ISR** (incremental static regeneration)
-- Explicit `mode` option always wins
+| File | Purpose |
+|------|---------|
+| `plugin.ts` | Elysia plugin for HMR. WebSocket endpoint `/__elysion/hmr`, module serving `/_modules/pages/*`, client bundle `/__elysion/client.js`. |
+| `watcher.ts` | File watcher with `fs.watch`. Debounces events, invalidates module cache, increments version for SSR, broadcasts via WebSocket. |
+| `transform.ts` | Babel transform for React Fast Refresh. TypeScript → JSX → React Refresh, extracts component from `page()` calls. |
+| `refresh-setup.ts` | DevTools hook setup script. Creates `__REACT_DEVTOOLS_GLOBAL_HOOK__` before React DOM loads. |
 
-### File-based Routing Conventions
+### Example App (`examples/simple/`)
 
-Pages go in a `pages/` directory (configurable via `pagesDir`):
-- `index.tsx` → `/`
-- `about.tsx` → `/about`
-- `blog/index.tsx` → `/blog`
-- `blog/[slug].tsx` → `/blog/:slug`
-- `[...catch].tsx` → `/*` (catch-all)
-- `_hidden.tsx` → ignored (underscore prefix)
+```
+examples/simple/
+├── src/
+│   ├── server.ts         # Elysia app with auth plugin + elysion()
+│   └── pages/            # File-based routes
+│       ├── index.tsx         # SSG page
+│       ├── dashboard.tsx     # SSR page with query params
+│       ├── admin.tsx         # SSR page with loader
+│       ├── login.tsx         # SSG page
+│       └── [blog]/index.tsx  # Dynamic route
+└── public/
+```
 
-### Example App (`example/`)
+## Exports
 
-- `example/src/server.ts` — Creates an Elysia app, uses `elysion()` plugin, adds API routes under `/api`
-- `example/src/pages/` — Page components using `page()` export convention
-- `example/public/` — Static assets served at `/public`
-
-### Page File Convention
-
-Every page must default-export the result of `page(props)`:
+### `"elysion"` (main)
 
 ```ts
-// Abstraction using page function in our framework
-interface PageOptions<
-  TData extends Record<string, unknown>,
-  TQuery extends AnySchema | undefined = undefined,
-  TParams extends AnySchema | undefined = undefined,
-> {
-  params?: TParams extends AnySchema ? UnwrapSchema<TParams> : Record<string, string>;
-  query?: TQuery;
-  loader?: (ctx: LoaderContext<TQuery, TParams>) => Promise<TData> | TData;
-  head?: (ctx: HeadContext<TParams, TData>) => HeadOptions;
-  component: React.FC<TData>;
-  mode?: "ssr" | "ssg" | "isr";
-  revalidate?: number | false;
+import { elysion } from "elysion";
+```
+
+- `elysion(options)` — Main plugin function
+
+### `"elysion/client"`
+
+```ts
+import { createRoute, type InferProps, type HeadOptions } from "elysion/client";
+```
+
+- `createRoute(config)` — Create a route with loader, layout, params, query
+- `RouteRef<TData, TParams, TQuery>` — Branded type for parent references
+- `Route<TData, TParams, TQuery>` — Route interface
+- `RuntimePage`, `RuntimeRoute` — Runtime types
+- `HeadOptions` — Head metadata type
+- `InferProps<T>` — Extract props from route/page
+
+## API
+
+### createRoute
+
+```tsx
+import { createRoute } from "elysion/client";
+import { t } from "elysia";
+
+const route = createRoute({
+  parent?: parentRoute,           // For nested layouts
+  mode?: "ssr" | "ssg" | "isr",   // Rendering mode
+  revalidate?: number,            // ISR interval (seconds)
+  params?: t.Object({...}),       // Elysia schema for params
+  query?: t.Object({...}),        // Elysia schema for query
+  loader?: async (ctx) => {...},  // Data fetching
+  layout?: (props) => <Layout>{children}</Layout>,
+});
+
+// For simple routes without layouts:
+const { page } = createRoute({ mode: "ssg" });
+```
+
+### route.page
+
+```tsx
+export default route.page({
+  head?: (ctx) => ({ meta: [...], links: [...], scripts: [...] }),
+  loader?: async (ctx) => {...},  // Page-level loader
+  component: (props) => <Page />,
+});
+```
+
+## Rendering Modes
+
+Mode resolution in `router.ts` (`resolveMode`):
+
+| Condition | Mode |
+|-----------|------|
+| Explicit `mode` option | Always wins |
+| No loader | **SSG** (static generation) |
+| Has loader + `revalidate > 0` | **ISR** (incremental static regeneration) |
+| Has loader, no revalidate | **SSR** (server-side rendering) |
+
+## File-based Routing
+
+Pages go in a `pages/` directory (configurable via `pagesDir`):
+
+| File | Route |
+|------|-------|
+| `index.tsx` | `/` |
+| `about.tsx` | `/about` |
+| `blog/index.tsx` | `/blog` |
+| `blog/[slug].tsx` | `/blog/:slug` |
+| `[...catch].tsx` | `/*` (catch-all) |
+| `_hidden.tsx` | ignored (underscore prefix) |
+
+### Layouts
+
+Use `route.tsx` files for layouts:
+
+```
+pages/
+  route.tsx              # Root layout
+  index.tsx              # Home page
+  dashboard/
+    route.tsx            # Dashboard layout
+    index.tsx            # /dashboard
+    users/
+      route.tsx          # Users layout
+      index.tsx          # /dashboard/users
+```
+
+### Data Flow
+
+Parent data flows flat (like Elysia's `resolve`):
+
+```tsx
+// pages/dashboard/route.tsx
+export const route = createRoute({
+  loader: async () => ({ user: await getCurrentUser() }),
+  layout: ({ children, user }) => <Shell user={user}>{children}</Shell>,
+});
+
+// pages/dashboard/users/route.tsx
+import { route as dashboardRoute } from "../route";
+
+export const route = createRoute({
+  parent: dashboardRoute,
+  loader: async ({ user }) => ({ users: await getUsers(user.orgId) }),
+  // user is available here (flat, not nested)
+});
+
+// pages/dashboard/users/index.tsx
+export default route.page({
+  component: ({ user, users }) => (
+    // Both user and users available (flat)
+    <div>{user.name}: {users.length} users</div>
+  ),
+});
+```
+
+## HMR Architecture
+
+1. **File Watcher** (`hmr/watcher.ts`) — Watches pages directory, broadcasts changes via WebSocket
+2. **WebSocket** (`hmr/plugin.ts`) — `/__elysion/hmr` endpoint, sends update messages to clients
+3. **Module Transform** (`hmr/transform.ts`) — Babel pipeline with React Refresh
+4. **Client Bundle** (`build.ts`) — Includes HMR client with auto-reconnect
+5. **DevTools Setup** (`hmr/refresh-setup.ts`) — Creates React DevTools hook
+
+Key: Module IDs must be consistent between hydration and HMR updates (`/_modules/pages/<path>`).
+
+## Type Inference
+
+Full type safety without codegen:
+
+```tsx
+const route = createRoute({
+  params: t.Object({ slug: t.String() }),
+  loader: async ({ params }) => ({
+    post: await getPost(params.slug),  // params.slug: string
+  }),
+});
+
+export default route.page({
+  loader: async ({ post }) => ({
+    comments: await getComments(post.id),  // post is typed
+  }),
+  component: ({ post, comments, params }) => (
+    // All props fully typed
+    <article>{post.title}</article>
+  ),
+});
+```
+
+Use `InferProps` for external components:
+
+```tsx
+function MyLayout(props: InferProps<typeof route>) {
+  // props.post, props.params, props.children all typed
 }
-
-export function page<
-  TData extends Record<string, unknown>,
-  TQuery extends AnySchema | undefined = undefined,
-  TParams extends AnySchema | undefined = undefined,
-  TActionBody extends AnySchema | undefined = undefined,
->(props: PageOptions<TData, TQuery, TParams, TActionBody>) {
-  return {
-    __brand: "ELYSION_REACT_PAGE",
-    ...props
-  };
-}
-
-// This will create this behind the scene
-new Eylisa()
-  // If param is not set
-  .guard({ query: queryModel })
-  .resolve(async (ctx) => await loaderFunction())
-  .get(routePath, async ({ query, loaderData }) => render(ReactComponent(loaderData), { mode, revalidate }))
-  // If param is set
-  .guard({ query: queryModel, params: paramsModel })
-  .resolve(async (ctx) => await loaderFunction())
-  .get(`${routePath}/:params`, async ({ params, loaderData }) => render(ReactComponent(loaderData), { mode, revalidate }))
-
-// This generated code will be appended under the hood to the elysion plugin
-const app = new Elysia()
-  .use(authPlugin)
-  .use(
-    await elysion({
-      pagesDir: `${import.meta.dir}/pages`,
-      staticOptions: {
-        assets: `${import.meta.dir}/../public`,
-        prefix: "/public",
-        staticLimit: 1024,
-        alwaysStatic: process.env.NODE_ENV === "production",
-      },
-    })
-  )
 ```

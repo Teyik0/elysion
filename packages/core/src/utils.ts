@@ -1,10 +1,4 @@
-/**
- * Runtime types and utilities for Elysion.
- * Derived from the canonical types in client.ts.
- */
 import type { RuntimePage, RuntimeRoute } from "./client";
-
-// ---- Type guards ----
 
 export function isElysionPage(value: unknown): value is RuntimePage {
   return (
@@ -23,8 +17,6 @@ export function isElysionRoute(value: unknown): value is RuntimeRoute {
     (value as { __type: unknown }).__type === "ELYSION_ROUTE"
   );
 }
-
-// ---- Utilities ----
 
 /**
  * Walk up the parent chain from a page's _route and return

@@ -34,7 +34,6 @@ type ResolveParent<T> =
     ? { data: D; params: P; query: Q }
     : { data: {}; params: Unset; query: Unset };
 
-/** Fully resolved data/params/query for a route given its parent ref and own schemas. */
 interface Resolved<TParentRef, TLoaderData, TParamsSchema = Unset, TQuerySchema = Unset> {
   data: ResolveParent<TParentRef>["data"] & TLoaderData;
   params: MergeSchema<ResolveParent<TParentRef>["params"], ResolvedSchema<TParamsSchema>>;

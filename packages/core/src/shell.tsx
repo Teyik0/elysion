@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noArrayIndexKey: acknowledged
+// biome-ignore-all lint/security/noDangerouslySetInnerHtml: acknowledged
 import type { ReactNode } from "react";
 import type { HeadOptions, MetaDescriptor } from "./client";
 
@@ -7,6 +9,9 @@ interface ShellProps {
   headData?: HeadOptions;
   bootstrapScripts?: string[];
   clientJsPath?: string;
+  cssPath?: string;
+  cssContent?: string;
+  dev?: boolean;
 }
 
 function extractTitle(meta?: MetaDescriptor[]): string | undefined {
@@ -36,6 +41,9 @@ export function Shell({
   headData,
   bootstrapScripts = [],
   clientJsPath,
+  cssPath,
+  cssContent,
+  dev = false,
 }: ShellProps) {
   const title = extractTitle(headData?.meta);
 
@@ -47,7 +55,6 @@ export function Shell({
         {title && <title>{title}</title>}
 
         {headData?.meta?.filter(isMetaTag).map((meta, i) => (
-          //biome-ignore lint/suspicious/noArrayIndexKey: ok
           <meta key={i} {...meta} />
         ))}
 
@@ -55,26 +62,31 @@ export function Shell({
           ?.filter((m): m is { "script:ld+json": object } => "script:ld+json" in m)
           .map((m, i) => (
             <script
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: ok
               dangerouslySetInnerHTML={{ __html: JSON.stringify(m["script:ld+json"]) }}
-              //biome-ignore lint/suspicious/noArrayIndexKey: ok
               key={i}
               type="application/ld+json"
             />
           ))}
 
+        {/* Inline CSS (dev mode, better FCP/LCP) */}
+        {cssContent && (
+          <style dangerouslySetInnerHTML={{ __html: cssContent }} id="__elysion_css__" />
+        )}
+
+        {/* External CSS (prod mode, better caching) */}
+        {cssPath && !cssContent && (
+          <link href={cssPath} id="__elysion_css_link__" rel="stylesheet" />
+        )}
+
         {headData?.links?.map((link, i) => (
-          //biome-ignore lint/suspicious/noArrayIndexKey: ok
           <link key={i} {...link} />
         ))}
 
         {headData?.scripts?.map((script, i) => (
-          //biome-ignore lint/suspicious/noArrayIndexKey: ok
           <script key={i} {...script} />
         ))}
 
         {headData?.styles?.map((style, i) => (
-          //biome-ignore lint/suspicious/noArrayIndexKey: ok
           <style key={i} type={style.type}>
             {style.children}
           </style>
@@ -83,11 +95,11 @@ export function Shell({
       <body>
         <div id="root">{children}</div>
         <script
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: ok
           dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
           id="__ELYSION_DATA__"
           type="application/json"
         />
+        {dev && <script src="/__refresh-setup.js" />}
         {bootstrapScripts.map((src) => (
           <script key={src} src={src} type="module" />
         ))}
