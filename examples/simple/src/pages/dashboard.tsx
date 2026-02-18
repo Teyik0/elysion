@@ -38,7 +38,7 @@ export default route.page({
           marginBottom: "30px",
         }}
       >
-        <h1>Dashboard</h1>
+        <h1>Dashboard Testing</h1>
       </div>
 
       <div
@@ -49,7 +49,7 @@ export default route.page({
           marginBottom: "20px",
         }}
       >
-        <h2>Profil utilisateur TEST</h2>
+        <h2>Profil utilisateur</h2>
         <p>
           <strong>Nom:</strong> {user.name}
         </p>

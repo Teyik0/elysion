@@ -1,10 +1,15 @@
 import { watch } from "node:fs";
 import { relative, resolve } from "node:path";
+import type { TSchema } from "elysia";
+import type { TypeCheck } from "elysia/type-system";
+import type { ServerWebSocket } from "elysia/ws/bun";
 import { transformForReactRefresh } from "./transform";
 
 // Global state (survives bun --hot reloads)
 declare global {
-  var __elysionHmrClients: Set<WebSocket>;
+  var __elysionHmrClients: Set<
+    ServerWebSocket<{ id?: string | undefined; validator?: TypeCheck<TSchema> | undefined }>
+  >;
   var __elysionHmrWatchers: ReturnType<typeof watch>[];
   var __elysionModuleCache: Map<string, { code: string; timestamp: number }>;
   var __elysionModuleVersions: Map<string, number>;
@@ -17,7 +22,9 @@ globalThis.__elysionModuleCache = new Map();
 // Module versions for SSR cache-busting (persists across hot reloads)
 globalThis.__elysionModuleVersions ??= new Map();
 
-export function getHmrClients(): Set<WebSocket> {
+export function getHmrClients(): Set<
+  ServerWebSocket<{ id?: string | undefined; validator?: TypeCheck<TSchema> | undefined }>
+> {
   return globalThis.__elysionHmrClients;
 }
 

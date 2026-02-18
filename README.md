@@ -1,16 +1,16 @@
 # Elysion
 
-React meta-framework powered by Elysia + Bun with file-based routing, SSR/SSG/ISR modes, and full TypeScript type inference.
+React meta-framework powered by Elysia + Bun with file-based routing, SSR/SSG/ISR modes, nested layouts, HMR, and full TypeScript type inference.
 
 ## Features
 
 - 🚀 **File-based routing** with dynamic segments and catch-all routes
-- ⚡ **SSR/SSG/ISR** rendering modes
-- 🔒 **Type-safe** query params and loader data
-- 🎯 **Zero-config** TypeScript support
-- 🌐 **API routes** via Elysia
-- 🔄 **Hot Module Replacement** in development
+- ⚡ **SSR/SSG/ISR** rendering modes with automatic resolution
+- 🔒 **Type-safe** params, query, and loader data (zero codegen)
 - 🎨 **Nested layouts** with automatic data propagation
+- 🔄 **Hot Module Replacement** with React Fast Refresh
+- 🌐 **API routes** via Elysia
+- 🎯 **Zero-config** TypeScript support
 
 ## Quick Start
 
@@ -24,13 +24,13 @@ bun install
 
 ### Create Your First Page
 
-```typescript
-// src/routes/about/index.tsx
-import { createRoute } from 'elysion';
+```tsx
+// src/pages/about/index.tsx
+import { createRoute } from 'elysion/client';
 
-const route = createRoute({ mode: 'ssg' });
+const { page } = createRoute({ mode: 'ssg' });
 
-export default route.page({
+export default page({
   component: () => (
     <div>
       <h1>About Us</h1>
@@ -46,9 +46,9 @@ export default route.page({
 
 Fetch data server-side with full type safety:
 
-```typescript
-// src/routes/dashboard/route.tsx
-import { createRoute } from 'elysion';
+```tsx
+// src/pages/dashboard/route.tsx
+import { createRoute } from 'elysion/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -64,7 +64,9 @@ export const route = createRoute({
   },
 });
 
-// src/routes/dashboard/index.tsx
+// src/pages/dashboard/index.tsx
+import { route } from './route';
+
 export default route.page({
   component: ({ user, stats }) => {
     return (
@@ -96,7 +98,7 @@ createRoute({ parent, loader, layout })
            │  loader({ ...allData, params, query }) → TPageData
            │         ↓
            │  component({ ...allData, ...pageData, params, query })
-           │  head({ data: allData & pageData, params, query })
+           │  head({ ...allData, ...pageData, params, query })
            ↓
        fully typed, zero codegen, zero explicit generics
 ```
@@ -105,9 +107,9 @@ createRoute({ parent, loader, layout })
 
 Create nested layouts with automatic data propagation:
 
-```typescript
-// src/routes/dashboard/route.tsx
-import { createRoute } from 'elysion';
+```tsx
+// src/pages/dashboard/route.tsx
+import { createRoute } from 'elysion/client';
 
 export const route = createRoute({
   loader: async () => ({ user: await getCurrentUser() }),
@@ -119,8 +121,8 @@ export const route = createRoute({
   )
 });
 
-// src/routes/dashboard/users/route.tsx
-import { createRoute } from 'elysion';
+// src/pages/dashboard/users/route.tsx
+import { createRoute } from 'elysion/client';
 import { route as dashboardRoute } from '../route';
 
 export const route = createRoute({
@@ -141,7 +143,7 @@ export const route = createRoute({
   )
 });
 
-// src/routes/dashboard/users/index.tsx
+// src/pages/dashboard/users/index.tsx
 import { route } from './route';
 
 export default route.page({
@@ -168,9 +170,9 @@ export default route.page({
 
 ### Full Example with All Features
 
-```typescript
-// src/routes/blog/route.tsx
-import { createRoute, type InferProps } from 'elysion';
+```tsx
+// src/pages/blog/[slug]/route.tsx
+import { createRoute, type InferProps } from 'elysion/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -207,13 +209,13 @@ function BlogLayout({ children, post, related, params, query }: InferProps<typeo
   );
 }
 
-// src/routes/blog/index.tsx
+// src/pages/blog/[slug]/index.tsx
 import { route } from './route';
 
 export default route.page({
   head: ({ post }) => ({
-    title: post.title,
     meta: [
+      { title: post.title },
       { name: 'description', content: post.excerpt }
     ]
   }),
@@ -253,8 +255,8 @@ export default route.page({
 
 Default mode when you have a loader. Renders on every request.
 
-```typescript
-// src/routes/dashboard/route.tsx
+```tsx
+// src/pages/dashboard/route.tsx
 export const route = createRoute({
   mode: "ssr",  // or omit - SSR is default with loader
   loader: async () => {
@@ -263,7 +265,9 @@ export const route = createRoute({
   },
 });
 
-// src/routes/dashboard/index.tsx
+// src/pages/dashboard/index.tsx
+import { route } from './route';
+
 export default route.page({ component: MyPage });
 ```
 
@@ -271,14 +275,12 @@ export default route.page({ component: MyPage });
 
 Pre-render at build time. Perfect for content that doesn't change often.
 
-```typescript
-// src/routes/about/route.tsx
-export const route = createRoute({
-  mode: "ssg",  // or omit loader - SSG is default without loader
-});
+```tsx
+// src/pages/about/route.tsx
+const { page } = createRoute({ mode: "ssg" });
 
-// src/routes/about/index.tsx
-export default route.page({
+// src/pages/about/index.tsx
+export default page({
   component: () => <div>This page is static!</div>,
 });
 ```
@@ -287,8 +289,8 @@ export default route.page({
 
 Static generation with periodic revalidation in the background.
 
-```typescript
-// src/routes/blog/route.tsx
+```tsx
+// src/pages/blog/route.tsx
 export const route = createRoute({
   mode: 'ssr',
   revalidate: 60,  // Revalidate every 60 seconds
@@ -298,7 +300,9 @@ export const route = createRoute({
   },
 });
 
-// src/routes/blog/index.tsx
+// src/pages/blog/index.tsx
+import { route } from './route';
+
 export default route.page({
   component: ({ posts }) => <BlogPage posts={posts} />,
 });
@@ -309,7 +313,7 @@ export default route.page({
 Automatic routing based on file structure:
 
 ```
-routes/
+pages/
   route.tsx              # Layout and route config
   index.tsx              # → /
   about/
@@ -336,9 +340,9 @@ routes/
 
 #### Single Dynamic Segment
 
-```typescript
-// src/routes/blog/[slug]/route.tsx
-import { createRoute } from 'elysion';
+```tsx
+// src/pages/blog/[slug]/route.tsx
+import { createRoute } from 'elysion/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -352,7 +356,9 @@ export const route = createRoute({
   },
 });
 
-// src/routes/blog/[slug]/index.tsx
+// src/pages/blog/[slug]/index.tsx
+import { route } from './route';
+
 export default route.page({
   component: ({ post }) => {
     return (
@@ -367,8 +373,8 @@ export default route.page({
 
 #### Catch-All Routes
 
-```typescript
-// src/routes/docs/[...path]/route.tsx
+```tsx
+// src/pages/docs/[...path]/route.tsx
 export const route = createRoute({
   params: t.Object({
     "*": t.String(),  // Catch-all uses "*"
@@ -385,8 +391,8 @@ export const route = createRoute({
 
 ### Typed Query Parameters
 
-```typescript
-// src/routes/search/route.tsx
+```tsx
+// src/pages/search/route.tsx
 export const route = createRoute({
   query: t.Object({
     page: t.Number(),
@@ -408,8 +414,8 @@ export const route = createRoute({
 
 ### Typed URL Parameters
 
-```typescript
-// src/routes/users/[userId]/posts/[postId]/route.tsx
+```tsx
+// src/pages/users/[userId]/posts/[postId]/route.tsx
 export const route = createRoute({
   params: t.Object({
     userId: t.String(),
@@ -427,7 +433,7 @@ export const route = createRoute({
 
 Extract props type from a route or page for external components:
 
-```typescript
+```tsx
 // Component defined separately with full type safety
 function MyComponent(props: InferProps<typeof route>) {
   // props is fully typed with all loader data, params, and query
@@ -445,7 +451,7 @@ export const route = createRoute({
 
 ### `createRoute(config)`
 
-Create a route with loader, layout, and options.
+Create a route with loader, layout, and options. Import from `"elysion/client"`.
 
 **Config:**
 - `parent?: Route` - Parent route for nested layouts
@@ -474,7 +480,7 @@ Create a page for this route.
 Extract the props type from a route or page.
 
 **Usage:**
-```typescript
+```tsx
 // For layouts (includes children)
 function Layout(props: InferProps<typeof route>) {
   return <div>{props.children}</div>;
@@ -484,6 +490,11 @@ function Layout(props: InferProps<typeof route>) {
 function Component(props: InferProps<ReturnType<typeof route.page>>) {
   return <div>{props.post.title}</div>;
 }
+
+// Or more directly when page is directly available
+function Component(props: InferProps<typeof page>>) {
+  return <div>{props.post.title}</div>;
+}
 ```
 
 ## Development
@@ -491,34 +502,35 @@ function Component(props: InferProps<ReturnType<typeof route.page>>) {
 ### Commands
 
 ```bash
-bun run dev # Development server with watch mode
-bun run tsc --noEmit # Type-check without emitting
-bun run check # Lint with ultracite (biome)
-bun run fix # Auto-fix lint issues
-bun run build # Build for production
+bun run dev           # Development server with HMR
+bun run build         # Build for production
+bun run check         # Lint (ultracite/biome)
+bun run fix           # Auto-fix lint issues
+bun run tsc           # Type-check
+bun test              # Run tests
 ```
 
 ### Project Structure
 
 ```
 my-app/
-├── src/
-│   ├── routes/              # File-based routes
-│   │   ├── route.tsx        # Root layout
-│   │   ├── index.tsx        # Home page
-│   │   ├── about/
-│   │   │   ├── route.tsx    # About layout
-│   │   │   └── index.tsx    # About page
-│   │   └── blog/
-│   │       ├── route.tsx    # Blog layout
-│   │       ├── index.tsx    # Blog list
-│   │       └── [slug]/
-│   │           ├── route.tsx # Post layout
-│   │           └── index.tsx # Post page
-│   ├── components/          # Shared React components
-│   ├── lib/                 # Utility functions
-│   └── server.ts            # Elysia server entry
-├── public/                  # Static assets
+├── packages/
+│   └── core/              # Framework source
+│       └── src/
+│           ├── elysion.ts     # Main plugin
+│           ├── client.ts      # createRoute, types
+│           ├── router.ts      # File-based routing
+│           ├── render.tsx     # SSR/SSG/ISR logic
+│           ├── shell.tsx      # HTML template
+│           ├── build.ts       # Client bundle
+│           ├── types.ts       # Type guards
+│           └── hmr/           # Hot Module Replacement
+├── examples/
+│   └── simple/            # Example app
+│       ├── src/
+│       │   ├── server.ts      # Elysia server entry
+│       │   └── pages/         # File-based routes
+│       └── public/            # Static assets
 ├── package.json
 └── tsconfig.json
 ```
@@ -527,7 +539,7 @@ my-app/
 
 ### Custom Server
 
-```typescript
+```tsx
 // src/server.ts
 import { Elysia } from "elysia";
 import { elysion } from "elysion";
@@ -535,7 +547,7 @@ import { elysion } from "elysion";
 const app = new Elysia()
   .use(
     await elysion({
-      pagesDir: "./src/routes",
+      pagesDir: "./src/pages",
       staticOptions: {
         assets: "./public",
         prefix: "/",

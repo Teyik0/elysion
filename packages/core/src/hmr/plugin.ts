@@ -10,13 +10,13 @@ export function createHmrPlugin(pagesDir: string) {
     .ws("/__elysion/hmr", {
       body: t.Any(),
       open(ws) {
-        const rawWs = ws.raw as unknown as WebSocket;
+        const rawWs = ws.raw;
         getHmrClients().add(rawWs);
         console.log(`[hmr] Client connected (${getHmrClients().size} total)`);
         ws.send(JSON.stringify({ type: "connected" }));
       },
       close(ws) {
-        const rawWs = ws.raw as unknown as WebSocket;
+        const rawWs = ws.raw;
         getHmrClients().delete(rawWs);
         console.log(`[hmr] Client disconnected (${getHmrClients().size} remaining)`);
       },

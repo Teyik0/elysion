@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { t } from "elysia";
 import { expectTypeOf } from "expect-type";
 import { createRoute, type InferProps } from "../src/client";
-import { collectRouteChain, isElysionPage, isElysionRoute } from "../src/types";
+import { collectRouteChain, isElysionPage, isElysionRoute } from "../src/utils";
 
 describe("createRoute types", () => {
   test("simple route — no loader, no layout", () => {

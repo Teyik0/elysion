@@ -5,7 +5,7 @@ import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
-import { collectRouteChain, isElysionPage, isElysionRoute } from "./types";
+import { collectRouteChain, isElysionPage, isElysionRoute } from "./utils";
 
 export interface ResolvedRoute {
   pattern: string;

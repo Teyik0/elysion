@@ -12,7 +12,7 @@ export default page({
 
     return (
       <div className="flex items-center justify-center">
-        <h1 className="font-bold text-2xl text-blue-600">Counter V2</h1>
+        <h1 className="font-bold text-2xl text-blue-600">Counter V8</h1>
         <span className="ml-4 text-xl">{count}</span>
         <button
           className="ml-4 rounded bg-blue-500 px-4 py-2 text-white"
