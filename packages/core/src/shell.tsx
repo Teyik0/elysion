@@ -1,18 +1,4 @@
-// biome-ignore-all lint/suspicious/noArrayIndexKey: acknowledged
-// biome-ignore-all lint/security/noDangerouslySetInnerHtml: acknowledged
-import type { ReactNode } from "react";
 import type { HeadOptions, MetaDescriptor } from "./client";
-
-interface ShellProps {
-  children?: ReactNode;
-  data?: Record<string, unknown>;
-  headData?: HeadOptions;
-  bootstrapScripts?: string[];
-  clientJsPath?: string;
-  cssPath?: string;
-  cssContent?: string;
-  dev?: boolean;
-}
 
 function extractTitle(meta?: MetaDescriptor[]): string | undefined {
   if (!meta) {
@@ -35,150 +21,6 @@ function isMetaTag(entry: MetaDescriptor): boolean {
   );
 }
 
-export function Shell({
-  children,
-  data,
-  headData,
-  bootstrapScripts = [],
-  clientJsPath,
-  cssPath,
-  cssContent,
-  dev = false,
-}: ShellProps) {
-  const title = extractTitle(headData?.meta);
-
-  return (
-    <html lang="en">
-      <head>
-        <meta charSet="UTF-8" />
-        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        {title && <title>{title}</title>}
-
-        {headData?.meta?.filter(isMetaTag).map((meta, i) => (
-          <meta key={i} {...meta} />
-        ))}
-
-        {headData?.meta
-          ?.filter((m): m is { "script:ld+json": object } => "script:ld+json" in m)
-          .map((m, i) => (
-            <script
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(m["script:ld+json"]) }}
-              key={i}
-              type="application/ld+json"
-            />
-          ))}
-
-        {/* Inline CSS (dev mode, better FCP/LCP) */}
-        {cssContent && (
-          <style dangerouslySetInnerHTML={{ __html: cssContent }} id="__elysion_css__" />
-        )}
-
-        {/* External CSS (prod mode, better caching) */}
-        {cssPath && !cssContent && (
-          <link href={cssPath} id="__elysion_css_link__" rel="stylesheet" />
-        )}
-
-        {headData?.links?.map((link, i) => (
-          <link key={i} {...link} />
-        ))}
-
-        {headData?.scripts?.map((script, i) => (
-          <script key={i} {...script} />
-        ))}
-
-        {headData?.styles?.map((style, i) => (
-          <style key={i} type={style.type}>
-            {style.children}
-          </style>
-        ))}
-      </head>
-      <body>
-        <div id="root">{children}</div>
-        <script
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
-          id="__ELYSION_DATA__"
-          type="application/json"
-        />
-        {dev && <script src="/__refresh-setup.js" />}
-        {bootstrapScripts.map((src) => (
-          <script key={src} src={src} type="module" />
-        ))}
-        {clientJsPath && <script defer src={clientJsPath} type="module" />}
-      </body>
-    </html>
-  );
-}
-
-function renderAttrs(obj: Record<string, string | undefined>, filterUndefined = false): string {
-  return Object.entries(obj)
-    .filter(([, v]) => !filterUndefined || v !== undefined)
-    .map(([k, v]) => `${k}="${escapeHtml(String(v))}"`)
-    .join(" ");
-}
-
-function renderMetaTags(meta: MetaDescriptor[]): string[] {
-  return meta
-    .filter(isMetaTag)
-    .map((m) => `<meta ${renderAttrs(m as Record<string, string>, true)} />`);
-}
-
-function renderJsonLdTags(meta: MetaDescriptor[]): string[] {
-  return meta
-    .filter((m): m is { "script:ld+json": object } => "script:ld+json" in m)
-    .map(
-      (m) => `<script type="application/ld+json">${JSON.stringify(m["script:ld+json"])}</script>`
-    );
-}
-
-function renderLinkTags(links: HeadOptions["links"]): string[] {
-  return (links ?? []).map((link) => `<link ${renderAttrs(link)} />`);
-}
-
-function renderScriptTags(scripts: HeadOptions["scripts"]): string[] {
-  return (scripts ?? []).map((script) => {
-    const { children, ...rest } = script;
-    const attrs = renderAttrs(rest as Record<string, string | undefined>, true);
-    return children ? `<script ${attrs}>${children}</script>` : `<script ${attrs}></script>`;
-  });
-}
-
-function renderStyleTags(styles: HeadOptions["styles"]): string[] {
-  return (styles ?? []).map((style) => {
-    const typeAttr = style.type ? ` type="${escapeHtml(style.type)}"` : "";
-    return `<style${typeAttr}>${style.children}</style>`;
-  });
-}
-
-/** Render HeadOptions into HTML string for <head> */
-export function renderHead(headData?: HeadOptions): string {
-  if (!headData) {
-    return "";
-  }
-
-  const parts: string[] = [];
-
-  const title = extractTitle(headData.meta);
-  if (title) {
-    parts.push(`<title>${escapeHtml(title)}</title>`);
-  }
-
-  if (headData.meta) {
-    parts.push(...renderMetaTags(headData.meta));
-    parts.push(...renderJsonLdTags(headData.meta));
-  }
-  if (headData.links) {
-    parts.push(...renderLinkTags(headData.links));
-  }
-  if (headData.scripts) {
-    parts.push(...renderScriptTags(headData.scripts));
-  }
-  if (headData.styles) {
-    parts.push(...renderStyleTags(headData.styles));
-  }
-
-  return parts.join("\n  ");
-}
-
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -186,4 +28,116 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function renderAttrs(obj: Record<string, string | undefined>): string {
+  return Object.entries(obj)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}="${escapeHtml(String(v))}"`)
+    .join(" ");
+}
+
+export interface CssContext {
+  mode: "inline" | "external";
+  code?: string;
+}
+
+export function buildHeadInjection(
+  headData: HeadOptions | undefined,
+  cssContext: CssContext | null
+): string {
+  const parts: string[] = [];
+
+  if (headData?.meta) {
+    const title = extractTitle(headData.meta);
+    if (title) {
+      parts.push(`<title>${escapeHtml(title)}</title>`);
+    }
+
+    for (const m of headData.meta) {
+      if (isMetaTag(m)) {
+        parts.push(`<meta ${renderAttrs(m as Record<string, string>)} />`);
+      }
+      if ("script:ld+json" in m) {
+        parts.push(
+          `<script type="application/ld+json">${JSON.stringify(m["script:ld+json"])}</script>`
+        );
+      }
+    }
+  }
+
+  if (cssContext?.mode === "inline" && cssContext.code) {
+    parts.push(`<style id="__elysion_css__">${cssContext.code}</style>`);
+  } else if (cssContext?.mode === "external") {
+    parts.push(`<link id="__elysion_css_link__" href="/_client/styles.css" rel="stylesheet" />`);
+  }
+
+  if (headData?.links) {
+    for (const link of headData.links) {
+      parts.push(`<link ${renderAttrs(link)} />`);
+    }
+  }
+
+  if (headData?.scripts) {
+    for (const script of headData.scripts) {
+      const { children, ...rest } = script;
+      const attrs = renderAttrs(rest as Record<string, string | undefined>);
+      if (children) {
+        parts.push(`<script ${attrs}>${children}</script>`);
+      } else {
+        parts.push(`<script ${attrs}></script>`);
+      }
+    }
+  }
+
+  if (headData?.styles) {
+    for (const style of headData.styles) {
+      const typeAttr = style.type ? ` type="${escapeHtml(style.type)}"` : "";
+      parts.push(`<style${typeAttr}>${style.children}</style>`);
+    }
+  }
+
+  return parts.length > 0 ? `\n  ${parts.join("\n  ")}\n` : "";
+}
+
+export function buildBodyInjection(
+  data: Record<string, unknown> | undefined,
+  clientJsPath: string,
+  dev: boolean
+): string {
+  const parts: string[] = [];
+
+  if (data) {
+    parts.push(
+      `<script id="__ELYSION_DATA__" type="application/json">${JSON.stringify(data)}</script>`
+    );
+  }
+
+  if (dev) {
+    parts.push('<script src="/__refresh-setup.js"></script>');
+  }
+
+  parts.push(`<script src="${clientJsPath}" type="module" defer></script>`);
+
+  return `\n${parts.join("\n")}\n`;
+}
+
+export function postProcessHTML(
+  html: string,
+  headInjection: string,
+  bodyInjection: string
+): string {
+  let result = html;
+
+  // Inject into </head>
+  if (headInjection && result.includes("</head>")) {
+    result = result.replace("</head>", `${headInjection}</head>`);
+  }
+
+  // Inject before </body>
+  if (bodyInjection && result.includes("</body>")) {
+    result = result.replace("</body>", `${bodyInjection}</body>`);
+  }
+
+  return result;
 }

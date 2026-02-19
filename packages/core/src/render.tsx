@@ -1,10 +1,11 @@
 import type { StaticOptions } from "@elysiajs/static/types";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
+import type { RuntimeRoute } from "./client";
 import { getCachedCss } from "./css";
 import { getModuleVersion } from "./hmr/watcher.js";
-import type { ResolvedRoute } from "./router";
-import { Shell } from "./shell";
+import type { ResolvedRoute, RootLayout } from "./router";
+import { buildBodyInjection, buildHeadInjection, postProcessHTML } from "./shell";
 
 const isrCache = new Map<string, { html: string; generatedAt: number; revalidate: number }>();
 
@@ -12,6 +13,7 @@ const ssgCache = new Map<string, string>();
 
 declare global {
   var __elysionPageCache: Map<string, { page: unknown; timestamp: number }>;
+  var __elysionRootCache: { root: RootLayout | null; timestamp: number } | null;
 }
 
 async function streamToString(stream: ReadableStream): Promise<string> {
@@ -57,11 +59,58 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   return route.page;
 }
 
-async function buildElement(
+async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
+  if (!_dev) {
+    return root.route;
+  }
+
+  try {
+    const mod = await import(`${root.path}?v=${Date.now()}`);
+    const rootRoute = mod.route ?? mod.default;
+    if (rootRoute && rootRoute.__type === "ELYSION_ROUTE") {
+      return rootRoute;
+    }
+    return root.route;
+  } catch (error) {
+    console.error(`[elysion] Failed to load root layout ${root.path}:`, error);
+    return root.route;
+  }
+}
+
+function injectSuppressHydration(element: ReactNode): ReactNode {
+  if (!element || typeof element !== "object") return element;
+  const el = element as { type?: unknown; props?: Record<string, unknown> };
+  const type = el.type;
+  const props = el.props ?? {};
+
+  if (type === "html" || type === "head" || type === "body") {
+    const newProps: Record<string, unknown> = { ...props, suppressHydrationWarning: true };
+    if (props.children) {
+      newProps.children = Array.isArray(props.children)
+        ? props.children.map(injectSuppressHydration)
+        : injectSuppressHydration(props.children as ReactNode);
+    }
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  if (props.children) {
+    const newProps = { ...props };
+    newProps.children = Array.isArray(props.children)
+      ? props.children.map(injectSuppressHydration)
+      : injectSuppressHydration(props.children as ReactNode);
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  return element;
+}
+
+function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
-  dev: boolean
-): Promise<ReactNode> {
+  rootLayout: RuntimeRoute | null,
+  rootPath: string | null,
+  _dev: boolean
+): ReactNode {
   const page = route.page;
   if (!page) {
     return <div>Loading...</div>;
@@ -70,7 +119,11 @@ async function buildElement(
   const Component = page.component;
   let element: ReactNode = <Component {...data} />;
 
+  // Wrap with nested layouts (route.tsx), skipping root if it appears in the chain
   for (let i = route.routeChain.length - 1; i >= 0; i--) {
+    const filePath = route.routeFilePaths[i];
+    // Skip the root layout entry — it will be applied separately below
+    if (rootPath && filePath === rootPath) continue;
     const routeEntry = route.routeChain[i];
     if (routeEntry?.layout) {
       const Layout = routeEntry.layout;
@@ -78,35 +131,42 @@ async function buildElement(
     }
   }
 
-  const cssContext = await getCachedCss(process.cwd());
+  // Wrap with root layout (root.tsx)
+  if (rootLayout?.layout) {
+    const RootLayoutComponent = rootLayout.layout;
+    element = <RootLayoutComponent {...data}>{element}</RootLayoutComponent>;
+  }
 
-  return (
-    <Shell
-      clientJsPath={CLIENT_JS_PATH}
-      cssContent={cssContext?.mode === "inline" ? cssContext.code : undefined}
-      cssPath={cssContext?.mode === "external" ? "/_client/styles.css" : undefined}
-      data={data}
-      dev={dev}
-    >
-      {element}
-    </Shell>
-  );
+  return element;
 }
 
 async function runLoaders(
   route: ResolvedRoute,
   params: Record<string, string>,
-  query: Record<string, string>
+  query: Record<string, string>,
+  rootLayout: RuntimeRoute | null,
+  rootPath: string | null
 ): Promise<Record<string, unknown>> {
   let data: Record<string, unknown> = {};
 
-  for (const ancestor of route.routeChain) {
+  // Run root loader first
+  if (rootLayout?.loader) {
+    const result = await rootLayout.loader({ ...data, params, query });
+    data = { ...data, ...result };
+  }
+
+  // Run nested layout loaders (skip root if it appears in the chain — already ran above)
+  for (let i = 0; i < route.routeChain.length; i++) {
+    const filePath = route.routeFilePaths[i];
+    if (rootPath && filePath === rootPath) continue;
+    const ancestor = route.routeChain[i];
     if (ancestor.loader) {
       const result = await ancestor.loader({ ...data, params, query });
       data = { ...data, ...result };
     }
   }
 
+  // Run page loader
   if (route.page?.loader) {
     const result = await route.page.loader({ ...data, params, query });
     data = { ...data, ...result };
@@ -115,38 +175,81 @@ async function runLoaders(
   return data;
 }
 
-export async function renderToHTML(
+async function renderAndProcess(
   route: ResolvedRoute,
   params: Record<string, string>,
   query: Record<string, string>,
-  dev = false
-) {
+  root: RootLayout | null,
+  dev: boolean
+): Promise<string> {
   await loadPageModule(route, dev);
 
-  const data = await runLoaders(route, params, query);
-  const element = await buildElement(route, { ...data, params, query }, dev);
-  const stream = await renderToReadableStream(element);
+  const rootLayout = root ? await loadRootModule(root, dev) : null;
+  const rootPath = root?.path ?? null;
+
+  const data = await runLoaders(route, params, query, rootLayout, rootPath);
+
+  // Get head data from page BEFORE building element
+  const headData = route.page?.head?.({ ...data, params, query });
+
+  // Get CSS
+  const cssContext = await getCachedCss(process.cwd());
+
+  // Build the element tree
+  const element = await buildElement(route, { ...data, params, query }, rootLayout, rootPath, dev);
+
+  // Render to HTML — inject suppressHydrationWarning to match client hydration
+  const stream = await renderToReadableStream(injectSuppressHydration(element));
   await stream.allReady;
-  return streamToString(stream);
+  const html = await streamToString(stream);
+
+  // Warn if root layout is missing required HTML structure
+  if (root) {
+    if (!html.includes("<html")) {
+      console.warn(
+        "[elysion] root.tsx layout is missing an <html> element. Add <html> to your root layout."
+      );
+    }
+    if (!html.includes("<body")) {
+      console.warn(
+        "[elysion] root.tsx layout is missing a <body> element. Add <body> to your root layout."
+      );
+    }
+  }
+
+  // Post-process HTML to inject scripts (React doesn't need to know about these)
+  const headInjection = buildHeadInjection(headData, cssContext);
+  const bodyInjection = buildBodyInjection(data, CLIENT_JS_PATH, dev);
+
+  return postProcessHTML(html, headInjection, bodyInjection);
+}
+
+export function renderToHTML(
+  route: ResolvedRoute,
+  params: Record<string, string>,
+  query: Record<string, string>,
+  root: RootLayout | null,
+  dev = false
+) {
+  return renderAndProcess(route, params, query, root, dev);
 }
 
 export async function renderToStream(
   route: ResolvedRoute,
   params: Record<string, string>,
   query: Record<string, string>,
+  root: RootLayout | null,
   dev = false
 ) {
-  await loadPageModule(route, dev);
-
-  const data = await runLoaders(route, params, query);
-  const element = await buildElement(route, { ...data, params, query }, dev);
-  return renderToReadableStream(element);
+  const html = await renderAndProcess(route, params, query, root, dev);
+  return new Response(html).body;
 }
 
 export async function prerenderSSG(
   route: ResolvedRoute,
   params: Record<string, string>,
   _config: StaticOptions<string>,
+  root: RootLayout | null,
   dev = false
 ) {
   const resolvedPath = Object.entries(params ?? {}).reduce((path: string, [key, val]) => {
@@ -159,7 +262,7 @@ export async function prerenderSSG(
     return cached;
   }
 
-  const html = await renderToHTML(route, params, {}, dev);
+  const html = await renderToHTML(route, params, {}, root, dev);
 
   if (!dev) {
     ssgCache.set(resolvedPath, html);
@@ -172,11 +275,12 @@ export async function renderSSR(
   route: ResolvedRoute,
   ctx: { params?: Record<string, string>; query?: Record<string, string> },
   _config: StaticOptions<string>,
+  root: RootLayout | null,
   dev = false
 ): Promise<Response> {
-  const stream = await renderToStream(route, ctx.params ?? {}, ctx.query ?? {}, dev);
+  const html = await renderToHTML(route, ctx.params ?? {}, ctx.query ?? {}, root, dev);
 
-  return new Response(stream, {
+  return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -188,6 +292,7 @@ export async function handleISR(
   route: ResolvedRoute,
   ctx: { params?: Record<string, string>; query?: Record<string, string> },
   _config: StaticOptions<string>,
+  root: RootLayout | null,
   dev = false
 ): Promise<Response> {
   const revalidate = route.page?._route.revalidate ?? 60;
@@ -205,7 +310,7 @@ export async function handleISR(
     const isFresh = age < revalidate * 1000;
 
     if (!isFresh) {
-      revalidateInBackground(route, params, cacheKey, revalidate, dev);
+      revalidateInBackground(route, params, cacheKey, revalidate, root, dev);
     }
 
     return new Response(cached.html, {
@@ -218,7 +323,7 @@ export async function handleISR(
     });
   }
 
-  const html = await renderToHTML(route, params, {}, dev);
+  const html = await renderToHTML(route, params, {}, root, dev);
 
   if (!dev) {
     isrCache.set(cacheKey, { html, generatedAt: Date.now(), revalidate });
@@ -237,9 +342,10 @@ function revalidateInBackground(
   params: Record<string, string>,
   cacheKey: string,
   revalidate: number,
+  root: RootLayout | null,
   dev: boolean
 ) {
-  renderToHTML(route, params, {}, dev)
+  renderToHTML(route, params, {}, root, dev)
     .then((freshHtml: string) => {
       isrCache.set(cacheKey, {
         html: freshHtml,

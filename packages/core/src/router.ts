@@ -19,9 +19,16 @@ export interface ResolvedRoute {
   ssgHtml?: string;
 }
 
+export interface RootLayout {
+  path: string;
+  route: RuntimeRoute;
+}
+
+
 export function createRoutePlugin(
   route: ResolvedRoute,
   config: StaticOptions<string>,
+  root: RootLayout | null,
   dev = false
 ): AnyElysia {
   const { pattern, mode, routeChain } = route;
@@ -47,7 +54,7 @@ export function createRoutePlugin(
     new Elysia().get(pattern, async (ctx) => {
       switch (mode) {
         case "ssg": {
-          const html = await prerenderSSG(route, ctx.params ?? {}, config, dev);
+          const html = await prerenderSSG(route, ctx.params ?? {}, config, root, dev);
           return new Response(html, {
             headers: {
               "Content-Type": "text/html; charset=utf-8",
@@ -57,10 +64,10 @@ export function createRoutePlugin(
         }
 
         case "isr":
-          return handleISR(route, ctx, config, dev);
+          return handleISR(route, ctx, config, root, dev);
 
         default:
-          return renderSSR(route, ctx, config, dev);
+          return renderSSR(route, ctx, config, root, dev);
       }
     })
   );
@@ -78,11 +85,38 @@ async function loadRouteModule(routePath: string): Promise<RuntimeRoute | undefi
   return mod.route ?? mod.default;
 }
 
-export async function scanPages(pagesDir: string, _dev = false) {
+export async function scanPages(
+  pagesDir: string,
+  _dev = false
+): Promise<{
+  root: RootLayout | null;
+  routes: ResolvedRoute[];
+}> {
   const routes: ResolvedRoute[] = [];
+  let root: RootLayout | null = null;
 
-  // Phase 1: Scan route.tsx files
+  // Phase 0: Scan for root.tsx
+  const rootPath = `${pagesDir}/root.tsx`;
+  const rootFile = Bun.file(rootPath);
+  if (await rootFile.exists()) {
+    const mod = await import(rootPath);
+    const rootExport = mod.route ?? mod.default;
+    if (rootExport && isElysionRoute(rootExport)) {
+      if (!rootExport.layout) {
+        console.warn(
+          "[elysion] root.tsx: createRoute() has no layout — the root layout will be skipped."
+        );
+      }
+      root = { path: rootPath, route: rootExport };
+    }
+  }
+
+  // Phase 1: Scan route.tsx files (nested layouts)
   const routeFileMap = new Map<RuntimeRoute, string>();
+  // Pre-register root so its path appears in routeFilePaths (enables dedup in render/build)
+  if (root) {
+    routeFileMap.set(root.route, root.path);
+  }
   const routeGlob = new Glob("**/route.tsx");
   for await (const absolutePath of routeGlob.scan({ cwd: pagesDir, absolute: true })) {
     const routeExport = await loadRouteModule(absolutePath);
@@ -101,7 +135,8 @@ export async function scanPages(pagesDir: string, _dev = false) {
     const relativePath = absolutePath.replace(`${pagesDir}/`, "");
     const fileName = parse(relativePath).name;
 
-    if (fileName.startsWith("_") || fileName === "route") {
+    // Skip root.tsx, route.tsx, and files starting with _
+    if (fileName.startsWith("_") || fileName === "route" || fileName === "root") {
       continue;
     }
 
@@ -127,7 +162,7 @@ export async function scanPages(pagesDir: string, _dev = false) {
     });
   }
 
-  return routes;
+  return { root, routes };
 }
 
 function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {

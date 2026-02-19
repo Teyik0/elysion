@@ -42,6 +42,8 @@ function invalidateCssCacheIfNeeded(): void {
 }
 
 export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
+  const srcDir = dirname(pagesDir);
+
   // Close existing watchers
   for (const w of globalThis.__elysionHmrWatchers) {
     try {
@@ -91,10 +93,13 @@ export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
     // Normalize to POSIX separators for valid URLs (Windows compatibility)
     const normalizedFilename = filename.replace(/\\/g, "/");
 
+    // Use /_modules/src/pages/ URL scheme so rewritten relative imports resolve correctly
+    const relativeToSrc = relative(srcDir, fullPath).replace(/\\/g, "/");
+
     const message = JSON.stringify({
       type: messageType,
-      path: `/pages/${normalizedFilename}`,
-      modules: [`/pages/${normalizedFilename}`],
+      path: `/src/pages/${normalizedFilename}`,
+      modules: [`/src/${relativeToSrc}`],
       cssUpdate: true, // Signal that CSS might have changed
     });
 
@@ -161,7 +166,7 @@ export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
   }
 }
 
-export async function getTransformedModule(fullPath: string, pagesDir: string): Promise<string> {
+export async function getTransformedModule(fullPath: string, srcDir: string, pagesDir: string): Promise<string> {
   const cached = globalThis.__elysionModuleCache.get(fullPath);
   if (cached) {
     return cached.code;
@@ -173,9 +178,9 @@ export async function getTransformedModule(fullPath: string, pagesDir: string): 
   }
 
   const source = await file.text();
-  const relativePath = relative(pagesDir, fullPath).replace(/\\/g, "/");
-  const moduleId = `/_modules/pages/${relativePath}`;
-  const transformed = transformForReactRefresh(source, fullPath, moduleId);
+  const relativePath = relative(srcDir, fullPath).replace(/\\/g, "/");
+  const moduleId = `/_modules/src/${relativePath}`;
+  const transformed = transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
 
   globalThis.__elysionModuleCache.set(fullPath, {
     code: transformed,

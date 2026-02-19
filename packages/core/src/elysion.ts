@@ -59,7 +59,15 @@ export async function elysion({
     }
   }
 
-  const routes = await scanPages(resolvedPagesDir, dev);
+  const { root, routes } = await scanPages(resolvedPagesDir, dev);
+
+  // Warn if no root layout found
+  if (!root) {
+    console.warn(
+      "[elysion] No root.tsx found. Create a root.tsx file in your pages directory " +
+        "that exports a root layout with <html>, <head>, and <body> tags."
+    );
+  }
 
   const clientBundlePath = resolve(cwd, ".elysion", "client", "_hydrate.js");
   const shouldBuildClient = !(
@@ -69,7 +77,7 @@ export async function elysion({
   );
 
   if (shouldBuildClient) {
-    await buildClient(routes, { dev });
+    await buildClient(routes, { dev, rootPath: root?.path ?? null });
     globalThis.__elysionClientBuilt = true;
   } else {
     console.log("[elysion] Using existing client bundle (HMR mode)");
@@ -93,7 +101,7 @@ export async function elysion({
   });
 
   // Build route plugins array
-  const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, dev));
+  const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, root, dev));
 
   // Chain everything in a single expression
   const baseApp = new Elysia({

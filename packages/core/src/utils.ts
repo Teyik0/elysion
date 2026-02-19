@@ -18,10 +18,6 @@ export function isElysionRoute(value: unknown): value is RuntimeRoute {
   );
 }
 
-/**
- * Walk up the parent chain from a page's _route and return
- * the ancestor routes in top-down order: [root, ..., leaf].
- */
 export function collectRouteChain(page: RuntimePage): RuntimeRoute[] {
   const chain: RuntimeRoute[] = [];
   let current: RuntimeRoute | undefined = page._route;

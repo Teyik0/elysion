@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { Elysia, t } from "elysia";
 import { getCachedCss, getCssConfig, invalidateCssCache } from "../css";
 import { REFRESH_SETUP_CODE } from "./refresh-setup";
@@ -7,87 +7,87 @@ import { getHmrClients, getTransformedModule, setupHmrWatcher } from "./watcher"
 export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
   setupHmrWatcher(pagesDir, cssInputPath);
 
+  const srcDir = dirname(pagesDir);
+
   const hmrPlugin = new Elysia({ name: "elysion-hmr" })
     .ws("/__elysion/hmr", {
       body: t.Any(),
       open(ws) {
-        const rawWs = ws.raw;
-        getHmrClients().add(rawWs);
+        getHmrClients().add(ws.raw);
         console.log(`[hmr] Client connected (${getHmrClients().size} total)`);
         ws.send(JSON.stringify({ type: "connected" }));
       },
       close(ws) {
-        const rawWs = ws.raw;
-        getHmrClients().delete(rawWs);
+        getHmrClients().delete(ws.raw);
         console.log(`[hmr] Client disconnected (${getHmrClients().size} remaining)`);
       },
       message(_ws, message) {
         console.log("[hmr] Client message:", message);
       },
     })
-    .get("/__refresh-setup.js", () => {
-      return new Response(REFRESH_SETUP_CODE, {
-        headers: {
-          "Content-Type": "application/javascript",
-          "Cache-Control": "no-cache",
-        },
-      });
+    .get("/__refresh-setup.js", ({ set }) => {
+      set.headers["content-type"] = "application/javascript";
+      set.headers["cache-control"] = "no-cache";
+      return REFRESH_SETUP_CODE;
     })
-    .get("/_modules/pages/*", async (ctx) => {
-      const relativePath = ctx.path.replace("/_modules/pages/", "");
-      const fullPath = resolve(pagesDir, relativePath);
+    .get("/_modules/src/*", async ({ path, set, status }) => {
+      const relativePath = decodeURIComponent(path.replace("/_modules/src/", ""));
+      let fullPath = resolve(srcDir, relativePath);
 
-      if (!fullPath.startsWith(pagesDir)) {
-        return new Response("Forbidden", { status: 403 });
+      if (!fullPath.startsWith(srcDir)) {
+        return status("Forbidden", `File does not exist at: ${fullPath}`);
       }
 
+      // Block access to server-only modules outside pagesDir
+      if (!fullPath.startsWith(pagesDir)) {
+        return status("Forbidden", "Server-only module not accessible from browser");
+      }
+
+      // Try with extensions if file doesn't exist
+      const extensions = [".tsx", ".ts", ".jsx", ".js"];
+      const file = Bun.file(fullPath);
+      if (!(await file.exists())) {
+        for (const ext of extensions) {
+          const pathWithExt = fullPath + ext;
+          const fileWithExt = Bun.file(pathWithExt);
+          if (await fileWithExt.exists()) {
+            fullPath = pathWithExt;
+            break;
+          }
+        }
+      }
+
+      set.headers["content-type"] = "application/javascript";
+      set.headers["cache-control"] = "no-cache";
       try {
-        const code = await getTransformedModule(fullPath, pagesDir);
-        return new Response(code, {
-          headers: {
-            "Content-Type": "application/javascript",
-            "Cache-Control": "no-cache",
-          },
-        });
+        const code = await getTransformedModule(fullPath, srcDir, pagesDir);
+        return status(200, code);
       } catch (error) {
         console.error("[hmr] Module transform error:", error);
-        return new Response(`// Error: ${error}`, {
-          status: 500,
-          headers: { "Content-Type": "application/javascript" },
-        });
+        return status(500, `// Error: ${error}`);
+      }
+    })
+    .get("/__elysion/css", async ({ set, status }) => {
+      const config = getCssConfig();
+      set.headers["content-type"] = "text/css";
+      if (!config) {
+        return status("Not Found", "CSS Not Configured");
+      }
+
+      set.headers["cache-control"] = "no-cache";
+
+      try {
+        // Invalidate cache to ensure fresh CSS
+        const absolutePath = resolve(process.cwd(), config.input);
+        invalidateCssCache(absolutePath);
+
+        const result = await getCachedCss(process.cwd());
+        return result?.code;
+      } catch (error: unknown) {
+        console.error("[hmr] CSS processing error:", error);
+        return status("Internal Server Error", `CSS Error: ${error}`);
       }
     });
-
-  // Add CSS endpoint for HMR
-  hmrPlugin.get("/__elysion/css", async () => {
-    const config = getCssConfig();
-    if (!config) {
-      return new Response("/* No CSS configured */", {
-        status: 404,
-        headers: { "Content-Type": "text/css" },
-      });
-    }
-
-    try {
-      // Invalidate cache to ensure fresh CSS
-      const absolutePath = resolve(process.cwd(), config.input);
-      invalidateCssCache(absolutePath);
-
-      const result = await getCachedCss(process.cwd());
-      return new Response(result?.code || "", {
-        headers: {
-          "Content-Type": "text/css",
-          "Cache-Control": "no-cache",
-        },
-      });
-    } catch (error) {
-      console.error("[hmr] CSS processing error:", error);
-      return new Response(`/* CSS Error: ${error} */`, {
-        status: 500,
-        headers: { "Content-Type": "text/css" },
-      });
-    }
-  });
 
   return hmrPlugin;
 }

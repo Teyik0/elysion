@@ -2,13 +2,17 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ResolvedRoute } from "./router";
 
-/**
- * Build the client-side hydration bundle using Bun.build.
- */
+export interface BuildClientOptions {
+  outDir?: string;
+  dev?: boolean;
+  rootPath?: string | null;
+}
+
 export async function buildClient(
   routes: ResolvedRoute[],
-  { outDir = "./.elysion", dev = false }: { outDir?: string; dev?: boolean } = {}
+  options: BuildClientOptions = {}
 ): Promise<void> {
+  const { outDir = "./.elysion", dev = false, rootPath = null } = options;
   const buildDir = outDir;
   const clientDir = join(outDir, "client");
 
@@ -19,7 +23,9 @@ export async function buildClient(
     mkdirSync(clientDir, { recursive: true });
   }
 
-  const hydrateCode = dev ? generateDevHydrateEntry(routes) : generateHydrateEntry(routes);
+  const hydrateCode = dev
+    ? generateDevHydrateEntry(routes, rootPath)
+    : generateHydrateEntry(routes, rootPath);
   const hydratePath = join(buildDir, "_hydrate.tsx");
   writeFileSync(hydratePath, hydrateCode);
 
@@ -53,12 +59,14 @@ export async function buildClient(
   console.log("[elysion] Client build complete");
 }
 
-/**
- * Production hydrate entry: static imports, simple hydrateRoot.
- */
-function generateHydrateEntry(routes: ResolvedRoute[]): string {
+function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
   const imports: string[] = [];
   const routeEntries: string[] = [];
+
+  const hasRoot = rootPath !== null;
+  if (hasRoot) {
+    imports.push(`import { route as root } from "${rootPath.replace(/\\/g, "/")}";`);
+  }
 
   const routeFileImports = new Map<string, string>();
   let routeImportCounter = 0;
@@ -70,12 +78,17 @@ function generateHydrateEntry(routes: ResolvedRoute[]): string {
     imports.push(`import ${pageName} from "${route.path.replace(/\\/g, "/")}";`);
 
     const layoutNames: string[] = [];
+    const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
     for (let j = 0; j < route.routeChain.length; j++) {
       const ancestor = route.routeChain[j];
       const filePath = route.routeFilePaths[j];
 
       if (ancestor?.layout && filePath) {
         const normalizedPath = filePath.replace(/\\/g, "/");
+        // Skip root layout here — it is applied separately via `root.layout`
+        if (normalizedPath === normalizedRootPath) {
+          continue;
+        }
         let importName = routeFileImports.get(normalizedPath);
         if (!importName) {
           importName = `Route${routeImportCounter++}`;
@@ -98,6 +111,33 @@ import { createElement } from "react";
 
 ${imports.join("\n")}
 
+function injectSuppressHydration(element) {
+  if (!element || typeof element !== 'object') return element;
+
+  const type = element.type;
+  const props = element.props || {};
+
+  if (type === 'html' || type === 'head' || type === 'body') {
+    const newProps = { ...props, suppressHydrationWarning: true };
+    if (props.children) {
+      newProps.children = Array.isArray(props.children)
+        ? props.children.map(injectSuppressHydration)
+        : injectSuppressHydration(props.children);
+    }
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  if (props.children) {
+    const newProps = { ...props };
+    newProps.children = Array.isArray(props.children)
+      ? props.children.map(injectSuppressHydration)
+      : injectSuppressHydration(props.children);
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  return element;
+}
+
 const routes = [
 ${routeEntries.join(",\n")}
 ];
@@ -108,42 +148,77 @@ const match = routes.find(r => r.regex.test(pathname));
 if (match) {
   const dataEl = document.getElementById("__ELYSION_DATA__");
   const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
-  const root = document.getElementById("root");
-  if (root) {
-    let element = createElement(match.component, loaderData);
-    for (let i = match.layouts.length - 1; i >= 0; i--) {
-      const Layout = match.layouts[i];
-      if (Layout) {
-        element = createElement(Layout, { ...loaderData, children: element });
-      }
+  const rootEl = ${hasRoot ? "document" : "document.documentElement"};
+
+  let element = createElement(match.component, loaderData);
+  for (let i = match.layouts.length - 1; i >= 0; i--) {
+    const Layout = match.layouts[i];
+    if (Layout) {
+      element = createElement(Layout, { ...loaderData, children: element });
     }
-    hydrateRoot(root, element);
   }
+
+  ${
+    hasRoot
+      ? `
+  if (root?.layout) {
+    element = createElement(root.layout, { ...loaderData, children: element });
+  }
+  `
+      : ""
+  }
+
+  // Inject suppressHydrationWarning to match SSR output
+  element = injectSuppressHydration(element);
+
+  hydrateRoot(rootEl, element);
 } else {
   console.warn("[elysion] No matching route for", pathname);
 }
 `;
 }
 
-/**
- * Dev hydrate entry: includes React Refresh, HMR WebSocket client, dynamic module loading.
- */
-function generateDevHydrateEntry(routes: ResolvedRoute[]): string {
-  // Build route map for client-side matching
+function generateDevHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
   const routeEntries: string[] = [];
+  const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
+
   for (const route of routes) {
     const pagesDir = findPagesDir(route.pagePath, route.pattern);
-    const relativePath = relative(pagesDir, route.pagePath).replace(/\\/g, "/");
+    const srcDir = join(pagesDir, "..");
+    const relativeToSrc = relative(srcDir, route.pagePath).replace(/\\/g, "/");
     const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
 
+    // Collect nested route.tsx layout module paths (excluding root)
+    const layoutPaths: string[] = [];
+    for (let j = 0; j < route.routeChain.length; j++) {
+      const ancestor = route.routeChain[j];
+      const filePath = route.routeFilePaths[j];
+      if (ancestor?.layout && filePath) {
+        const normalizedPath = filePath.replace(/\\/g, "/");
+        if (normalizedPath === normalizedRootPath) continue;
+        const relPath = relative(srcDir, filePath).replace(/\\/g, "/");
+        layoutPaths.push(`/src/${relPath}`);
+      }
+    }
+
+    const layoutPathsJson = JSON.stringify(layoutPaths);
     routeEntries.push(
-      `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/pages/${relativePath}" }`
+      `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/src/${relativeToSrc}", layoutPaths: ${layoutPathsJson} }`
     );
   }
 
-  // Resolve absolute paths so Bun.build can find modules regardless of CWD
   const clientModulePath = new URL("./client.ts", import.meta.url).pathname;
   const refreshRuntimePath = require.resolve("react-refresh/runtime");
+
+  const hasRoot = rootPath !== null;
+  const rootRelativePath =
+    hasRoot && routes[0]
+      ? (() => {
+          const pagesDir = findPagesDir(routes[0].pagePath, routes[0].pattern);
+          const srcDir = join(pagesDir, "..");
+          return relative(srcDir, rootPath).replace(/\\/g, "/");
+        })()
+      : null;
 
   return `import React from "react";
 import { createElement } from "react";
@@ -167,6 +242,34 @@ window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
 
 console.log("[hmr] React Refresh initialized");
 
+// Inject suppressHydrationWarning to match SSR output
+function injectSuppressHydration(element) {
+  if (!element || typeof element !== 'object') return element;
+
+  const type = element.type;
+  const props = element.props || {};
+
+  if (type === 'html' || type === 'head' || type === 'body') {
+    const newProps = { ...props, suppressHydrationWarning: true };
+    if (props.children) {
+      newProps.children = Array.isArray(props.children)
+        ? props.children.map(injectSuppressHydration)
+        : injectSuppressHydration(props.children);
+    }
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  if (props.children) {
+    const newProps = { ...props };
+    newProps.children = Array.isArray(props.children)
+      ? props.children.map(injectSuppressHydration)
+      : injectSuppressHydration(props.children);
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  return element;
+}
+
 // Route map (generated at build time)
 const routes = [
 ${routeEntries.join(",\n")}
@@ -175,6 +278,22 @@ ${routeEntries.join(",\n")}
 // Global state
 let reactRoot = null;
 let hmrUpdateId = 0;
+${hasRoot ? "let rootModule = null;" : ""}
+
+${
+  hasRoot
+    ? `
+async function loadRoot() {
+  try {
+    const mod = await import("/_modules/src/${rootRelativePath}");
+    rootModule = mod.route || mod.default;
+  } catch (err) {
+    console.error("[hmr] Failed to load root layout:", err);
+  }
+}
+`
+    : ""
+}
 
 // --- HMR WebSocket Client ---
 (function() {
@@ -244,16 +363,18 @@ let hmrUpdateId = 0;
 
       hmrUpdateId++;
       for (const mod of data.modules || []) {
-        // Stable module ID for React Refresh (no query param)
         const moduleId = "/_modules" + mod;
-        // Cache-busted URL for browser ES module cache
         const url = "/_modules" + mod + "?hmr=" + hmrUpdateId;
         console.log("[hmr] Re-importing:", url);
 
         window.__CURRENT_MODULE__ = moduleId;
         try {
           const newModule = await import(url);
-          window.__LATEST_PAGE_MODULE__ = newModule.default;
+          if (mod.includes("root.tsx") || mod === "/root.tsx") {
+            ${hasRoot ? "rootModule = newModule.route || newModule.default;" : ""}
+          } else {
+            window.__LATEST_PAGE_MODULE__ = newModule.default;
+          }
         } catch (err) {
           console.error("[hmr] Module import failed:", err);
           location.reload();
@@ -261,7 +382,6 @@ let hmrUpdateId = 0;
         }
       }
 
-      // Also update CSS since Tailwind classes might have changed
       if (data.cssUpdate) {
         handleCssUpdate();
       }
@@ -276,7 +396,6 @@ let hmrUpdateId = 0;
   }
 
   function handleCssUpdate() {
-    // Inline CSS mode - update <style> tag content
     const styleEl = document.getElementById("__elysion_css__");
     if (styleEl) {
       fetch("/__elysion/css?v=" + Date.now())
@@ -291,7 +410,6 @@ let hmrUpdateId = 0;
       return;
     }
 
-    // External CSS mode - update <link> href with cache bust
     const linkEl = document.getElementById("__elysion_css_link__");
     if (linkEl) {
       const currentHref = linkEl.getAttribute("href") || "";
@@ -301,7 +419,6 @@ let hmrUpdateId = 0;
       return;
     }
 
-    // Fallback: full reload
     console.log("[hmr] No CSS element found, reloading page");
     location.reload();
   }
@@ -310,29 +427,60 @@ let hmrUpdateId = 0;
 })();
 
 // --- Fallback re-render ---
-function reRenderCurrentPage() {
+async function reRenderCurrentPage() {
   const pageModule = window.__LATEST_PAGE_MODULE__;
   if (!pageModule) return;
 
-  const rootEl = document.getElementById("root");
-  if (!rootEl) return;
-
+  const rootEl = ${hasRoot ? "document" : "document.documentElement"};
   const dataEl = document.getElementById("__ELYSION_DATA__");
   const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 
-  const Component = pageModule.component;
-  const element = createElement(Component, loaderData);
+  const pathname = window.location.pathname;
+  const currentMatch = routes.find(r => r.regex.test(pathname));
+
+  let element = createElement(pageModule.component, loaderData);
+
+  // Apply nested route.tsx layouts
+  if (currentMatch) {
+    for (let i = currentMatch.layoutPaths.length - 1; i >= 0; i--) {
+      const layoutPath = currentMatch.layoutPaths[i];
+      try {
+        const layoutMod = await import("/_modules" + layoutPath);
+        const layoutRoute = layoutMod.route || layoutMod.default;
+        if (layoutRoute?.layout) {
+          element = createElement(layoutRoute.layout, { ...loaderData, children: element });
+        }
+      } catch (err) {
+        console.warn("[hmr] Failed to load layout:", layoutPath, err);
+      }
+    }
+  }
+
+  ${
+    hasRoot
+      ? `
+  if (rootModule?.layout) {
+    element = createElement(rootModule.layout, { ...loaderData, children: element });
+  }
+  `
+      : ""
+  }
+
+  // Inject suppressHydrationWarning to match SSR output
+  element = injectSuppressHydration(element);
 
   if (reactRoot) {
     reactRoot.unmount();
   }
-  reactRoot = createRoot(rootEl);
+  reactRoot = createRoot(${hasRoot ? "document" : "document.documentElement"});
   reactRoot.render(element);
   console.log("[hmr] Manual re-render complete (full remount)");
 }
 
 // --- Initial Hydration ---
 async function hydrate() {
+  ${hasRoot ? "await loadRoot();" : ""}
+
   const pathname = window.location.pathname;
   const match = routes.find(r => r.regex.test(pathname));
 
@@ -345,7 +493,6 @@ async function hydrate() {
   window.__CURRENT_MODULE__ = modulePath;
 
   try {
-    // Use stable URL - server returns fresh content with no-cache headers
     const mod = await import(modulePath);
     const pageModule = mod.default;
     window.__LATEST_PAGE_MODULE__ = pageModule;
@@ -355,13 +502,37 @@ async function hydrate() {
     const dataEl = document.getElementById("__ELYSION_DATA__");
     const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 
-    const rootEl = document.getElementById("root");
-    if (!rootEl) {
-      console.error("[hmr] Root element not found");
-      return;
+    const rootEl = ${hasRoot ? "document" : "document.documentElement"};
+
+    let element = createElement(Component, loaderData);
+
+    // Apply nested route.tsx layouts (innermost first, working outward)
+    for (let i = match.layoutPaths.length - 1; i >= 0; i--) {
+      const layoutPath = match.layoutPaths[i];
+      try {
+        const layoutMod = await import("/_modules" + layoutPath);
+        const layoutRoute = layoutMod.route || layoutMod.default;
+        if (layoutRoute?.layout) {
+          element = createElement(layoutRoute.layout, { ...loaderData, children: element });
+        }
+      } catch (err) {
+        console.warn("[hmr] Failed to load layout:", layoutPath, err);
+      }
     }
 
-    const element = createElement(Component, loaderData);
+    ${
+      hasRoot
+        ? `
+    if (rootModule?.layout) {
+      element = createElement(rootModule.layout, { ...loaderData, children: element });
+    }
+    `
+        : ""
+    }
+
+    // Inject suppressHydrationWarning to match SSR output
+    element = injectSuppressHydration(element);
+
     reactRoot = hydrateRoot(rootEl, element);
     console.log("[hmr] Hydrated successfully for route:", match.pattern);
   } catch (err) {
@@ -377,16 +548,10 @@ if (document.readyState === "loading") {
 `;
 }
 
-/**
- * Infer pagesDir from a page's absolute path and its route pattern.
- * e.g., pagePath="/abs/src/pages/blog/index.tsx", pattern="/blog" → "/abs/src/pages"
- */
 function findPagesDir(pagePath: string, _pattern: string): string {
-  // The pagePath contains the pagesDir as a prefix. We find it by looking for /pages/
   const pagesIdx = pagePath.lastIndexOf("/pages/");
   if (pagesIdx !== -1) {
     return pagePath.substring(0, pagesIdx + "/pages".length);
   }
-  // Fallback: use dirname of the path
   return pagePath.substring(0, pagePath.lastIndexOf("/"));
 }

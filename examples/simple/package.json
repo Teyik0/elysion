@@ -8,6 +8,7 @@
     "build": "bun run build.ts"
   },
   "dependencies": {
+    "@elysiajs/eden": "^1.4.8",
     "@tailwindcss/postcss": "^4.1.11",
     "elysia": "^1.4.23",
     "elysion": "workspace:*",

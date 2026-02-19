@@ -1,3 +1,4 @@
+import { dirname, relative, resolve } from "node:path";
 import type * as Babel from "@babel/core";
 import { transformSync } from "@babel/core";
 import type { NodePath } from "@babel/traverse";
@@ -107,7 +108,44 @@ function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj
   };
 }
 
-export function transformForReactRefresh(code: string, filename: string, moduleId: string): string {
+function rewriteRelativeImports(
+  code: string,
+  filePath: string,
+  srcDir: string,
+  pagesDir: string
+): string {
+  const fileDir = dirname(filePath);
+
+  return code.replace(
+    /^(import\b[^'"]*?from\s*)(["'])(\.\.?\/[^"']+)\2/gm,
+    (match, prefix, quote, importPath) => {
+      const absoluteImportPath = resolve(fileDir, importPath);
+
+      // Outside srcDir entirely — leave as-is
+      if (!absoluteImportPath.startsWith(srcDir)) {
+        return match;
+      }
+
+      // Within pagesDir — rewrite to /_modules/src/ URL for browser fetching
+      if (absoluteImportPath.startsWith(pagesDir)) {
+        const relativeToSrc = relative(srcDir, absoluteImportPath).replace(/\\/g, "/");
+        return `${prefix}${quote}/_modules/src/${relativeToSrc}${quote}`;
+      }
+
+      // Outside pagesDir but inside srcDir (e.g. ../../db, ../api) —
+      // strip entirely. These are server-only modules that must not reach the browser.
+      return "";
+    }
+  );
+}
+
+export function transformForReactRefresh(
+  code: string,
+  filename: string,
+  moduleId: string,
+  srcDir: string,
+  pagesDir: string
+): string {
   try {
     let extractedComponentName: string | null = null;
 
@@ -177,6 +215,10 @@ export function transformForReactRefresh(code: string, filename: string, moduleI
 
     // Strip CSS imports
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
+
+    // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
+    // can fetch them through the HMR module server
+    transformedCode = rewriteRelativeImports(transformedCode, filename, srcDir, pagesDir);
 
     // Strip import.meta.hot blocks (handles nested braces)
     transformedCode = stripImportMetaHotBlocks(transformedCode);
