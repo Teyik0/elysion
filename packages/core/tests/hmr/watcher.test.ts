@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getTransformedModule } from "../../src/hmr/watcher";
+import { getModuleVersion, getTransformedModule, invalidateModuleCache } from "../../src/hmr/watcher";
 
 // ---------------------------------------------------------------------------
 // Temp directory setup
@@ -86,5 +86,36 @@ describe("getTransformedModule — error cases", () => {
     expect(getTransformedModule("/nonexistent/file.tsx", SRC_DIR, PAGES_DIR)).rejects.toThrow(
       "File not found"
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Module version counter
+// Validates that the per-file version API used in render.tsx to avoid the
+// Date.now() memory leak works correctly.
+// ---------------------------------------------------------------------------
+describe("module version counter", () => {
+  // Use a path that is isolated from any real on-disk file.
+  const PATH_A = "/virtual/path/to/page-a.tsx";
+  const PATH_B = "/virtual/path/to/page-b.tsx";
+
+  test("returns 0 for an untracked path", () => {
+    expect(getModuleVersion("/this/path/was/never/touched.tsx")).toBe(0);
+  });
+
+  test("increments version by 1 on each invalidation", () => {
+    expect(getModuleVersion(PATH_A)).toBe(0);
+    invalidateModuleCache(PATH_A);
+    expect(getModuleVersion(PATH_A)).toBe(1);
+    invalidateModuleCache(PATH_A);
+    expect(getModuleVersion(PATH_A)).toBe(2);
+  });
+
+  test("versions are tracked independently per path", () => {
+    invalidateModuleCache(PATH_B);
+    // PATH_B was incremented once; PATH_A's count must be unaffected
+    // (PATH_A was already incremented twice above, still 2)
+    expect(getModuleVersion(PATH_A)).toBe(2);
+    expect(getModuleVersion(PATH_B)).toBe(1);
   });
 });
