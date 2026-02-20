@@ -16,8 +16,8 @@ import { getModuleVersion, getTransformedModule } from "../../src/hmr/watcher";
 function resetHmrState(): void {
   globalThis.__elysionModuleCache = new Map();
   globalThis.__elysionModuleVersions = new Map();
-  globalThis.__elysionHmrClients ??= new Set();
-  globalThis.__elysionHmrWatchers ??= [];
+  globalThis.__elysionHmrClients = new Set();
+  globalThis.__elysionHmrWatchers = [];
 }
 
 /** Write a .tsx file inside the temp pages directory and return its full path. */
@@ -166,8 +166,8 @@ describe("getTransformedModule — output content", () => {
 // getTransformedModule — error cases
 // ---------------------------------------------------------------------------
 describe("getTransformedModule — error cases", () => {
-  test("throws with a descriptive message for a missing file", async () => {
-    await expect(getTransformedModule("/nonexistent/file.tsx", SRC_DIR, PAGES_DIR)).rejects.toThrow(
+  test("throws with a descriptive message for a missing file", () => {
+    expect(getTransformedModule("/nonexistent/file.tsx", SRC_DIR, PAGES_DIR)).rejects.toThrow(
       "File not found"
     );
   });

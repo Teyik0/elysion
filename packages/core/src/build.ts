@@ -4,8 +4,8 @@ import type { ResolvedRoute } from "./router";
 import { transformForClient } from "./transform-client";
 
 export interface BuildClientOptions {
-  outDir?: string;
   dev?: boolean;
+  outDir?: string;
   rootPath?: string | null;
 }
 

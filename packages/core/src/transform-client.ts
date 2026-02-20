@@ -8,7 +8,6 @@ import {
   isMemberExpression,
   isObjectExpression,
   isObjectProperty,
-  isVariableDeclarator,
 } from "@babel/types";
 
 const presetTypescript = require.resolve("@babel/preset-typescript");
@@ -119,24 +118,6 @@ function removeServerExports(ast: t.File): boolean {
         if (isObjectExpression(arg) && removeServerProperties(arg, SERVER_ONLY_PROPERTIES)) {
           removedServerCode = true;
         }
-      }
-    },
-
-    VariableDeclarator(path) {
-      if (!isVariableDeclarator(path.node)) {
-        return;
-      }
-      const init = path.node.init;
-      if (!(init && isCallExpression(init))) {
-        return;
-      }
-      if (!isCreateRouteCall(init)) {
-        return;
-      }
-
-      const arg = init.arguments[0];
-      if (isObjectExpression(arg) && removeServerProperties(arg, SERVER_ONLY_PROPERTIES)) {
-        removedServerCode = true;
       }
     },
 

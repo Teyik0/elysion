@@ -189,14 +189,12 @@ export async function getTransformedModule(
   // Non-page files (e.g. client utilities) may import bare module specifiers
   // (like @elysiajs/eden) that the browser cannot resolve without a bundler.
   // Bundle them with Bun.build() so all dependencies are inlined as ESM.
-  if (fullPath.startsWith(pagesDir)) {
-    const source = await file.text();
-    transformed = transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
-  } else {
+  if (relative(pagesDir, fullPath).startsWith("..")) {
     const result = await Bun.build({
       entrypoints: [fullPath],
       format: "esm",
       target: "browser",
+      conditions: ["browser"],
       minify: false,
     });
 
@@ -211,6 +209,9 @@ export async function getTransformedModule(
     }
 
     transformed = await output.text();
+  } else {
+    const source = await file.text();
+    transformed = transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
   }
 
   globalThis.__elysionModuleCache.set(fullPath, {

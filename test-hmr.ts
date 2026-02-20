@@ -6,24 +6,25 @@
  */
 
 import * as fs from "node:fs";
+import { resolve } from "node:path";
 import { chromium, type Page } from "playwright";
 
-const INDEX_PATH = "/Users/teyik0/Documents/prj-tst/examples/simple/src/pages/blog/route.tsx";
+const INDEX_PATH = resolve(import.meta.dir, "examples/simple/src/pages/blog/route.tsx");
 
 // "All Posts" is a JSX text node in the blog sidebar — unique and not part of any identifier
 const ORIGINAL_TEXT = "All Posts";
 const MODIFICATIONS = ["All Posts 2", "All Posts 3", "All Posts 4", "All Posts 5"];
 
 interface Modification {
-  label: string;
-  from: string;
-  to: string;
+  consoleLogs: string[];
   contentChanged: boolean | null;
-  noFullReload: boolean | null;
+  finalText: string | null;
+  from: string;
   hmrLogFound: boolean | null;
   hydrationErrors: string[];
-  consoleLogs: string[];
-  finalText: string | null;
+  label: string;
+  noFullReload: boolean | null;
+  to: string;
 }
 
 async function sleep(ms: number): Promise<void> {

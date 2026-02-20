@@ -9,10 +9,10 @@ import { createHmrPlugin } from "./hmr/plugin";
 import { createRoutePlugin, scanPages } from "./router";
 
 export interface ElysionProps {
+  css?: CssOptions;
+  dev?: boolean;
   pagesDir?: string;
   staticOptions: StaticOptions<string>;
-  dev?: boolean;
-  css?: CssOptions;
 }
 
 declare global {

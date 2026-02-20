@@ -256,10 +256,19 @@ function removeUnusedImports(code: string): string {
 
   const codeWithoutImports = lines.filter((_, i) => !importLines.has(i)).join("\n");
 
+  // Strip comments and string literals so identifiers inside them don't
+  // count as "used" (avoids false positives that prevent import removal)
+  const strippedCode = codeWithoutImports
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
+
   const usedIdentifiers = new Set<string>();
   for (const name of allIdentifiers) {
-    const regex = new RegExp(`\\b${name}\\b`, "g");
-    const matches = codeWithoutImports.match(regex);
+    // Escape regex metacharacters in the identifier (e.g. $store, $t)
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`\\b${escapedName}\\b`, "g");
+    const matches = strippedCode.match(regex);
     if (matches && matches.length > 0) {
       usedIdentifiers.add(name);
     }

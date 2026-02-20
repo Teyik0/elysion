@@ -4,8 +4,8 @@ import type { AcceptedPlugin, Plugin } from "postcss";
 import postcss from "postcss";
 
 export interface CssOptions {
-  mode?: "inline" | "external" | "auto";
   input?: string;
+  mode?: "inline" | "external" | "auto";
 }
 
 export interface CssResult {

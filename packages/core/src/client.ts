@@ -50,8 +50,8 @@ export type MetaDescriptor =
   | { tagName: "meta" | "link"; [name: string]: string | undefined };
 
 export interface HeadOptions {
-  meta?: MetaDescriptor[];
   links?: Array<{ rel: string; href: string; [key: string]: string }>;
+  meta?: MetaDescriptor[];
   scripts?: Array<{
     src?: string;
     type?: string;
@@ -67,30 +67,30 @@ export interface PageConfig<
   TQuery,
   TPageLoaderData extends Record<string, unknown> = {},
 > {
+  component: React.FC<TParentData & TPageLoaderData & RouteContext<TParams, TQuery>>;
   head?: (ctx: RouteContext<TParams, TQuery> & TParentData & TPageLoaderData) => HeadOptions;
   loader?: (
     ctx: RouteContext<TParams, TQuery> & TParentData
   ) => Promise<TPageLoaderData> | TPageLoaderData;
-  component: React.FC<TParentData & TPageLoaderData & RouteContext<TParams, TQuery>>;
 }
 
 export interface RuntimeRoute {
   __type: "ELYSION_ROUTE";
-  mode?: "ssr" | "ssg" | "isr";
-  revalidate?: number;
-  params?: unknown;
-  query?: unknown;
-  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
   layout?: React.FC<Record<string, unknown> & { children: React.ReactNode }>;
+  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  mode?: "ssr" | "ssg" | "isr";
+  params?: unknown;
   parent?: RuntimeRoute;
+  query?: unknown;
+  revalidate?: number;
 }
 
 export interface RuntimePage {
   __type: "ELYSION_PAGE";
-  component: React.FC<Record<string, unknown>>;
-  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
-  head?(ctx: Record<string, unknown>): HeadOptions;
   _route: RuntimeRoute;
+  component: React.FC<Record<string, unknown>>;
+  head?(ctx: Record<string, unknown>): HeadOptions;
+  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
 }
 
 export interface RouteRef<
@@ -109,29 +109,29 @@ interface PageResult<
   TPageLoaderData extends Record<string, unknown>,
 > {
   __type: "ELYSION_PAGE";
-  component: React.FC<TData & TPageLoaderData & RouteContext<TParams, TQuery>>;
-  loader?(ctx: RouteContext<TParams, TQuery> & TData): Promise<TPageLoaderData> | TPageLoaderData;
-  head?(ctx: RouteContext<TParams, TQuery> & TData & TPageLoaderData): HeadOptions;
   _route: Route<TData, TParams, TQuery>;
+  component: React.FC<TData & TPageLoaderData & RouteContext<TParams, TQuery>>;
+  head?(ctx: RouteContext<TParams, TQuery> & TData & TPageLoaderData): HeadOptions;
+  loader?(ctx: RouteContext<TParams, TQuery> & TData): Promise<TPageLoaderData> | TPageLoaderData;
 }
 
 export interface Route<TParentData extends Record<string, unknown>, TParams, TQuery> {
   __type: "ELYSION_ROUTE";
-  mode?: "ssr" | "ssg" | "isr";
-  revalidate?: number;
-
-  params?: unknown;
-  query?: unknown;
-  loader?(ctx: RouteContext<TParams, TQuery> & TParentData): Promise<TParentData> | TParentData;
   layout?: React.FC<TParentData & { children: React.ReactNode } & RouteContext<TParams, TQuery>>;
-  parent?: RuntimeRoute;
-
-  /** Branded ref for type inference when used as a parent. */
-  ref: RouteRef<TParentData, TParams, TQuery>;
+  loader?(ctx: RouteContext<TParams, TQuery> & TParentData): Promise<TParentData> | TParentData;
+  mode?: "ssr" | "ssg" | "isr";
 
   page<TPageLoaderData extends Record<string, unknown> = {}>(
     config: PageConfig<TParentData, TParams, TQuery, TPageLoaderData>
   ): PageResult<TParentData, TParams, TQuery, TPageLoaderData>;
+
+  params?: unknown;
+  parent?: RuntimeRoute;
+  query?: unknown;
+
+  /** Branded ref for type inference when used as a parent. */
+  ref: RouteRef<TParentData, TParams, TQuery>;
+  revalidate?: number;
 }
 
 export function createRoute<

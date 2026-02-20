@@ -8,14 +8,14 @@ import { handleISR, prerenderSSG, renderSSR } from "./render";
 import { collectRouteChain, isElysionPage, isElysionRoute } from "./utils";
 
 export interface ResolvedRoute {
-  pattern: string;
-  path: string;
+  isrCache?: { html: string; generatedAt: number; revalidate: number };
+  mode: "ssr" | "ssg" | "isr";
   page?: RuntimePage;
   pagePath: string;
+  path: string;
+  pattern: string;
   routeChain: RuntimeRoute[];
   routeFilePaths: (string | undefined)[];
-  mode: "ssr" | "ssg" | "isr";
-  isrCache?: { html: string; generatedAt: number; revalidate: number };
   ssgHtml?: string;
 }
 

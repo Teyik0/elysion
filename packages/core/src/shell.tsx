@@ -38,8 +38,8 @@ function renderAttrs(obj: Record<string, string | undefined>): string {
 }
 
 export interface CssContext {
-  mode: "inline" | "external";
   code?: string;
+  mode: "inline" | "external";
 }
 
 export function buildHeadInjection(
