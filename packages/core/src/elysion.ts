@@ -15,11 +15,6 @@ export interface ElysionProps {
   staticOptions: StaticOptions<string>;
 }
 
-declare global {
-  var __elysionClientBuilt: boolean;
-  var __elysionDev: boolean;
-}
-
 async function buildExternalCss(cwd: string): Promise<void> {
   const result = await getCachedCss(cwd);
   if (!result || result.mode !== "external") {
@@ -45,7 +40,6 @@ export async function elysion({
 
   // Store CSS config (lightweight, survives bun --hot)
   setCssConfig(css, dev);
-  globalThis.__elysionDev = dev;
 
   // Log CSS mode
   if (css?.input) {
@@ -70,15 +64,15 @@ export async function elysion({
   }
 
   const clientBundlePath = resolve(cwd, ".elysion", "client", "_hydrate.js");
-  const shouldBuildClient = !(
-    dev &&
-    globalThis.__elysionClientBuilt &&
-    existsSync(clientBundlePath)
-  );
+  // import.meta.hot.data persists across hot reloads, so we only rebuild once per dev session.
+  const clientAlreadyBuilt = import.meta.hot?.data.clientBuilt ?? false;
+  const shouldBuildClient = !(dev && clientAlreadyBuilt && existsSync(clientBundlePath));
 
   if (shouldBuildClient) {
     await buildClient(routes, { dev, rootPath: root?.path ?? null });
-    globalThis.__elysionClientBuilt = true;
+    if (import.meta.hot) {
+      import.meta.hot.data.clientBuilt = true;
+    }
   } else {
     console.log("[elysion] Using existing client bundle (HMR mode)");
   }

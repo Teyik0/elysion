@@ -3,18 +3,12 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import type { RuntimeRoute } from "./client";
 import { getCachedCss } from "./css";
-import { getModuleVersion } from "./hmr/watcher.js";
 import type { ResolvedRoute, RootLayout } from "./router";
 import { buildBodyInjection, buildHeadInjection, postProcessHTML } from "./shell";
 
 const isrCache = new Map<string, { html: string; generatedAt: number; revalidate: number }>();
 
 const ssgCache = new Map<string, string>();
-
-declare global {
-  var __elysionPageCache: Map<string, { page: unknown; timestamp: number }>;
-  var __elysionRootCache: { root: RootLayout | null; timestamp: number } | null;
-}
 
 async function streamToString(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
@@ -42,8 +36,7 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
 
   if (dev) {
     try {
-      const version = getModuleVersion(route.pagePath);
-      const mod = await import(`${route.pagePath}?v=${version}`);
+      const mod = await import(`${route.pagePath}?v=${Date.now()}`);
       const page = mod.default;
       route.page = page;
       return page;
@@ -135,8 +128,7 @@ async function buildElement(
     // reflects the latest file content (avoids SSR/client hydration mismatches).
     if (dev && filePath) {
       try {
-        const version = getModuleVersion(filePath);
-        const freshMod = await import(`${filePath}?v=${version}`);
+        const freshMod = await import(`${filePath}?v=${Date.now()}`);
         const freshRoute = freshMod.route ?? freshMod.default;
         if (freshRoute) {
           routeEntry = freshRoute;
