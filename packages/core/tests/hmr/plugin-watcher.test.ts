@@ -205,7 +205,11 @@ describe("HMR plugin — broadcast path reflects pagesDir basename (V3 fix)", ()
     });
 
     expect(messages.length).toBe(1);
-    const msg = messages[0] as { type: string; path: string; modules: string[] };
+    const msg = messages[0] as {
+      type: string;
+      path: string;
+      modules: string[];
+    };
     expect(msg.type).toBe("update");
     // Path must use "routes", NOT the previously-hardcoded "pages".
     expect(msg.path).toContain("/src/routes/");

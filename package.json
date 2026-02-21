@@ -8,8 +8,8 @@
   "scripts": {
     "prepare": "lefthook install",
     "fix": "ultracite fix",
-    "test": "bun run --parallel --filter './packages/*' test",
-    "test:types": "tsc --build --noEmit",
+    "test": "bun run --parallel --filter '*' test",
+    "test:types": "bun run --parallel --filter '*' test:types",
     "cache:clean": "rm -rf node_modules examples/*/node_modules packages/*/node_modules && bun pm cache rm",
     "iup": "bun update --interactive --recursive"
   },

@@ -5,8 +5,8 @@ pre-commit:
       run: bun run fix
       stage_fixed: true
 
-    - name: typescript check (monorepo)
-      run: bun run tsc
+    - name: typescript check
+      run: bun run test:types
       stage_fixed: true
 
 pre-push:

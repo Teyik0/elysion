@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
+    "test:types": "tsc --noEmit",
     "build": "bun build src/elysion.ts --outdir dist --target bun",
     "dev": "bun run --watch example/src/server.ts"
   },
