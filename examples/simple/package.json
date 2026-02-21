@@ -5,12 +5,13 @@
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "NODE_ENV=production bun src/index.ts",
-    "build": "bun run build.ts"
+    "build": "bun run build.ts",
+    "test:e2e": "bun run ./tests/hmr.ts"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
     "@tailwindcss/postcss": "^4.1.11",
-    "elysia": "^1.4.23",
+    "elysia": "^1.4.25",
     "elysion": "workspace:*",
     "react": "^19",
     "react-dom": "^19",

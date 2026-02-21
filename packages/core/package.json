@@ -13,16 +13,17 @@
   },
   "dependencies": {
     "@babel/core": "^7.26.0",
+    "@babel/generator": "^7.29.1",
     "@babel/preset-react": "^7.26.0",
     "@babel/preset-typescript": "^7.26.0",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
     "@elysiajs/static": "^1.4.7",
     "postcss": "^8.5.3",
-    "react-refresh": "^0.14.2"
+    "react-refresh": "^0.18.0"
   },
   "peerDependencies": {
-    "elysia": "^1.4.23",
+    "elysia": "^1.4.25",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

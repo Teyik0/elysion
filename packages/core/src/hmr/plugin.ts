@@ -1,15 +1,160 @@
-import { dirname, resolve } from "node:path";
+import { watch } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { Elysia, t } from "elysia";
 import { getCachedCss, getCssConfig, invalidateCssCache } from "../css";
 import { REFRESH_SETUP_CODE } from "./refresh-setup";
-import { getHmrClients, getTransformedModule, setupHmrWatcher } from "./watcher";
+import {
+  broadcastMessage,
+  getHmrClients,
+  getTransformedModule,
+  invalidateModuleCache,
+} from "./watcher";
+
+// ─── Module-level watcher state ──────────────────────────────────────────────
+// Watchers are owned at module scope so import.meta.hot.dispose() can tear
+// them down cleanly before a hot reload re-establishes them.
+
+let _pagesWatcher: ReturnType<typeof watch> | null = null;
+let _cssWatcher: ReturnType<typeof watch> | null = null;
+
+// Config is persisted across hot reloads so watchers can be restarted
+// automatically when this module itself is hot-replaced.
+let _pagesDir: string | null = (import.meta.hot.data.pagesDir ??= null);
+let _cssInputPath: string | undefined = import.meta.hot.data.cssInputPath;
+
+function stopWatchers(): void {
+  _pagesWatcher?.close();
+  _pagesWatcher = null;
+  _cssWatcher?.close();
+  _cssWatcher = null;
+}
+
+function startWatchers(pagesDir: string, cssInputPath?: string): void {
+  stopWatchers();
+
+  // Trailing-edge debounce timers: process the change only after the file
+  // has stopped producing events (i.e., the write is complete).
+  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // The basename of pagesDir relative to srcDir (e.g. "pages", "routes").
+  // Used to build module URLs that match the /_modules/src/* route.
+  const pagesDirName = basename(pagesDir);
+
+  _pagesWatcher = watch(pagesDir, { recursive: true }, (event, filename) => {
+    if (!filename) {
+      return;
+    }
+    // V1 fix: also handle .js and .jsx files
+    if (
+      !(
+        filename.endsWith(".tsx") ||
+        filename.endsWith(".ts") ||
+        filename.endsWith(".jsx") ||
+        filename.endsWith(".js")
+      )
+    ) {
+      return;
+    }
+
+    // V2 fix: trailing-edge debounce — cancel any pending timer for this
+    // file and reschedule so we only act after the write settles.
+    const existing = pendingTimers.get(filename);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    pendingTimers.set(
+      filename,
+      setTimeout(() => {
+        pendingTimers.delete(filename);
+
+        console.log(`[hmr] File ${event}: ${filename}`);
+
+        // Invalidate the per-file module version so the next SSR request
+        // imports the new file content instead of the stale cached module.
+        const absoluteFilePath = resolve(pagesDir, filename);
+        invalidateModuleCache(absoluteFilePath);
+
+        // Invalidate CSS cache since Tailwind classes might have changed
+        const cssConfig = getCssConfig();
+        if (cssConfig) {
+          invalidateCssCache(resolve(process.cwd(), cssConfig.input));
+        }
+
+        // V3 fix: derive the module path from pagesDir rather than
+        // hardcoding "/src/pages/". The /_modules/src/* route strips
+        // "/_modules/src/" and resolves against srcDir = dirname(pagesDir),
+        // so we only need the basename of pagesDir as the prefix.
+        const normalizedFilename = filename.replace(/\\/g, "/");
+        const modulePath = `/src/${pagesDirName}/${normalizedFilename}`;
+
+        broadcastMessage(
+          JSON.stringify({
+            type: "update",
+            path: modulePath,
+            modules: [modulePath],
+            cssUpdate: true,
+          })
+        );
+
+        console.log(`[hmr] Broadcast update to ${getHmrClients().size} client(s)`);
+      }, 50)
+    );
+  });
+
+  console.log("[hmr] File watcher started for pages");
+
+  if (cssInputPath) {
+    const absoluteCssPath = resolve(process.cwd(), cssInputPath);
+    const cssDir = dirname(absoluteCssPath);
+
+    _cssWatcher = watch(cssDir, { recursive: true }, (event, filename) => {
+      if (!filename) {
+        return;
+      }
+
+      const changedPath = resolve(cssDir, filename);
+      if (changedPath !== absoluteCssPath && !filename.endsWith(".css")) {
+        return;
+      }
+
+      // Trailing-edge debounce for CSS writes too
+      const existing = pendingTimers.get(filename);
+      if (existing) {
+        clearTimeout(existing);
+      }
+
+      pendingTimers.set(
+        filename,
+        setTimeout(() => {
+          pendingTimers.delete(filename);
+          console.log(`[hmr] CSS file ${event}: ${filename}`);
+          invalidateCssCache(absoluteCssPath);
+          broadcastMessage(JSON.stringify({ type: "css-update", path: filename }));
+          console.log(`[hmr] Broadcast css-update to ${getHmrClients().size} client(s)`);
+        }, 50)
+      );
+    });
+
+    console.log("[hmr] CSS watcher started");
+  }
+}
+
+// Restart watchers automatically when this module is hot-reloaded
+if (_pagesDir) {
+  startWatchers(_pagesDir, _cssInputPath);
+}
 
 export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
-  setupHmrWatcher(pagesDir, cssInputPath);
+  // Persist config so it survives a hot reload of this module
+  _pagesDir = pagesDir;
+  _cssInputPath = cssInputPath;
+
+  startWatchers(pagesDir, cssInputPath);
 
   const srcDir = dirname(pagesDir);
 
-  const hmrPlugin = new Elysia({ name: "elysion-hmr" })
+  return new Elysia({ name: "elysion-hmr" })
     .ws("/__elysion/hmr", {
       body: t.Any(),
       open(ws) {
@@ -36,11 +181,6 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
 
       if (!fullPath.startsWith(srcDir)) {
         return status("Forbidden", `File does not exist at: ${fullPath}`);
-      }
-
-      // Block access to server-only modules outside pagesDir
-      if (!fullPath.startsWith(pagesDir)) {
-        return status("Forbidden", "Server-only module not accessible from browser");
       }
 
       // Try with extensions if file doesn't exist
@@ -77,7 +217,6 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
       set.headers["cache-control"] = "no-cache";
 
       try {
-        // Invalidate cache to ensure fresh CSS
         const absolutePath = resolve(process.cwd(), config.input);
         invalidateCssCache(absolutePath);
 
@@ -88,6 +227,13 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
         return status("Internal Server Error", `CSS Error: ${error}`);
       }
     });
-
-  return hmrPlugin;
 }
+
+// ─── HMR lifecycle ────────────────────────────────────────────────────────────
+// Stop file watchers before this module is replaced; persist config so the
+// incoming version can restart them without being called by elysion() again.
+import.meta.hot.dispose((data) => {
+  data.pagesDir = _pagesDir;
+  data.cssInputPath = _cssInputPath;
+  stopWatchers();
+});

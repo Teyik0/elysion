@@ -1,32 +1,32 @@
 import { Database } from "bun:sqlite";
 
 export interface User {
-  id: string;
+  avatar?: string;
   email: string;
+  id: string;
   name: string;
   role: "user" | "admin";
-  avatar?: string;
 }
 
 export interface Post {
-  id: string;
-  slug: string;
-  title: string;
-  excerpt: string;
-  content: string;
-  tags: string;
   authorId: string;
-  published: number;
+  content: string;
   createdAt: string;
+  excerpt: string;
+  id: string;
+  published: number;
+  slug: string;
+  tags: string;
+  title: string;
   updatedAt: string;
 }
 
 export interface Comment {
-  id: string;
-  postId: string;
   author: string;
   content: string;
   createdAt: string;
+  id: string;
+  postId: string;
 }
 
 const db = new Database(":memory:");

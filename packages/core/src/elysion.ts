@@ -9,15 +9,10 @@ import { createHmrPlugin } from "./hmr/plugin";
 import { createRoutePlugin, scanPages } from "./router";
 
 export interface ElysionProps {
+  css?: CssOptions;
+  dev?: boolean;
   pagesDir?: string;
   staticOptions: StaticOptions<string>;
-  dev?: boolean;
-  css?: CssOptions;
-}
-
-declare global {
-  var __elysionClientBuilt: boolean;
-  var __elysionDev: boolean;
 }
 
 async function buildExternalCss(cwd: string): Promise<void> {
@@ -45,7 +40,6 @@ export async function elysion({
 
   // Store CSS config (lightweight, survives bun --hot)
   setCssConfig(css, dev);
-  globalThis.__elysionDev = dev;
 
   // Log CSS mode
   if (css?.input) {
@@ -70,15 +64,16 @@ export async function elysion({
   }
 
   const clientBundlePath = resolve(cwd, ".elysion", "client", "_hydrate.js");
-  const shouldBuildClient = !(
-    dev &&
-    globalThis.__elysionClientBuilt &&
-    existsSync(clientBundlePath)
-  );
+  // In dev mode, skip the rebuild if the bundle already exists on disk.
+  // elysion() is re-called on every bun --hot reload (whenever a watched file
+  // changes), but the dev bundle is route-agnostic: page modules are served
+  // individually at /_modules/src/*. Rebuilding on every hot reload triggers
+  // "Unseekable file" errors because React lives in Bun's .bun/ local cache,
+  // which Bun.build() cannot seek through after the initial build.
+  const shouldBuildClient = dev ? !existsSync(clientBundlePath) : true;
 
   if (shouldBuildClient) {
     await buildClient(routes, { dev, rootPath: root?.path ?? null });
-    globalThis.__elysionClientBuilt = true;
   } else {
     console.log("[elysion] Using existing client bundle (HMR mode)");
   }
@@ -119,4 +114,4 @@ export async function elysion({
   return routePlugins.reduce((app, plugin) => app.use(plugin), appWithHmr);
 }
 
-import.meta.hot?.accept();
+import.meta.hot.accept();

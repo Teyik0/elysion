@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ResolvedRoute } from "./router";
+import { transformForClient } from "./transform-client";
 
 export interface BuildClientOptions {
-  outDir?: string;
   dev?: boolean;
+  outDir?: string;
   rootPath?: string | null;
 }
+
+const TS_FILE_FILTER = /\.(tsx|ts)$/;
 
 export async function buildClient(
   routes: ResolvedRoute[],
@@ -31,6 +34,32 @@ export async function buildClient(
 
   console.log(`[elysion] Building client bundle (${dev ? "dev" : "production"})...`);
 
+  const transformPlugin: Bun.BunPlugin = {
+    name: "elysion-transform-client",
+    setup(build) {
+      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+        const path = args.path;
+        if (path.includes("node_modules")) {
+          return undefined;
+        }
+
+        const file = Bun.file(path);
+        const code = await file.text();
+
+        try {
+          const result = transformForClient(code, path);
+          return {
+            contents: result.code,
+            loader: path.endsWith(".tsx") ? "tsx" : "ts",
+          };
+        } catch (error) {
+          console.error(`[elysion] Transform error for ${path}:`, error);
+          return undefined;
+        }
+      });
+    },
+  };
+
   const result = await Bun.build({
     entrypoints: [hydratePath],
     outdir: clientDir,
@@ -39,6 +68,7 @@ export async function buildClient(
     splitting: !dev,
     minify: !dev,
     naming: "[name].[ext]",
+    plugins: dev ? [] : [transformPlugin],
     define: {
       "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
     },
@@ -178,117 +208,50 @@ if (match) {
 `;
 }
 
-function generateDevHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
-  const routeEntries: string[] = [];
-  const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
+// ---------------------------------------------------------------------------
+// Dev hydrate entry helpers — keep each helper under complexity budget
+// ---------------------------------------------------------------------------
 
-  for (const route of routes) {
+function buildDevRouteEntries(
+  routes: ResolvedRoute[],
+  normalizedRootPath: string | null
+): string[] {
+  return routes.map((route) => {
     const pagesDir = findPagesDir(route.pagePath, route.pattern);
     const srcDir = join(pagesDir, "..");
     const relativeToSrc = relative(srcDir, route.pagePath).replace(/\\/g, "/");
     const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
 
-    // Collect nested route.tsx layout module paths (excluding root)
-    const layoutPaths: string[] = [];
-    for (let j = 0; j < route.routeChain.length; j++) {
-      const ancestor = route.routeChain[j];
-      const filePath = route.routeFilePaths[j];
-      if (ancestor?.layout && filePath) {
-        const normalizedPath = filePath.replace(/\\/g, "/");
-        if (normalizedPath === normalizedRootPath) {
-          continue;
-        }
-        const relPath = relative(srcDir, filePath).replace(/\\/g, "/");
-        layoutPaths.push(`/src/${relPath}`);
-      }
-    }
-
+    const layoutPaths = buildLayoutPaths(route, srcDir, normalizedRootPath);
     const layoutPathsJson = JSON.stringify(layoutPaths);
-    routeEntries.push(
-      `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/src/${relativeToSrc}", layoutPaths: ${layoutPathsJson} }`
-    );
-  }
 
-  const clientModulePath = new URL("./client.ts", import.meta.url).pathname;
-  const refreshRuntimePath = require.resolve("react-refresh/runtime");
-
-  const hasRoot = rootPath !== null;
-  const rootRelativePath =
-    hasRoot && routes[0]
-      ? (() => {
-          const pagesDir = findPagesDir(routes[0].pagePath, routes[0].pattern);
-          const srcDir = join(pagesDir, "..");
-          return relative(srcDir, rootPath).replace(/\\/g, "/");
-        })()
-      : null;
-
-  return `import React from "react";
-import { createElement } from "react";
-import { createRoot, hydrateRoot } from "react-dom/client";
-import * as RefreshRuntime from "${refreshRuntimePath}";
-import { createRoute } from "${clientModulePath}";
-
-// Expose globals for transformed page modules
-window.React = React;
-window.__ELYSION__ = { createRoute };
-window.__REFRESH_RUNTIME__ = RefreshRuntime;
-
-// Initialize React Refresh
-RefreshRuntime.injectIntoGlobalHook(window);
-
-window.$RefreshReg$ = (type, id) => {
-  const fullId = window.__CURRENT_MODULE__ + " " + id;
-  RefreshRuntime.register(type, fullId);
-};
-window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
-
-console.log("[hmr] React Refresh initialized");
-
-// Inject suppressHydrationWarning to match SSR output
-function injectSuppressHydration(element) {
-  if (!element || typeof element !== 'object') return element;
-
-  const type = element.type;
-  const props = element.props || {};
-
-  if (type === 'html' || type === 'head' || type === 'body') {
-    const newProps = { ...props, suppressHydrationWarning: true };
-    if (props.children) {
-      newProps.children = Array.isArray(props.children)
-        ? props.children.map(injectSuppressHydration)
-        : injectSuppressHydration(props.children);
-    }
-    return Object.assign({}, element, { props: newProps });
-  }
-
-  if (props.children) {
-    const newProps = { ...props };
-    newProps.children = Array.isArray(props.children)
-      ? props.children.map(injectSuppressHydration)
-      : injectSuppressHydration(props.children);
-    return Object.assign({}, element, { props: newProps });
-  }
-
-  return element;
+    return `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/src/${relativeToSrc}", layoutPaths: ${layoutPathsJson} }`;
+  });
 }
 
-// Route map (generated at build time)
-const routes = [
-${routeEntries.join(",\n")}
-];
+function buildLayoutPaths(
+  route: ResolvedRoute,
+  srcDir: string,
+  normalizedRootPath: string | null
+): string[] {
+  const layoutPaths: string[] = [];
+  for (let j = 0; j < route.routeChain.length; j++) {
+    const ancestor = route.routeChain[j];
+    const filePath = route.routeFilePaths[j];
+    if (ancestor?.layout && filePath) {
+      const normalizedPath = filePath.replace(/\\/g, "/");
+      if (normalizedPath === normalizedRootPath) {
+        continue;
+      }
+      const relPath = relative(srcDir, filePath).replace(/\\/g, "/");
+      layoutPaths.push(`/src/${relPath}`);
+    }
+  }
+  return layoutPaths;
+}
 
-// Global state
-let reactRoot = null;
-let isHydrationRoot = false;
-let hmrUpdateId = 0;
-// Cache of imported layout modules keyed by stable moduleId (no ?hmr= query).
-// Populated during initial hydration; updated via handleMessage() when layouts change.
-const layoutModuleCache = new Map();
-${hasRoot ? "let rootModule = null;" : ""}
-
-${
-  hasRoot
-    ? `
+function buildLoadRootBlock(rootRelativePath: string): string {
+  return `
 async function loadRoot() {
   try {
     const mod = await import("/_modules/src/${rootRelativePath}");
@@ -297,10 +260,11 @@ async function loadRoot() {
     console.error("[hmr] Failed to load root layout:", err);
   }
 }
-`
-    : ""
+`;
 }
 
+function buildHmrClientBlock(): string {
+  return `
 // --- HMR WebSocket Client ---
 (function() {
   let ws = null;
@@ -375,7 +339,7 @@ async function loadRoot() {
         try {
           const newModule = await import(url);
           if (mod.includes("root.tsx") || mod === "/root.tsx") {
-            ${hasRoot ? "rootModule = newModule.route || newModule.default;" : ""}
+            ROOTMODULE_UPDATE
           } else if (mod.endsWith("route.tsx") || mod.endsWith("route.ts")) {
             // Nested layout route changed — update the layout module cache
             layoutModuleCache.set(moduleId, newModule);
@@ -432,6 +396,96 @@ async function loadRoot() {
 
   connect();
 })();
+`;
+}
+
+function generateDevHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
+  const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
+  const routeEntries = buildDevRouteEntries(routes, normalizedRootPath);
+
+  const clientModulePath = new URL("./client.ts", import.meta.url).pathname;
+  const refreshRuntimePath = require.resolve("react-refresh/runtime");
+
+  const hasRoot = rootPath !== null;
+  const rootRelativePath =
+    hasRoot && routes[0]
+      ? (() => {
+          const pagesDir = findPagesDir(routes[0].pagePath, routes[0].pattern);
+          const srcDir = join(pagesDir, "..");
+          return relative(srcDir, rootPath).replace(/\\/g, "/");
+        })()
+      : null;
+
+  const rootModuleUpdate = hasRoot ? "rootModule = newModule.route || newModule.default;" : "";
+  const hmrClientBlock = buildHmrClientBlock().replace("ROOTMODULE_UPDATE", rootModuleUpdate);
+
+  return `import React from "react";
+import { createElement } from "react";
+import { createRoot, hydrateRoot } from "react-dom/client";
+import * as RefreshRuntime from "${refreshRuntimePath}";
+import { createRoute } from "${clientModulePath}";
+
+// Expose globals for transformed page modules
+window.React = React;
+window.__ELYSION__ = { createRoute };
+window.__REFRESH_RUNTIME__ = RefreshRuntime;
+
+// Initialize React Refresh
+RefreshRuntime.injectIntoGlobalHook(window);
+
+window.$RefreshReg$ = (type, id) => {
+  const fullId = window.__CURRENT_MODULE__ + " " + id;
+  RefreshRuntime.register(type, fullId);
+};
+window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+
+console.log("[hmr] React Refresh initialized");
+
+// Inject suppressHydrationWarning to match SSR output
+function injectSuppressHydration(element) {
+  if (!element || typeof element !== 'object') return element;
+
+  const type = element.type;
+  const props = element.props || {};
+
+  if (type === 'html' || type === 'head' || type === 'body') {
+    const newProps = { ...props, suppressHydrationWarning: true };
+    if (props.children) {
+      newProps.children = Array.isArray(props.children)
+        ? props.children.map(injectSuppressHydration)
+        : injectSuppressHydration(props.children);
+    }
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  if (props.children) {
+    const newProps = { ...props };
+    newProps.children = Array.isArray(props.children)
+      ? props.children.map(injectSuppressHydration)
+      : injectSuppressHydration(props.children);
+    return Object.assign({}, element, { props: newProps });
+  }
+
+  return element;
+}
+
+// Route map (generated at build time)
+const routes = [
+${routeEntries.join(",\n")}
+];
+
+// Global state
+let reactRoot = null;
+let isHydrationRoot = false;
+let hmrUpdateId = 0;
+// Cache of imported layout modules keyed by stable moduleId (no ?hmr= query).
+// Populated during initial hydration; updated via handleMessage() when layouts change.
+const layoutModuleCache = new Map();
+${hasRoot ? "let rootModule = null;" : ""}
+
+${hasRoot && rootRelativePath ? buildLoadRootBlock(rootRelativePath) : ""}
+
+${hmrClientBlock}
 
 // --- Fallback re-render ---
 async function reRenderCurrentPage() {

@@ -10,21 +10,71 @@ import {
   isCallExpression,
   isFunctionExpression,
   isIdentifier,
+  isMemberExpression,
   isObjectExpression,
   isObjectProperty,
   isProgram,
   returnStatement,
 } from "@babel/types";
 
-const presetTypescript = require.resolve("@babel/preset-typescript");
-const presetReact = require.resolve("@babel/preset-react");
 const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
 
-function isPageCallExpression(decl: Babel.types.Node): decl is Babel.types.CallExpression {
-  if (!isCallExpression(decl)) {
-    return false;
+// ---------------------------------------------------------------------------
+// Bun.Transpiler singleton — reused across calls (cheaper than recreating).
+// Handles TypeScript stripping + JSX → React.createElement in one native pass,
+// replacing @babel/preset-typescript + @babel/preset-react entirely.
+// trimUnusedImports removes type-only and structurally dead imports via the
+// native Bun parser (no regex needed).
+// ---------------------------------------------------------------------------
+// The project tsconfig uses "jsx": "react-jsx" (automatic runtime), which
+// makes Bun.Transpiler emit jsxDEV / jsx calls from react/jsx-dev-runtime.
+// Those imports are then stripped by our server-import regex, leaving
+// undefined references at runtime. Override via the tsconfig option to force
+// the classic transform (React.createElement) that the HMR globals provide.
+const bunTranspiler = new Bun.Transpiler({
+  loader: "tsx",
+  trimUnusedImports: true,
+  tsconfig: {
+    compilerOptions: {
+      jsx: "react",
+      jsxFactory: "React.createElement",
+      jsxFragmentFactory: "React.Fragment",
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
+// ---------------------------------------------------------------------------
+const RELATIVE_IMPORT_RE = /^(import\b[^'"]*?from\s*)(["'])(\.\.?\/[^"']+)\2/gm;
+const IMPORT_META_HOT_RE = /if\s*\(import\.meta\.hot\)\s*\{/g;
+
+// ---------------------------------------------------------------------------
+// Babel AST helpers
+// ---------------------------------------------------------------------------
+
+function findObjectProperty(
+  obj: Babel.types.ObjectExpression,
+  name: string
+): Babel.types.ObjectProperty | undefined {
+  return obj.properties.find(
+    (p): p is Babel.types.ObjectProperty => isObjectProperty(p) && isIdentifier(p.key, { name })
+  );
+}
+
+function removeServerProperties(obj: Babel.types.ObjectExpression, properties: string[]): boolean {
+  let removed = false;
+  for (const name of properties) {
+    const prop = findObjectProperty(obj, name);
+    if (prop) {
+      const idx = obj.properties.indexOf(prop);
+      if (idx !== -1) {
+        obj.properties.splice(idx, 1);
+        removed = true;
+      }
+    }
   }
-  return isIdentifier(decl.callee, { name: "page" });
+  return removed;
 }
 
 function findComponentProperty(arg: Babel.types.Expression): Babel.types.ObjectProperty | null {
@@ -65,6 +115,47 @@ function insertFunctionBeforeExport(
   path.insertBefore(fn);
 }
 
+const SERVER_ONLY_PROPERTIES = ["loader"];
+
+// ---------------------------------------------------------------------------
+// Component extraction from page() calls
+// ---------------------------------------------------------------------------
+
+function handlePageCallExtraction(
+  path: NodePath<Babel.types.ExportDefaultDeclaration>,
+  arg: Babel.types.Expression,
+  onExtract: (name: string) => void
+): void {
+  if (!isObjectExpression(arg)) {
+    return;
+  }
+
+  removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+
+  const componentProp = findComponentProperty(arg);
+  if (!componentProp) {
+    return;
+  }
+
+  const componentValue = componentProp.value;
+  if (!shouldExtractComponent(componentValue)) {
+    return;
+  }
+
+  const extractedName = path.scope.generateUidIdentifier("ElysionPage");
+  onExtract(extractedName.name);
+
+  if (isArrowFunctionExpression(componentValue) || isFunctionExpression(componentValue)) {
+    const namedFunction = createNamedFunctionFromArrow(
+      componentValue.params,
+      componentValue.body,
+      extractedName
+    );
+    componentProp.value = extractedName;
+    insertFunctionBeforeExport(path, namedFunction);
+  }
+}
+
 function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj {
   return {
     name: "extract-page-component",
@@ -72,72 +163,84 @@ function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj
       ExportDefaultDeclaration(path) {
         const decl = path.node.declaration;
 
-        if (!isPageCallExpression(decl)) {
+        if (!isCallExpression(decl)) {
           return;
         }
 
         const arg = decl.arguments[0];
-        if (!isObjectExpression(arg)) {
+        const callee = decl.callee;
+
+        if (isIdentifier(callee, { name: "page" })) {
+          handlePageCallExtraction(path, arg as Babel.types.Expression, onExtract);
           return;
         }
 
-        const componentProp = findComponentProperty(arg);
-        if (!componentProp) {
+        if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
           return;
         }
 
-        const componentValue = componentProp.value;
-        if (!shouldExtractComponent(componentValue)) {
+        if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
+          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+        }
+      },
+
+      CallExpression(path) {
+        const node = path.node;
+        const parent = path.parent;
+
+        if (parent?.type === "ExportDefaultDeclaration") {
           return;
         }
 
-        const extractedName = path.scope.generateUidIdentifier("ElysionPage");
-        onExtract(extractedName.name);
+        const callee = node.callee;
+        const arg = node.arguments[0];
 
-        if (isArrowFunctionExpression(componentValue) || isFunctionExpression(componentValue)) {
-          const namedFunction = createNamedFunctionFromArrow(
-            componentValue.params,
-            componentValue.body,
-            extractedName
-          );
-          componentProp.value = extractedName;
-          insertFunctionBeforeExport(path, namedFunction);
+        if (isIdentifier(callee, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
+        } else if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
+        } else if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
+          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
         }
       },
     },
   };
 }
 
+// ---------------------------------------------------------------------------
+// Relative import rewriting
+// ---------------------------------------------------------------------------
+
 function rewriteRelativeImports(
   code: string,
   filePath: string,
   srcDir: string,
-  pagesDir: string
+  _pagesDir: string
 ): string {
   const fileDir = dirname(filePath);
 
-  return code.replace(
-    /^(import\b[^'"]*?from\s*)(["'])(\.\.?\/[^"']+)\2/gm,
-    (match, prefix, quote, importPath) => {
-      const absoluteImportPath = resolve(fileDir, importPath);
+  return code.replace(RELATIVE_IMPORT_RE, (match, prefix, quote, importPath) => {
+    const absoluteImportPath = resolve(fileDir, importPath);
 
-      // Outside srcDir entirely — leave as-is
-      if (!absoluteImportPath.startsWith(srcDir)) {
-        return match;
-      }
-
-      // Within pagesDir — rewrite to /_modules/src/ URL for browser fetching
-      if (absoluteImportPath.startsWith(pagesDir)) {
-        const relativeToSrc = relative(srcDir, absoluteImportPath).replace(/\\/g, "/");
-        return `${prefix}${quote}/_modules/src/${relativeToSrc}${quote}`;
-      }
-
-      // Outside pagesDir but inside srcDir (e.g. ../../db, ../api) —
-      // strip entirely. These are server-only modules that must not reach the browser.
-      return "";
+    if (!absoluteImportPath.startsWith(srcDir)) {
+      return match;
     }
-  );
+
+    const relativeToSrc = relative(srcDir, absoluteImportPath).replace(/\\/g, "/");
+    return `${prefix}${quote}/_modules/src/${relativeToSrc}${quote}`;
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Main transform entry point
+// ---------------------------------------------------------------------------
 
 export function transformForReactRefresh(
   code: string,
@@ -149,10 +252,18 @@ export function transformForReactRefresh(
   try {
     let extractedComponentName: string | null = null;
 
-    // Pass 1: Extract component from page() call
-    const extractResult = transformSync(code, {
+    // Pass 1 — Bun.Transpiler: TypeScript + JSX → plain JS (native, ~10-50× faster
+    // than Babel preset-typescript + preset-react). trimUnusedImports removes
+    // type-only and structurally-dead imports at parse time.
+    const plainJs = bunTranspiler.transformSync(code);
+
+    // Pass 2 — Babel (extraction only): strip server-only properties and lift
+    // the inline arrow component into a named function declaration.
+    // This must be a separate pass from react-refresh so that the newly inserted
+    // _ElysionPage function declaration is visible in the AST when Pass 3 runs.
+    // (Babel does not re-traverse nodes inserted during the current traversal.)
+    const extractResult = transformSync(plainJs, {
       filename,
-      presets: [[presetTypescript, { isTSX: true, allExtensions: true }]],
       plugins: [
         createExtractPlugin((name) => {
           extractedComponentName = name;
@@ -165,16 +276,17 @@ export function transformForReactRefresh(
       throw new Error("Extract transform failed");
     }
 
-    // Pass 2: Transform JSX and add React Refresh (TypeScript already stripped in Pass 1)
+    // Pass 3 — Babel (React Refresh only): instrument all visible function
+    // components, including the _ElysionPage extracted in Pass 2.
+    // No presets required — TS and JSX are already plain JS from Pass 1.
     const result = transformSync(extractResult.code, {
       filename,
-      presets: [[presetReact, { runtime: "classic" }]],
       plugins: [[reactRefreshBabelPlugin, { skipEnvCheck: true }]],
       sourceMaps: "inline",
     });
 
     if (!result?.code) {
-      throw new Error("JSX transform failed");
+      throw new Error("React Refresh transform failed");
     }
 
     let transformedCode = result.code;
@@ -187,7 +299,10 @@ export function transformForReactRefresh(
       });
     }
 
-    // Strip React imports
+    // Strip server-only imports that must never reach the browser.
+    // React: replaced by window.React global injected below.
+    // elysion/client + elysia: server-only APIs.
+    // CSS: handled separately by the CSS pipeline.
     transformedCode = transformedCode.replace(
       /^import\s+(?:\*\s+as\s+)?React\s*,?\s*(?:\{[^}]*\})?\s*from\s*["']react["'];?\s*$/gm,
       ""
@@ -200,20 +315,14 @@ export function transformForReactRefresh(
       /^import\s+(?:\*\s+as\s+)?React\s+from\s*["']react["'];?\s*$/gm,
       ""
     );
-
-    // Strip elysion/client imports
     transformedCode = transformedCode.replace(
       /^import\s+\{[^}]*\}\s*from\s*["']elysion\/client["'];?\s*$/gm,
       ""
     );
-
-    // Strip elysia imports (server-only)
     transformedCode = transformedCode.replace(
       /^import\s+\{[^}]*\}\s*from\s*["']elysia["'];?\s*$/gm,
       ""
     );
-
-    // Strip CSS imports
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
 
     // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
@@ -242,11 +351,10 @@ function injectGlobals(code: string): string {
 }
 
 function stripImportMetaHotBlocks(code: string): string {
-  const pattern = /if\s*\(import\.meta\.hot\)\s*\{/g;
   let result = "";
   let lastIndex = 0;
 
-  for (const match of code.matchAll(pattern)) {
+  for (const match of code.matchAll(IMPORT_META_HOT_RE)) {
     const matchIndex = match.index;
     if (matchIndex === undefined) {
       continue;

@@ -3,18 +3,13 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import type { RuntimeRoute } from "./client";
 import { getCachedCss } from "./css";
-import { getModuleVersion } from "./hmr/watcher.js";
+import { getModuleVersion } from "./hmr/watcher";
 import type { ResolvedRoute, RootLayout } from "./router";
 import { buildBodyInjection, buildHeadInjection, postProcessHTML } from "./shell";
 
 const isrCache = new Map<string, { html: string; generatedAt: number; revalidate: number }>();
 
 const ssgCache = new Map<string, string>();
-
-declare global {
-  var __elysionPageCache: Map<string, { page: unknown; timestamp: number }>;
-  var __elysionRootCache: { root: RootLayout | null; timestamp: number } | null;
-}
 
 async function streamToString(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
@@ -42,8 +37,7 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
 
   if (dev) {
     try {
-      const version = getModuleVersion(route.pagePath);
-      const mod = await import(`${route.pagePath}?v=${version}`);
+      const mod = await import(`${route.pagePath}?v=${getModuleVersion(route.pagePath)}`);
       const page = mod.default;
       route.page = page;
       return page;
@@ -65,7 +59,7 @@ async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeR
   }
 
   try {
-    const mod = await import(`${root.path}?v=${Date.now()}`);
+    const mod = await import(`${root.path}?v=${getModuleVersion(root.path)}`);
     const rootRoute = mod.route ?? mod.default;
     if (rootRoute && rootRoute.__type === "ELYSION_ROUTE") {
       return rootRoute;
@@ -135,8 +129,7 @@ async function buildElement(
     // reflects the latest file content (avoids SSR/client hydration mismatches).
     if (dev && filePath) {
       try {
-        const version = getModuleVersion(filePath);
-        const freshMod = await import(`${filePath}?v=${version}`);
+        const freshMod = await import(`${filePath}?v=${getModuleVersion(filePath)}`);
         const freshRoute = freshMod.route ?? freshMod.default;
         if (freshRoute) {
           routeEntry = freshRoute;
