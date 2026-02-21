@@ -1,8 +1,10 @@
 import { createRoute } from "@teyik0/elysion/client";
 import { t } from "elysia";
 import { getAllTags, queries } from "../../db";
+import { route as rootRoute } from "../root";
 
 export const route = createRoute({
+  parent: rootRoute,
   query: t.Object({
     page: t.Optional(t.Number()),
     tag: t.Optional(t.String()),

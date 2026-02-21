@@ -98,41 +98,17 @@ function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null):
     imports.push(`import { route as root } from "${rootPath.replace(/\\/g, "/")}";`);
   }
 
-  const routeFileImports = new Map<string, string>();
-  let routeImportCounter = 0;
-
   for (let i = 0; i < routes.length; i++) {
     const route = routes[i] as ResolvedRoute;
     const pageName = `Page${i}`;
 
     imports.push(`import ${pageName} from "${route.path.replace(/\\/g, "/")}";`);
 
-    const layoutNames: string[] = [];
-    const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
-    for (let j = 0; j < route.routeChain.length; j++) {
-      const ancestor = route.routeChain[j];
-      const filePath = route.routeFilePaths[j];
-
-      if (ancestor?.layout && filePath) {
-        const normalizedPath = filePath.replace(/\\/g, "/");
-        // Skip root layout here — it is applied separately via `root.layout`
-        if (normalizedPath === normalizedRootPath) {
-          continue;
-        }
-        let importName = routeFileImports.get(normalizedPath);
-        if (!importName) {
-          importName = `Route${routeImportCounter++}`;
-          routeFileImports.set(normalizedPath, importName);
-          imports.push(`import { route as ${importName} } from "${normalizedPath}";`);
-        }
-        layoutNames.push(`${importName}.layout`);
-      }
-    }
-
     const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
 
+    // Pass the page's route for runtime layout traversal
     routeEntries.push(
-      `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), component: ${pageName}.component, layouts: [${layoutNames.join(", ")}] }`
+      `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), component: ${pageName}.component, pageRoute: ${pageName}._route }`
     );
   }
 
@@ -140,6 +116,18 @@ function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null):
 import { createElement } from "react";
 
 ${imports.join("\n")}
+
+function collectLayouts(route) {
+  const layouts = [];
+  let current = route;
+  while (current) {
+    if (current.layout) {
+      layouts.unshift(current.layout);
+    }
+    current = current.parent;
+  }
+  return layouts;
+}
 
 function injectSuppressHydration(element) {
   if (!element || typeof element !== 'object') return element;
@@ -181,8 +169,13 @@ if (match) {
   const rootEl = ${hasRoot ? "document" : "document.documentElement"};
 
   let element = createElement(match.component, loaderData);
-  for (let i = match.layouts.length - 1; i >= 0; i--) {
-    const Layout = match.layouts[i];
+
+  // Collect layouts from route chain (skipping root)
+  const allLayouts = collectLayouts(match.pageRoute);
+  const layouts = ${hasRoot ? "allLayouts.slice(1)" : "allLayouts"}; // Skip root if present
+
+  for (let i = layouts.length - 1; i >= 0; i--) {
+    const Layout = layouts[i];
     if (Layout) {
       element = createElement(Layout, { ...loaderData, children: element });
     }
@@ -209,45 +202,18 @@ if (match) {
 }
 
 // ---------------------------------------------------------------------------
-// Dev hydrate entry helpers — keep each helper under complexity budget
+// Dev hydrate entry helpers
 // ---------------------------------------------------------------------------
 
-function buildDevRouteEntries(
-  routes: ResolvedRoute[],
-  normalizedRootPath: string | null
-): string[] {
+function buildDevRouteEntries(routes: ResolvedRoute[]): string[] {
   return routes.map((route) => {
     const pagesDir = findPagesDir(route.pagePath, route.pattern);
     const srcDir = join(pagesDir, "..");
     const relativeToSrc = relative(srcDir, route.pagePath).replace(/\\/g, "/");
     const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
 
-    const layoutPaths = buildLayoutPaths(route, srcDir, normalizedRootPath);
-    const layoutPathsJson = JSON.stringify(layoutPaths);
-
-    return `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/src/${relativeToSrc}", layoutPaths: ${layoutPathsJson} }`;
+    return `  { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), modulePath: "/src/${relativeToSrc}" }`;
   });
-}
-
-function buildLayoutPaths(
-  route: ResolvedRoute,
-  srcDir: string,
-  normalizedRootPath: string | null
-): string[] {
-  const layoutPaths: string[] = [];
-  for (let j = 0; j < route.routeChain.length; j++) {
-    const ancestor = route.routeChain[j];
-    const filePath = route.routeFilePaths[j];
-    if (ancestor?.layout && filePath) {
-      const normalizedPath = filePath.replace(/\\/g, "/");
-      if (normalizedPath === normalizedRootPath) {
-        continue;
-      }
-      const relPath = relative(srcDir, filePath).replace(/\\/g, "/");
-      layoutPaths.push(`/src/${relPath}`);
-    }
-  }
-  return layoutPaths;
 }
 
 function buildLoadRootBlock(rootRelativePath: string): string {
@@ -340,10 +306,8 @@ function buildHmrClientBlock(): string {
           const newModule = await import(url);
           if (mod.includes("root.tsx") || mod === "/root.tsx") {
             ROOTMODULE_UPDATE
-          } else if (mod.endsWith("route.tsx") || mod.endsWith("route.ts")) {
-            // Nested layout route changed — update the layout module cache
-            layoutModuleCache.set(moduleId, newModule);
           } else {
+            // Page modules contain their route chain, no separate handling needed
             window.__LATEST_PAGE_MODULE__ = newModule.default;
           }
         } catch (err) {
@@ -400,8 +364,7 @@ function buildHmrClientBlock(): string {
 }
 
 function generateDevHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
-  const normalizedRootPath = rootPath?.replace(/\\/g, "/") ?? null;
-  const routeEntries = buildDevRouteEntries(routes, normalizedRootPath);
+  const routeEntries = buildDevRouteEntries(routes);
 
   const clientModulePath = new URL("./client.ts", import.meta.url).pathname;
   const refreshRuntimePath = require.resolve("react-refresh/runtime");
@@ -469,6 +432,19 @@ function injectSuppressHydration(element) {
   return element;
 }
 
+// Collect layouts from route chain
+function collectLayouts(route) {
+  const layouts = [];
+  let current = route;
+  while (current) {
+    if (current.layout) {
+      layouts.unshift(current.layout);
+    }
+    current = current.parent;
+  }
+  return layouts;
+}
+
 // Route map (generated at build time)
 const routes = [
 ${routeEntries.join(",\n")}
@@ -478,9 +454,6 @@ ${routeEntries.join(",\n")}
 let reactRoot = null;
 let isHydrationRoot = false;
 let hmrUpdateId = 0;
-// Cache of imported layout modules keyed by stable moduleId (no ?hmr= query).
-// Populated during initial hydration; updated via handleMessage() when layouts change.
-const layoutModuleCache = new Map();
 ${hasRoot ? "let rootModule = null;" : ""}
 
 ${hasRoot && rootRelativePath ? buildLoadRootBlock(rootRelativePath) : ""}
@@ -496,32 +469,16 @@ async function reRenderCurrentPage() {
   const dataEl = document.getElementById("__ELYSION_DATA__");
   const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 
-  const pathname = window.location.pathname;
-  const currentMatch = routes.find(r => r.regex.test(pathname));
-
   let element = createElement(pageModule.component, loaderData);
 
-  // Apply nested route.tsx layouts (use cache to avoid stale browser-cached modules)
-  if (currentMatch) {
-    for (let i = currentMatch.layoutPaths.length - 1; i >= 0; i--) {
-      const layoutPath = currentMatch.layoutPaths[i];
-      const moduleId = "/_modules" + layoutPath;
-      try {
-        let layoutMod = layoutModuleCache.get(moduleId);
-        if (!layoutMod) {
-          // Cache miss: import with cache-bust and store
-          const url = moduleId + "?hmr=" + hmrUpdateId;
-          window.__CURRENT_MODULE__ = moduleId;
-          layoutMod = await import(url);
-          layoutModuleCache.set(moduleId, layoutMod);
-        }
-        const layoutRoute = layoutMod.route || layoutMod.default;
-        if (layoutRoute?.layout) {
-          element = createElement(layoutRoute.layout, { ...loaderData, children: element });
-        }
-      } catch (err) {
-        console.warn("[hmr] Failed to load layout:", layoutPath, err);
-      }
+  // Collect and apply layouts from route chain
+  const allLayouts = collectLayouts(pageModule._route);
+  const layouts = ${hasRoot ? "allLayouts.slice(1)" : "allLayouts"}; // Skip root if present
+
+  for (let i = layouts.length - 1; i >= 0; i--) {
+    const Layout = layouts[i];
+    if (Layout) {
+      element = createElement(Layout, { ...loaderData, children: element });
     }
   }
 
@@ -577,23 +534,16 @@ async function hydrate() {
 
     let element = createElement(Component, loaderData);
 
-    // Apply nested route.tsx layouts (innermost first, working outward)
-    for (let i = match.layoutPaths.length - 1; i >= 0; i--) {
-      const layoutPath = match.layoutPaths[i];
-      const moduleId = "/_modules" + layoutPath;
-      try {
-        window.__CURRENT_MODULE__ = moduleId;
-        const layoutMod = await import(moduleId);
-        layoutModuleCache.set(moduleId, layoutMod);
-        const layoutRoute = layoutMod.route || layoutMod.default;
-        if (layoutRoute?.layout) {
-          element = createElement(layoutRoute.layout, { ...loaderData, children: element });
-        }
-      } catch (err) {
-        console.warn("[hmr] Failed to load layout:", layoutPath, err);
+    // Collect and apply layouts from route chain
+    const allLayouts = collectLayouts(pageModule._route);
+    const layouts = ${hasRoot ? "allLayouts.slice(1)" : "allLayouts"}; // Skip root if present
+
+    for (let i = layouts.length - 1; i >= 0; i--) {
+      const Layout = layouts[i];
+      if (Layout) {
+        element = createElement(Layout, { ...loaderData, children: element });
       }
     }
-    window.__CURRENT_MODULE__ = modulePath;
 
     ${
       hasRoot

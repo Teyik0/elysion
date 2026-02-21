@@ -5,7 +5,7 @@ import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
-import { collectRouteChain, isElysionPage, isElysionRoute } from "./utils";
+import { collectRouteChain, isElysionPage, isElysionRoute, validateRouteChain } from "./utils";
 
 export interface ResolvedRoute {
   isrCache?: { html: string; generatedAt: number; revalidate: number };
@@ -15,7 +15,6 @@ export interface ResolvedRoute {
   path: string;
   pattern: string;
   routeChain: RuntimeRoute[];
-  routeFilePaths: (string | undefined)[];
   ssgHtml?: string;
 }
 
@@ -78,13 +77,8 @@ async function loadPageModule(pagePath: string): Promise<RuntimePage> {
   return mod.default;
 }
 
-async function loadRouteModule(routePath: string): Promise<RuntimeRoute | undefined> {
-  const mod = await import(routePath);
-  return mod.route ?? mod.default;
-}
-
 // ---------------------------------------------------------------------------
-// scanPages helpers — each kept under the complexity budget
+// scanPages helpers
 // ---------------------------------------------------------------------------
 
 async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
@@ -108,32 +102,7 @@ async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
   return { path: rootPath, route: rootExport };
 }
 
-async function scanRouteFiles(
-  pagesDir: string,
-  root: RootLayout | null
-): Promise<Map<RuntimeRoute, string>> {
-  const routeFileMap = new Map<RuntimeRoute, string>();
-  // Pre-register root so its path appears in routeFilePaths (enables dedup in render/build)
-  if (root) {
-    routeFileMap.set(root.route, root.path);
-  }
-  const routeGlob = new Glob("**/route.tsx");
-  for await (const absolutePath of routeGlob.scan({
-    cwd: pagesDir,
-    absolute: true,
-  })) {
-    const routeExport = await loadRouteModule(absolutePath);
-    if (routeExport && isElysionRoute(routeExport)) {
-      routeFileMap.set(routeExport, absolutePath);
-    }
-  }
-  return routeFileMap;
-}
-
-async function scanPageFiles(
-  pagesDir: string,
-  routeFileMap: Map<RuntimeRoute, string>
-): Promise<ResolvedRoute[]> {
+async function scanPageFiles(pagesDir: string, root: RootLayout | null): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
   const glob = new Glob("**/*.tsx");
 
@@ -162,7 +131,8 @@ async function scanPageFiles(
     }
 
     const routeChain = collectRouteChain(page);
-    const routeFilePaths = routeChain.map((r) => routeFileMap.get(r));
+
+    validateRouteChain(routeChain, root?.route ?? null, relativePath);
 
     routes.push({
       pattern: filePathToPattern(relativePath),
@@ -170,7 +140,6 @@ async function scanPageFiles(
       pagePath: absolutePath,
       path: absolutePath,
       routeChain,
-      routeFilePaths,
       mode: resolveMode(page, routeChain),
     });
   }
@@ -186,8 +155,7 @@ export async function scanPages(
   routes: ResolvedRoute[];
 }> {
   const root = await scanRootLayout(pagesDir);
-  const routeFileMap = await scanRouteFiles(pagesDir, root);
-  const routes = await scanPageFiles(pagesDir, routeFileMap);
+  const routes = await scanPageFiles(pagesDir, root);
   return { root, routes };
 }
 
