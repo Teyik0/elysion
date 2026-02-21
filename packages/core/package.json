@@ -2,21 +2,29 @@
   "name": "elysion",
   "version": "0.1.0",
   "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/elysion.js",
+  "module": "./dist/elysion.js",
+  "types": "./dist/elysion.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/elysion.d.ts",
+      "bun": "./src/elysion.ts",
+      "import": "./dist/elysion.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "bun": "./src/client.ts",
+      "import": "./dist/client.js"
+    }
+  },
   "scripts": {
     "test": "bun test",
     "test:types": "tsc --noEmit",
-    "build": "bun build src/elysion.ts --outdir dist --target bun",
-    "dev": "bun run --watch example/src/server.ts"
-  },
-  "exports": {
-    ".": {
-      "types": "./src/elysion.ts",
-      "default": "./src/elysion.ts"
-    },
-    "./client": {
-      "types": "./src/client.ts",
-      "default": "./src/client.ts"
-    }
+    "build": "bun run build.ts"
   },
   "dependencies": {
     "@babel/core": "^7.26.0",
