@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "lib": ["ESNext"],
     "incremental": true,
     // Environment setup & latest features
     "target": "ESNext",
@@ -9,6 +10,7 @@
     "allowJs": true,
     // Bundler mode
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
     // Best practices
