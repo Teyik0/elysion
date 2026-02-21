@@ -30,14 +30,14 @@ jobs:
       - name: Lint & Format Check
         run: bun run ultracite check
 
+      - name: Build
+        run: bun run build
+
       - name: Type Check
         run: bun run test:types
 
       - name: Test
         run: bun run test
-
-      - name: Build
-        run: bun run build
 
       - name: Publish Preview
         working-directory: packages/core
