@@ -1,37 +1,162 @@
-import { relative } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, relative } from "node:path";
 import type { TSchema } from "elysia";
 import type { TypeCheck } from "elysia/type-system";
 import type { ServerWebSocket } from "elysia/ws/bun";
+import { BUN_BUILD_TIMEOUT_MS, MAX_BUILT_CACHE_SIZE } from "./constants";
 import { transformForReactRefresh } from "./transform";
+
+// Lightweight Bun.Transpiler singleton used only for scanImports().
+// Separate from transform.ts's bunTranspiler to avoid coupling.
+const scanTranspiler = new Bun.Transpiler({ loader: "tsx" });
 
 type HmrClient = ServerWebSocket<{
   id?: string | undefined;
   validator?: TypeCheck<TSchema> | undefined;
 }>;
 
-// Safely access import.meta.hot — may be undefined outside bun --hot.
-const hot = typeof import.meta.hot !== "undefined" ? import.meta.hot : null;
-const hmrData: Record<string, unknown> = hot?.data ?? {};
+interface LRUCacheType {
+  get(key: string): string | undefined;
+  set(key: string, value: string): LRUCacheType;
+  size: number;
+}
+
+interface HmrState {
+  clients?: Set<HmrClient>;
+  depGraph?: Map<string, Set<string>>;
+  forwardDepGraph?: Map<string, Set<string>>;
+  moduleVersions?: Map<string, number>;
+}
+
+// Get or initialize HMR state from import.meta.hot?.data
+// Uses direct access per Bun HMR guidelines (no indirection)
+function getHmrState(): HmrState {
+  const data = import.meta.hot?.data as HmrState | undefined;
+  if (!data) {
+    return {};
+  }
+  return data;
+}
 
 // WebSocket clients — persisted across hot reloads via import.meta.hot.data.
 // This is a true server singleton (live connections), not HMR infrastructure.
-const clients: Set<HmrClient> = (hmrData.clients ??= new Set<HmrClient>()) as Set<HmrClient>;
+const clients: Set<HmrClient> = (getHmrState().clients ??= new Set<HmrClient>());
 
 // Per-file version counters — persisted across hot reloads.
 // Incremented by the file watcher so SSR always uses the latest module version
 // without creating a new cache entry on every request (which would leak memory).
-const moduleVersions: Map<string, number> = (hmrData.moduleVersions ??= new Map<
+const moduleVersions: Map<string, number> = (getHmrState().moduleVersions ??= new Map<
   string,
   number
->()) as Map<string, number>;
+>());
 
-// Cache for pre-built non-page modules (e.g. src/client.ts that import npm packages).
+// LRU cache for pre-built non-page modules (e.g. src/client.ts that import npm packages).
 // Bun.build() can fail with EISDIR when resolving packages from Bun's .bun/ cache;
-// caching avoids repeated failed builds and expensive re-bundling per request.
-const builtModuleCache: Map<string, string> = (hmrData.builtModuleCache ??= new Map<
+// LRU avoids repeated failed builds and limits memory usage.
+// Lazy import to avoid bundling lru-cache in production (devDependencies).
+let builtModuleCache: LRUCacheType | null = null;
+
+async function getBuiltModuleCache(): Promise<LRUCacheType> {
+  if (!builtModuleCache) {
+    const { LRUCache } = await import("lru-cache");
+    builtModuleCache = new LRUCache({ max: MAX_BUILT_CACHE_SIZE });
+  }
+  return builtModuleCache;
+}
+
+// Reverse dependency graph: dep absolute path → Set of files that import it.
+// Built lazily in getTransformedModule() via scanImports(). Persisted across hot reloads
+// so the graph survives server restarts without requiring a full re-scan.
+const depGraph: Map<string, Set<string>> = (getHmrState().depGraph ??= new Map<
   string,
-  string
->()) as Map<string, string>;
+  Set<string>
+>());
+
+// Forward dependency graph: file → Set of files it imports.
+// Used for O(m) cleanup where m = number of imports, instead of O(n) full graph scan.
+const forwardDepGraph: Map<string, Set<string>> = (getHmrState().forwardDepGraph ??= new Map<
+  string,
+  Set<string>
+>());
+
+/** Normalize a path to its real filesystem path (resolves symlinks). */
+function realpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/** Resolve a relative import path to a normalized absolute path, or null if not resolvable. */
+function resolveImportPath(importPath: string, fromFile: string): string | null {
+  if (!importPath.startsWith(".")) {
+    return null;
+  }
+  try {
+    // Bun.resolveSync already returns a real path on macOS (resolves /var → /private/var).
+    return Bun.resolveSync(importPath, dirname(fromFile));
+  } catch {
+    return null;
+  }
+}
+
+/** Scan a source file's imports and register them in the reverse dep graph. */
+function updateDepGraph(fullPath: string, source: string): void {
+  const normalizedFullPath = realpath(fullPath);
+
+  // O(m) cleanup: only iterate over this file's old imports, not the entire graph
+  const oldImports = forwardDepGraph.get(normalizedFullPath);
+  if (oldImports) {
+    for (const oldDep of oldImports) {
+      depGraph.get(oldDep)?.delete(normalizedFullPath);
+    }
+  }
+
+  // Scan and register new imports
+  let imports: Array<{ path: string }> = [];
+  try {
+    imports = scanTranspiler.scanImports(source);
+  } catch (e) {
+    console.warn(`[hmr] Failed to scan imports for ${fullPath}:`, e);
+    return;
+  }
+
+  const newImports = new Set<string>();
+  for (const { path: importPath } of imports) {
+    const resolved = resolveImportPath(importPath, normalizedFullPath);
+    if (!resolved) {
+      continue;
+    }
+    const normalizedResolved = realpath(resolved);
+    newImports.add(normalizedResolved);
+    if (!depGraph.has(normalizedResolved)) {
+      depGraph.set(normalizedResolved, new Set());
+    }
+    depGraph.get(normalizedResolved)?.add(normalizedFullPath);
+  }
+
+  forwardDepGraph.set(normalizedFullPath, newImports);
+}
+
+/** Remove a file from the dependency graphs (for deleted files). */
+export function removeFromDepGraph(fullPath: string): void {
+  const normalizedFullPath = realpath(fullPath);
+
+  // Remove from forward graph
+  const oldImports = forwardDepGraph.get(normalizedFullPath);
+  if (oldImports) {
+    for (const oldDep of oldImports) {
+      depGraph.get(oldDep)?.delete(normalizedFullPath);
+    }
+    forwardDepGraph.delete(normalizedFullPath);
+  }
+
+  // Remove reverse edges pointing to this file
+  for (const dependents of depGraph.values()) {
+    dependents.delete(normalizedFullPath);
+  }
+}
 
 export function getModuleVersion(absolutePath: string): number {
   return moduleVersions.get(absolutePath) ?? 0;
@@ -39,6 +164,29 @@ export function getModuleVersion(absolutePath: string): number {
 
 export function invalidateModuleCache(absolutePath: string): void {
   moduleVersions.set(absolutePath, (moduleVersions.get(absolutePath) ?? 0) + 1);
+  // Cascade: bump version for all transitively-dependent modules so SSR re-fetches them.
+  for (const dep of getAffectedModules(absolutePath)) {
+    moduleVersions.set(dep, (moduleVersions.get(dep) ?? 0) + 1);
+  }
+}
+
+/** BFS over the reverse dep graph. Returns all files that (transitively) depend on changedFile. */
+export function getAffectedModules(changedFile: string): string[] {
+  const normalized = realpath(changedFile);
+  const visited = new Set<string>([normalized]);
+  const queue = [normalized];
+
+  let current: string | undefined;
+  while ((current = queue.shift()) !== undefined) {
+    for (const dep of depGraph.get(current) ?? []) {
+      if (!visited.has(dep)) {
+        visited.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+  visited.delete(normalized);
+  return [...visited];
 }
 
 export function getHmrClients(): Set<HmrClient> {
@@ -75,16 +223,15 @@ export async function getTransformedModule(
   // entry already exposes window.React = React, so page-side utilities that
   // use React can rely on that global instead of bundling a second copy.
   //
-  // Results are cached per-file: Bun.build() can fail with EISDIR when
-  // resolving packages from Bun's .bun/ cache (a directory is read as a file).
-  // Caching avoids repeated failures and expensive re-bundling per request.
+  // Results are cached in LRU to limit memory usage and avoid repeated failures.
   if (relative(pagesDir, fullPath).startsWith("..")) {
-    const cached = builtModuleCache.get(fullPath);
+    const cache = await getBuiltModuleCache();
+    const cached = cache.get(fullPath);
     if (cached) {
       return cached;
     }
 
-    const result = await Bun.build({
+    const buildPromise = Bun.build({
       entrypoints: [fullPath],
       format: "esm",
       target: "browser",
@@ -103,6 +250,15 @@ export async function getTransformedModule(
       ],
     });
 
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Bun.build() timed out after ${BUN_BUILD_TIMEOUT_MS}ms`)),
+        BUN_BUILD_TIMEOUT_MS
+      )
+    );
+
+    const result = await Promise.race([buildPromise, timeoutPromise]);
+
     if (!result.success) {
       const messages = result.logs.map((l) => l.message).join("\n");
       throw new Error(`Bun.build() failed for ${fullPath}:\n${messages}`);
@@ -114,19 +270,22 @@ export async function getTransformedModule(
     }
 
     const code = await output.text();
-    builtModuleCache.set(fullPath, code);
+    cache.set(fullPath, code);
     return code;
   }
 
   const source = await file.text();
+  updateDepGraph(fullPath, source);
   return transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
 }
 
-// HMR lifecycle — persist clients, module versions, and built module cache across hot reloads.
+// HMR lifecycle — persist clients, module versions, built module cache, and dep graphs.
 export function persistHmrState(data: Record<string, unknown>): void {
   data.clients = clients;
   data.moduleVersions = moduleVersions;
-  data.builtModuleCache = builtModuleCache;
+  data.forwardDepGraph = forwardDepGraph;
+  data.depGraph = depGraph;
 }
 
-hot?.dispose(persistHmrState);
+// Direct call per Bun HMR guidelines - no indirection
+import.meta.hot.dispose(persistHmrState);
