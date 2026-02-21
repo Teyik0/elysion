@@ -17,10 +17,14 @@ import {
 let _pagesWatcher: AsyncSubscription | null = null;
 let _cssWatcher: AsyncSubscription | null = null;
 
+// Safely access import.meta.hot — may be undefined outside bun --hot.
+const hot = typeof import.meta.hot !== "undefined" ? import.meta.hot : null;
+const hmrData: Record<string, unknown> = hot?.data ?? {};
+
 // Config is persisted across hot reloads so watchers can be restarted
 // automatically when this module itself is hot-replaced.
-let _pagesDir: string | null = (import.meta.hot.data.pagesDir ??= null);
-let _cssInputPath: string | undefined = import.meta.hot.data.cssInputPath;
+let _pagesDir: string | null = (hmrData.pagesDir ??= null) as string | null;
+let _cssInputPath: string | undefined = hmrData.cssInputPath as string | undefined;
 
 async function stopWatchers(): Promise<void> {
   await _pagesWatcher?.unsubscribe();
@@ -205,7 +209,7 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
 // ─── HMR lifecycle ────────────────────────────────────────────────────────────
 // Stop file watchers before this module is replaced; persist config so the
 // incoming version can restart them without being called by elysion() again.
-import.meta.hot.dispose(async (data) => {
+hot?.dispose(async (data) => {
   data.pagesDir = _pagesDir;
   data.cssInputPath = _cssInputPath;
   await stopWatchers();
