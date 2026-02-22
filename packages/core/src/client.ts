@@ -96,7 +96,7 @@ export interface RuntimeRoute {
   __type: "ELYSION_ROUTE";
   layout?: React.FC<Record<string, unknown> & { children: React.ReactNode }>;
   loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
-  mode?: "ssr" | "ssg" | "isr";
+  mode?: "ssr" | "ssg" | "isr" | "rsc";
   params?: unknown;
   parent?: RuntimeRoute;
   query?: unknown;
@@ -139,7 +139,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
   __type: "ELYSION_ROUTE";
   layout?: React.FC<TParentData & { children: React.ReactNode } & ComponentProps<TParams, TQuery>>;
   loader?(ctx: RouteContext<TParams, TQuery> & TParentData): Promise<TParentData> | TParentData;
-  mode?: "ssr" | "ssg" | "isr";
+  mode?: "ssr" | "ssg" | "isr" | "rsc";
 
   page<TPageLoaderData extends Record<string, unknown> = {}>(
     config: PageConfig<TParentData, TParams, TQuery, TPageLoaderData>
@@ -161,7 +161,7 @@ export function createRoute<
   TLoaderData extends Record<string, unknown> = {},
 >(config?: {
   parent?: { ref: TParentRef } & { __type: "ELYSION_ROUTE" };
-  mode?: "ssr" | "ssg" | "isr";
+  mode?: "ssr" | "ssg" | "isr" | "rsc";
   revalidate?: number;
   params?: TParamsSchema;
   query?: TQuerySchema;

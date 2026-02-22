@@ -5,16 +5,21 @@ import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
+import type { ModuleAnalysis } from "./rsc/types";
 import { collectRouteChain, isElysionPage, isElysionRoute, validateRouteChain } from "./utils";
 
 export interface ResolvedRoute {
   isrCache?: { html: string; generatedAt: number; revalidate: number };
-  mode: "ssr" | "ssg" | "isr";
+  mode: "ssr" | "ssg" | "isr" | "rsc";
   page?: RuntimePage;
   pagePath: string;
   path: string;
   pattern: string;
   routeChain: RuntimeRoute[];
+  rsc?: {
+    type: "server" | "client" | "mixed";
+    clientComponents: string[];
+  };
   ssgHtml?: string;
 }
 
@@ -62,6 +67,14 @@ export function createRoutePlugin(
 
         case "isr":
           return handleISR(route, ctx, config, root, dev);
+
+        case "rsc":
+          // TODO: Implement renderRSC
+          // For now, fall back to SSR
+          console.warn(
+            `[elysion] RSC mode for ${pattern} not yet implemented, falling back to SSR`
+          );
+          return renderSSR(route, ctx, config, root, dev);
 
         default:
           return renderSSR(route, ctx, config, root, dev);
@@ -155,11 +168,21 @@ export async function scanPages(
   return { root, routes };
 }
 
-export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {
+export function resolveMode(
+  page: RuntimePage,
+  routeChain: RuntimeRoute[],
+  analysis?: ModuleAnalysis
+): "ssr" | "ssg" | "isr" | "rsc" {
   const routeConfig = page._route;
 
+  // Explicit mode always wins
   if (routeConfig.mode) {
     return routeConfig.mode;
+  }
+
+  // RSC mode: client analysis detected
+  if (analysis?.type === "client") {
+    return "rsc";
   }
 
   const hasLoader = routeChain.some((r) => r.loader) || !!page.loader;
