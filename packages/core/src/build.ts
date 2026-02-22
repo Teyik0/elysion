@@ -1,12 +1,18 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ResolvedRoute } from "./router";
+import { type BuildOutput, generateClientManifest } from "./rsc/manifest";
+import type { ClientManifest, ModuleAnalysis } from "./rsc/types";
 import { transformForClient } from "./transform-client";
 
 export interface BuildClientOptions {
   dev?: boolean;
   outDir?: string;
   rootPath?: string | null;
+}
+
+export interface BuildClientResult {
+  manifest: ClientManifest;
 }
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
@@ -87,6 +93,108 @@ export async function buildClient(
   }
 
   console.log("[elysion] Client build complete");
+}
+
+export async function buildClientWithRSC(
+  routes: ResolvedRoute[],
+  analyses: Map<string, ModuleAnalysis>,
+  options: BuildClientOptions = {}
+): Promise<BuildClientResult> {
+  const { outDir = "./.elysion", dev = false, rootPath = null } = options;
+  const buildDir = outDir;
+  const clientDir = join(outDir, "client");
+
+  if (!existsSync(buildDir)) {
+    mkdirSync(buildDir, { recursive: true });
+  }
+  if (!existsSync(clientDir)) {
+    mkdirSync(clientDir, { recursive: true });
+  }
+
+  // Filter client routes based on analysis
+  const clientRoutes = routes.filter((route) => {
+    const analysis = analyses.get(route.pagePath);
+    return analysis?.type === "client";
+  });
+
+  // Generate hydrate entry for client components
+  const hydrateCode = dev
+    ? generateDevHydrateEntry(clientRoutes.length > 0 ? clientRoutes : routes, rootPath)
+    : generateHydrateEntry(clientRoutes.length > 0 ? clientRoutes : routes, rootPath);
+  const hydratePath = join(buildDir, "_hydrate.tsx");
+  writeFileSync(hydratePath, hydrateCode);
+
+  console.log(`[elysion] Building client bundle with RSC (${dev ? "dev" : "production"})...`);
+  console.log(`[elysion] Client routes: ${clientRoutes.length}/${routes.length}`);
+
+  const transformPlugin: Bun.BunPlugin = {
+    name: "elysion-transform-client",
+    setup(build) {
+      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+        const path = args.path;
+        if (path.includes("node_modules")) {
+          return undefined;
+        }
+
+        const file = Bun.file(path);
+        const code = await file.text();
+
+        try {
+          const result = transformForClient(code, path);
+          return {
+            contents: result.code,
+            loader: path.endsWith(".tsx") ? "tsx" : "ts",
+          };
+        } catch (error) {
+          console.error(`[elysion] Transform error for ${path}:`, error);
+          return undefined;
+        }
+      });
+    },
+  };
+
+  const result = await Bun.build({
+    entrypoints: [hydratePath],
+    outdir: clientDir,
+    target: "browser",
+    format: "esm",
+    splitting: !dev,
+    minify: !dev,
+    naming: "[name].[ext]",
+    plugins: dev ? [] : [transformPlugin],
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
+    },
+  });
+
+  if (!result.success) {
+    console.error("[elysion] Client build failed:");
+    for (const log of result.logs) {
+      console.error(log);
+    }
+    throw new Error("Client build failed");
+  }
+
+  for (const output of result.outputs) {
+    console.log(`[elysion]   ${output.path} (${(output.size / 1024).toFixed(1)}KB)`);
+  }
+
+  // Generate client manifest
+  const outputs: BuildOutput[] = result.outputs.map((o) => ({
+    path: o.path,
+    moduleIds: [], // Would need source map analysis for exact mapping
+  }));
+
+  const manifest = generateClientManifest([...analyses.values()], outputs);
+
+  // Write manifest to disk
+  const manifestPath = join(buildDir, "client-manifest.json");
+  await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
+  console.log("[elysion] Client manifest generated");
+
+  console.log("[elysion] Client build complete");
+
+  return { manifest };
 }
 
 function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
