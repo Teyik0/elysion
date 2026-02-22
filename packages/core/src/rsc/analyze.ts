@@ -43,8 +43,7 @@ function extractExports(
 ): { name: string; type: "server" | "client" }[] {
   const exports: { name: string; type: "server" | "client" }[] = [];
 
-  const exportFunctionPattern =
-    /export\s+(?:async\s+)?function\s+([A-Z][a-zA-Z0-9]*)/g;
+  const exportFunctionPattern = /export\s+(?:async\s+)?function\s+([A-Z][a-zA-Z0-9]*)/g;
   let match: RegExpExecArray | null;
   while ((match = exportFunctionPattern.exec(code)) !== null) {
     exports.push({
@@ -70,10 +69,14 @@ export async function analyzeAllPages(
   const analyses = new Map<string, ModuleAnalysis>();
 
   for (const route of routes) {
-    if (!route.pagePath) continue;
+    if (!route.pagePath) {
+      continue;
+    }
 
     const exists = await Bun.file(route.pagePath).exists();
-    if (!exists) continue;
+    if (!exists) {
+      continue;
+    }
 
     const analysis = await analyzeModule(route.pagePath);
     analyses.set(route.pagePath, analysis);

@@ -1,8 +1,8 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { analyzeModule, analyzeAllPages } from "../../src/rsc/analyze";
-import type { ResolvedRoute } from "../../src/router";
-import { mkdir, writeFile, rm } from "fs/promises";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
+import type { ResolvedRoute } from "../../src/router";
+import { analyzeAllPages, analyzeModule } from "../../src/rsc/analyze";
 
 describe("analyzeModule", () => {
   const tmpDir = join(import.meta.dir, "..", "tmp-analyze-test");
@@ -112,7 +112,7 @@ describe("analyzeModule", () => {
 
   test("handles file with no exports", async () => {
     const filePath = join(tmpDir, "Empty.tsx");
-    await writeFile(filePath, `const x = 1;`);
+    await writeFile(filePath, "const x = 1;");
 
     const result = await analyzeModule(filePath);
 
