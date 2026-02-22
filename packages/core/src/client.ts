@@ -7,7 +7,8 @@
   3. Is transparent in intersections(`{} & T = T`)
 */
 
-import type { AnySchema, UnwrapSchema } from "elysia/types";
+import type { Cookie, StatusMap } from "elysia";
+import type { AnySchema, HTTPHeaders, UnwrapSchema } from "elysia/types";
 
 declare const UNSET: unique symbol;
 type Unset = typeof UNSET;
@@ -24,13 +25,27 @@ type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
     ? TParent
     : TParent & TOwn;
 
-type ConditionalParams<T> = [T] extends [Unset] ? {} : { params: T };
-type ConditionalQuery<T> = [T] extends [Unset] ? {} : { query: T };
+type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
 
-// The incoming server Request is always available in loaders so they can
-// forward headers (e.g. Cookie) when making server-side HTTP calls.
-type RouteContext<TParams, TQuery> = ConditionalParams<TParams> &
-  ConditionalQuery<TQuery> & { request?: Request };
+export interface RouteContext<TParams = {}, TQuery = {}> {
+  cookie: Record<string, Cookie<unknown>>;
+  headers: Record<string, string | undefined>;
+  params: NormalizeUnset<TParams>;
+  path: string;
+  query: NormalizeUnset<TQuery>;
+  redirect: (url: string, status?: 301 | 302 | 303 | 307 | 308) => Response;
+  request: Request;
+  set: {
+    headers: HTTPHeaders;
+    status?: number | keyof StatusMap;
+  };
+}
+
+export interface ComponentProps<TParams = {}, TQuery = {}> {
+  params: NormalizeUnset<TParams>;
+  path: string;
+  query: NormalizeUnset<TQuery>;
+}
 
 type ResolveParent<T> =
   T extends RouteRef<infer D, infer P, infer Q>
@@ -70,8 +85,8 @@ export interface PageConfig<
   TQuery,
   TPageLoaderData extends Record<string, unknown> = {},
 > {
-  component: React.FC<TParentData & TPageLoaderData & RouteContext<TParams, TQuery>>;
-  head?: (ctx: RouteContext<TParams, TQuery> & TParentData & TPageLoaderData) => HeadOptions;
+  component: React.FC<TParentData & TPageLoaderData & ComponentProps<TParams, TQuery>>;
+  head?: (ctx: ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData) => HeadOptions;
   loader?: (
     ctx: RouteContext<TParams, TQuery> & TParentData
   ) => Promise<TPageLoaderData> | TPageLoaderData;
@@ -113,14 +128,16 @@ interface PageResult<
 > {
   __type: "ELYSION_PAGE";
   _route: Route<TData, TParams, TQuery>;
-  component: React.FC<TData & TPageLoaderData & RouteContext<TParams, TQuery>>;
-  head?(ctx: RouteContext<TParams, TQuery> & TData & TPageLoaderData): HeadOptions;
-  loader?(ctx: RouteContext<TParams, TQuery> & TData): Promise<TPageLoaderData> | TPageLoaderData;
+  component: React.FC<TData & TPageLoaderData & ComponentProps<TParams, TQuery>>;
+  head?: (ctx: ComponentProps<TParams, TQuery> & TData & TPageLoaderData) => HeadOptions;
+  loader?: (
+    ctx: RouteContext<TParams, TQuery> & TData
+  ) => Promise<TPageLoaderData> | TPageLoaderData;
 }
 
 export interface Route<TParentData extends Record<string, unknown>, TParams, TQuery> {
   __type: "ELYSION_ROUTE";
-  layout?: React.FC<TParentData & { children: React.ReactNode } & RouteContext<TParams, TQuery>>;
+  layout?: React.FC<TParentData & { children: React.ReactNode } & ComponentProps<TParams, TQuery>>;
   loader?(ctx: RouteContext<TParams, TQuery> & TParentData): Promise<TParentData> | TParentData;
   mode?: "ssr" | "ssg" | "isr";
 
@@ -158,7 +175,7 @@ export function createRoute<
   layout?: React.FC<
     Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["data"] & {
       children: React.ReactNode;
-    } & RouteContext<
+    } & ComponentProps<
         Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["params"],
         Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["query"]
       >
@@ -194,5 +211,5 @@ export type InferProps<T> = T extends {
 }
   ? P
   : T extends Route<infer D, infer P, infer Q>
-    ? D & { children: React.ReactNode } & RouteContext<P, Q>
+    ? D & { children: React.ReactNode } & ComponentProps<P, Q>
     : never;
