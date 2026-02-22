@@ -25,12 +25,14 @@ type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
     ? TParent
     : TParent & TOwn;
 
+type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
+
 export interface RouteContext<TParams = {}, TQuery = {}> {
   cookie: Record<string, Cookie<unknown>>;
   headers: Record<string, string | undefined>;
-  params: TParams;
+  params: NormalizeUnset<TParams>;
   path: string;
-  query: TQuery;
+  query: NormalizeUnset<TQuery>;
   redirect: (url: string, status?: 301 | 302 | 303 | 307 | 308) => Response;
   request: Request;
   set: {
