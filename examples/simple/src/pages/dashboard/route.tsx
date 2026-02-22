@@ -1,7 +1,9 @@
 import { createRoute } from "@teyik0/elysion/client";
 import { client } from "../../client";
+import { route as rootRoute } from "../root";
 
 export const route = createRoute({
+  parent: rootRoute,
   loader: async ({ request }) => {
     const cookieHeader = request?.headers.get("Cookie") ?? "";
     const { data } = await client.api.me.get({

@@ -18,9 +18,9 @@ export function isElysionRoute(value: unknown): value is RuntimeRoute {
   );
 }
 
-export function collectRouteChain(page: RuntimePage): RuntimeRoute[] {
+export function collectRouteChainFromRoute(route: RuntimeRoute | undefined): RuntimeRoute[] {
   const chain: RuntimeRoute[] = [];
-  let current: RuntimeRoute | undefined = page._route;
+  let current = route;
 
   while (current) {
     chain.unshift(current);
@@ -28,4 +28,56 @@ export function collectRouteChain(page: RuntimePage): RuntimeRoute[] {
   }
 
   return chain;
+}
+
+export function collectRouteChain(page: RuntimePage | undefined): RuntimeRoute[] {
+  if (!page) {
+    return [];
+  }
+  return collectRouteChainFromRoute(page._route);
+}
+
+export function hasCycle(route: RuntimeRoute): boolean {
+  const visited = new Set<RuntimeRoute>();
+  let current: RuntimeRoute | undefined = route;
+
+  while (current) {
+    if (visited.has(current)) {
+      return true;
+    }
+    visited.add(current);
+    current = current.parent;
+  }
+
+  return false;
+}
+
+export function validateRouteChain(
+  chain: RuntimeRoute[],
+  root: RuntimeRoute | null,
+  pagePath?: string
+): void {
+  if (!root) {
+    throw new Error(
+      "[elysion] No root layout found. Create a root.tsx file with a createRoute() that includes a layout."
+    );
+  }
+
+  const hasRoot = chain.some((r) => r === root);
+
+  if (!hasRoot) {
+    const location = pagePath ? ` in ${pagePath}` : "";
+    throw new Error(
+      `[elysion] Page${location} must inherit from root route. ` +
+        'Add: import { route } from "./root"; and use route.page() or set parent: route'
+    );
+  }
+
+  for (const route of chain) {
+    if (hasCycle(route)) {
+      throw new Error(
+        "[elysion] Cycle detected in route chain. A route cannot be its own ancestor."
+      );
+    }
+  }
 }

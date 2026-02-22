@@ -11,7 +11,7 @@ const isrCache = new Map<string, { html: string; generatedAt: number; revalidate
 
 const ssgCache = new Map<string, string>();
 
-async function streamToString(stream: ReadableStream): Promise<string> {
+export async function streamToString(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let html = "";
@@ -30,7 +30,7 @@ async function streamToString(stream: ReadableStream): Promise<string> {
 
 const CLIENT_JS_PATH = "/_client/_hydrate.js";
 
-async function loadPageModule(route: ResolvedRoute, dev: boolean) {
+export async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   if (!dev && route.page) {
     return route.page;
   }
@@ -53,7 +53,7 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   return route.page;
 }
 
-async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
+export async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
   if (!_dev) {
     return root.route;
   }
@@ -71,7 +71,7 @@ async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeR
   }
 }
 
-function injectSuppressHydration(element: ReactNode): ReactNode {
+export function injectSuppressHydration(element: ReactNode): ReactNode {
   if (!element || typeof element !== "object") {
     return element;
   }
@@ -103,13 +103,12 @@ function injectSuppressHydration(element: ReactNode): ReactNode {
   return element;
 }
 
-async function buildElement(
+export function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
   rootLayout: RuntimeRoute | null,
-  rootPath: string | null,
-  dev: boolean
-): Promise<ReactNode> {
+  _dev: boolean
+): ReactNode {
   const page = route.page;
   if (!page) {
     return <div>Loading...</div>;
@@ -118,30 +117,10 @@ async function buildElement(
   const Component = page.component;
   let element: ReactNode = <Component {...data} />;
 
-  // Wrap with nested layouts (route.tsx), skipping root if it appears in the chain
-  for (let i = route.routeChain.length - 1; i >= 0; i--) {
-    const filePath = route.routeFilePaths[i];
-    // Skip the root layout entry — it will be applied separately below
-    if (rootPath && filePath === rootPath) {
-      continue;
-    }
-
-    let routeEntry = route.routeChain[i];
-
-    // In dev mode, re-import the layout module with a version query so SSR always
-    // reflects the latest file content (avoids SSR/client hydration mismatches).
-    if (dev && filePath) {
-      try {
-        const freshMod = await import(`${filePath}?v=${getModuleVersion(filePath)}`);
-        const freshRoute = freshMod.route ?? freshMod.default;
-        if (freshRoute) {
-          routeEntry = freshRoute;
-        }
-      } catch (err) {
-        console.warn(`[elysion] Failed to reload layout ${filePath}:`, err);
-        // Fall through to use the startup-cached routeEntry
-      }
-    }
+  // Wrap with nested layouts (skip root at index 0 - applied separately below)
+  // Iterate from innermost to outermost, matching client's collectLayouts().slice(1)
+  for (let i = route.routeChain.length - 1; i >= 1; i--) {
+    const routeEntry = route.routeChain[i];
 
     if (routeEntry?.layout) {
       const Layout = routeEntry.layout;
@@ -149,7 +128,7 @@ async function buildElement(
     }
   }
 
-  // Wrap with root layout (root.tsx)
+  // Wrap with root layout
   if (rootLayout?.layout) {
     const RootLayoutComponent = rootLayout.layout;
     element = <RootLayoutComponent {...data}>{element}</RootLayoutComponent>;
@@ -158,12 +137,11 @@ async function buildElement(
   return element;
 }
 
-async function runLoaders(
+export async function runLoaders(
   route: ResolvedRoute,
   params: Record<string, string>,
   query: Record<string, string>,
   rootLayout: RuntimeRoute | null,
-  rootPath: string | null,
   request?: Request
 ): Promise<Record<string, unknown>> {
   let data: Record<string, unknown> = {};
@@ -174,12 +152,8 @@ async function runLoaders(
     data = { ...data, ...result };
   }
 
-  // Run nested layout loaders (skip root if it appears in the chain — already ran above)
-  for (let i = 0; i < route.routeChain.length; i++) {
-    const filePath = route.routeFilePaths[i];
-    if (rootPath && filePath === rootPath) {
-      continue;
-    }
+  // Run nested layout loaders (skip root at index 0 - already ran above)
+  for (let i = 1; i < route.routeChain.length; i++) {
     const ancestor = route.routeChain[i];
     if (ancestor?.loader) {
       const result = await ancestor.loader({ ...data, params, query, request });
@@ -207,9 +181,8 @@ async function renderAndProcess(
   await loadPageModule(route, dev);
 
   const rootLayout = root ? await loadRootModule(root, dev) : null;
-  const rootPath = root?.path ?? null;
 
-  const data = await runLoaders(route, params, query, rootLayout, rootPath, request);
+  const data = await runLoaders(route, params, query, rootLayout, request);
 
   // Get head data from page BEFORE building element
   const headData = route.page?.head?.({ ...data, params, query });
@@ -218,7 +191,7 @@ async function renderAndProcess(
   const cssContext = await getCachedCss(process.cwd());
 
   // Build the element tree
-  const element = await buildElement(route, { ...data, params, query }, rootLayout, rootPath, dev);
+  const element = await buildElement(route, { ...data, params, query }, rootLayout, dev);
 
   // Render to HTML — inject suppressHydrationWarning to match client hydration
   const stream = await renderToReadableStream(injectSuppressHydration(element));
