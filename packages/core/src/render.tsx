@@ -29,7 +29,7 @@ function createSSGContext(params: Record<string, string>, resolvedPath: string):
     request: new Request(`http://localhost${resolvedPath}`),
     headers: {},
     cookie: {},
-    redirect: (url) => new Response(null, { status: 302, headers: { Location: url } }),
+    redirect: (url, status = 302) => new Response(null, { status, headers: { Location: url } }),
     set: { headers: {} },
     path: resolvedPath,
   };
@@ -273,9 +273,16 @@ export async function renderToStream(
   ctx: LoaderContext,
   root: RootLayout | null,
   dev = false
-) {
-  const result = await renderAndProcess(route, ctx, root, dev);
-  return new Response(result.html).body;
+): Promise<ReadableStream | Response> {
+  try {
+    const result = await renderAndProcess(route, ctx, root, dev);
+    return new Response(result.html).body ?? new ReadableStream();
+  } catch (err) {
+    if (err instanceof Response) {
+      return err;
+    }
+    throw err;
+  }
 }
 
 export async function prerenderSSG(
