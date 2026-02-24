@@ -1,4 +1,4 @@
-import { parse } from "node:path";
+import { parse, resolve } from "node:path";
 import { Glob } from "bun";
 import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
@@ -25,7 +25,7 @@ export interface RootLayout {
 export function createRoutePlugin(
   route: ResolvedRoute,
   root: RootLayout | null,
-  dev = false
+  dev: boolean
 ): AnyElysia {
   const { pattern, mode, routeChain } = route;
 
@@ -71,7 +71,7 @@ export function createRoutePlugin(
 }
 
 export async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
-  const rootPath = `${pagesDir}/root.tsx`;
+  const rootPath = `${resolve(process.cwd(), pagesDir)}/root.tsx`;
   const rootFile = Bun.file(rootPath);
   if (!(await rootFile.exists())) {
     return null;

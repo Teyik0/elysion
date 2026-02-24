@@ -12,14 +12,14 @@ export interface VitePluginDecorate {
   vite: ViteDevServer | undefined;
 }
 
-export async function createVitePlugin(options?: VitePluginOptions) {
+export async function createVitePlugin(app: Elysia) {
   const vite = await import("vite").then((vite) => {
     return vite.createServer({
-      root: options?.root,
-      ...options?.vite,
       server: {
-        ...options?.vite?.server,
         middlewareMode: true,
+        hmr: {
+          server: app.server,
+        },
       },
       appType: "custom",
     });

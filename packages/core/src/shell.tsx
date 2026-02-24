@@ -42,10 +42,6 @@ export interface CssContext {
   mode: "inline" | "external";
 }
 
-// ---------------------------------------------------------------------------
-// Head injection helpers — extracted to stay under complexity budget
-// ---------------------------------------------------------------------------
-
 export function buildMetaParts(meta: MetaDescriptor[]): string[] {
   const parts: string[] = [];
   const title = extractTitle(meta);
@@ -130,7 +126,7 @@ export function buildHeadInjection(
 export function buildBodyInjection(
   data: Record<string, unknown> | undefined,
   clientJsPath: string,
-  dev: boolean
+  _dev: boolean
 ): string {
   const parts: string[] = [];
 
@@ -140,9 +136,8 @@ export function buildBodyInjection(
     );
   }
 
-  if (dev) {
-    parts.push('<script src="/__refresh-setup.js"></script>');
-  }
+  // PLUS DE __refresh-setup.js - Vite gère React Refresh
+  // PLUS DE cssContext - Vite gère CSS
 
   parts.push(`<script src="${clientJsPath}" type="module" defer></script>`);
 
@@ -156,12 +151,10 @@ export function postProcessHTML(
 ): string {
   let result = html;
 
-  // Inject into </head>
   if (headInjection && result.includes("</head>")) {
     result = result.replace("</head>", `${headInjection}</head>`);
   }
 
-  // Inject before </body>
   if (bodyInjection && result.includes("</body>")) {
     result = result.replace("</body>", `${bodyInjection}</body>`);
   }

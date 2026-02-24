@@ -1,12 +1,13 @@
-import type { Plugin } from "vite";
-import { type ResolvedRoute, type RootLayout, scanPages } from "../router";
+import type { PluginOption } from "vite";
+import type { ResolvedRoute, RootLayout } from "../router";
+import { scanPages } from "../router";
 import { generateHydrateEntry } from "./entry-client";
 
 interface ElysionPluginOptions {
   pagesDir: string;
 }
 
-export function elysionPlugin(options: ElysionPluginOptions): Plugin {
+export function elysionPlugin(options: ElysionPluginOptions): PluginOption {
   const virtualRoutesId = "virtual:elysion-routes";
   const virtualEntryId = "virtual:elysion-entry-client";
 
@@ -53,7 +54,6 @@ export function elysionPlugin(options: ElysionPluginOptions): Plugin {
         .replace("</body>", `<script type="module" src="${virtualEntryId}"></script></body>`);
     },
     handleHotUpdate({ file, server }) {
-      // Invalidate module cache when page files change
       if (file.includes("/pages/")) {
         const mod = server.moduleGraph.getModuleById(`\0${virtualRoutesId}`);
         if (mod) {

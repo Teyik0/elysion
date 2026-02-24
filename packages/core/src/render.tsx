@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { renderToPipeableStream } from "react-dom/server";
-import type { RouteContext } from "./client";
+import { renderToReadableStream } from "react-dom/server";
+import type { RouteContext, RuntimePage, RuntimeRoute } from "./client";
 import type { ResolvedRoute, RootLayout } from "./router";
 import { buildBodyInjection, buildHeadInjection, postProcessHTML } from "./shell";
 
@@ -40,7 +40,7 @@ async function loadPageModule(route: ResolvedRoute) {
   return mod.default;
 }
 
-async function loadRootModule(root: RootLayout) {
+function loadRootModule(root: RootLayout) {
   return root.route;
 }
 
@@ -51,7 +51,7 @@ export type LoaderResult =
 export async function runLoaders(
   route: ResolvedRoute,
   ctx: LoaderContext,
-  rootLayout: any
+  rootLayout: RuntimeRoute | undefined
 ): Promise<LoaderResult> {
   let data: Record<string, unknown> = {};
   const headers: Record<string, string> = {};
@@ -91,9 +91,9 @@ export async function runLoaders(
 
 export function buildElement(
   route: ResolvedRoute,
-  page: any,
+  page: RuntimePage,
   data: Record<string, unknown>,
-  rootLayout: any
+  rootLayout: RuntimeRoute | undefined
 ): ReactNode {
   const Component = page.component;
   let element: ReactNode = <Component {...data} />;
@@ -119,6 +119,23 @@ interface RenderResult {
   html: string;
 }
 
+async function streamToString(stream: ReadableStream): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let html = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    html += decoder.decode(value, { stream: true });
+  }
+
+  html += decoder.decode();
+  return html;
+}
+
 async function renderToHTML(
   route: ResolvedRoute,
   ctx: LoaderContext,
@@ -126,7 +143,7 @@ async function renderToHTML(
   dev: boolean
 ): Promise<RenderResult> {
   const page = await loadPageModule(route);
-  const rootLayout = root ? await loadRootModule(root) : null;
+  const rootLayout = root ? loadRootModule(root) : undefined;
 
   const loaderResult = await runLoaders(route, ctx, rootLayout);
 
@@ -147,40 +164,26 @@ async function renderToHTML(
 
   const element = buildElement(route, page, componentProps, rootLayout);
 
-  return new Promise((resolve, reject) => {
-    const chunks: string[] = [];
-
-    const { pipe } = renderToPipeableStream(element, {
-      onShellReady() {},
-      onShellError(error) {
-        reject(error);
-      },
-      onError(error) {
-        console.error("[elysion] Render error:", error);
-      },
-    });
-
-    // Bun: pipe returns a Node.js Writable, convert to string
-    pipe.on("data", (chunk: Buffer) => {
-      chunks.push(chunk.toString());
-    });
-
-    pipe.on("end", () => {
-      const html = chunks.join("");
-
-      const headInjection = buildHeadInjection(headData, null);
-      const bodyInjection = buildBodyInjection(data, CLIENT_JS_PATH, dev);
-
-      const finalHtml = postProcessHTML(html, headInjection, bodyInjection);
-
-      resolve({
-        html: finalHtml,
-        headers,
-      });
-    });
-
-    pipe.on("error", reject);
+  const stream = await renderToReadableStream(element, {
+    onError(error) {
+      console.error(
+        "[elysion] Render error:",
+        error instanceof Error ? error.message : "Unknown error occured"
+      );
+    },
   });
+
+  const html = await streamToString(stream);
+
+  const headInjection = buildHeadInjection(headData, null);
+  const bodyInjection = buildBodyInjection(data, CLIENT_JS_PATH, dev);
+
+  const finalHtml = postProcessHTML(html, headInjection, bodyInjection);
+
+  return {
+    html: finalHtml,
+    headers,
+  };
 }
 
 export async function renderSSR(
