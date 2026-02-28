@@ -127,10 +127,20 @@ export function buildHeadInjection(
   return parts.length > 0 ? `\n  ${parts.join("\n  ")}\n` : "";
 }
 
+/**
+ * Builds the body injection HTML.
+ *
+ * @param data         - Loader data serialised as __ELYSION_DATA__ JSON.
+ * @param clientScripts - Raw `<script>` tag(s) to load the client bundle.
+ *                        In dev: the Bun-generated content-hashed chunks
+ *                        (self-fetched from /_bun_entry).
+ *                        In prod: our own `/_client/_hydrate.js` tag.
+ * @param _dev         - Kept for API compatibility; no longer used internally.
+ */
 export function buildBodyInjection(
   data: Record<string, unknown> | undefined,
-  clientJsPath: string,
-  dev: boolean
+  clientScripts: string,
+  _dev = false
 ): string {
   const parts: string[] = [];
 
@@ -140,11 +150,7 @@ export function buildBodyInjection(
     );
   }
 
-  if (dev) {
-    parts.push('<script src="/__refresh-setup.js"></script>');
-  }
-
-  parts.push(`<script src="${clientJsPath}" type="module" defer></script>`);
+  parts.push(clientScripts);
 
   return `\n${parts.join("\n")}\n`;
 }

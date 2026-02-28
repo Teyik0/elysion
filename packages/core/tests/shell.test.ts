@@ -317,40 +317,32 @@ describe("shell.tsx", () => {
   });
 
   describe("buildBodyInjection", () => {
+    const SCRIPT_TAG = '<script src="/_client/hydrate.js" type="module" defer></script>';
+
     test("includes data script", () => {
       const data = { foo: "bar", count: 42 };
-      const result = buildBodyInjection(data, "/_client/hydrate.js", false);
+      const result = buildBodyInjection(data, SCRIPT_TAG);
 
       expect(result).toContain("__ELYSION_DATA__");
       expect(result).toContain('"foo":"bar"');
       expect(result).toContain('"count":42');
     });
 
-    test("includes refresh setup in dev mode", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", true);
-      expect(result).toContain("/__refresh-setup.js");
-    });
-
-    test("excludes refresh setup in prod mode", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", false);
-      expect(result).not.toContain("/__refresh-setup.js");
-    });
-
-    test("includes client script", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", false);
+    test("includes client scripts verbatim", () => {
+      const result = buildBodyInjection({}, SCRIPT_TAG);
       expect(result).toContain('src="/_client/hydrate.js"');
       expect(result).toContain('type="module"');
       expect(result).toContain("defer");
     });
 
     test("handles undefined data", () => {
-      const result = buildBodyInjection(undefined, "/_client/hydrate.js", false);
+      const result = buildBodyInjection(undefined, SCRIPT_TAG);
       expect(result).not.toContain("__ELYSION_DATA__");
       expect(result).toContain("hydrate.js");
     });
 
     test("formats with newlines", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", false);
+      const result = buildBodyInjection({}, SCRIPT_TAG);
       expect(result.startsWith("\n")).toBe(true);
       expect(result.endsWith("\n")).toBe(true);
     });

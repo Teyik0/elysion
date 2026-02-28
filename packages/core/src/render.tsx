@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import type { RouteContext, RuntimeRoute } from "./client";
 import { getCachedCss } from "./css";
-import { getModuleVersion } from "./hmr/watcher";
 import type { ResolvedRoute, RootLayout } from "./router";
 import { buildBodyInjection, buildHeadInjection, postProcessHTML } from "./shell";
+import { getDevBunScripts } from "./bun-strip-plugin";
 
 export type LoaderContext = RouteContext<Record<string, string>, Record<string, string>>;
 
@@ -13,7 +13,7 @@ const isrCache = new Map<string, { html: string; generatedAt: number; revalidate
 
 const ssgCache = new Map<string, string>();
 
-const CLIENT_JS_PATH = "/_client/_hydrate.js";
+const PROD_CLIENT_JS = `<script src="/_client/_hydrate.js" type="module" defer></script>`;
 
 function resolvePath(pattern: string, params: Record<string, string>): string {
   return Object.entries(params).reduce((path, [key, val]) => {
@@ -58,16 +58,15 @@ export async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   }
 
   if (dev) {
+    // In bun --hot mode Bun invalidates its module registry when watched files
+    // change, so a plain import() always returns the current version.
     try {
-      const mod = await import(`${route.pagePath}?v=${getModuleVersion(route.pagePath)}`);
-      const page = mod.default;
-      route.page = page;
-      return page;
+      const mod = await import(route.pagePath);
+      route.page = mod.default;
+      return route.page;
     } catch (error) {
       console.error(`[elysion] Failed to load page ${route.pagePath}:`, error);
-      if (route.page) {
-        return route.page;
-      }
+      if (route.page) return route.page;
       throw error;
     }
   }
@@ -75,17 +74,13 @@ export async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   return route.page;
 }
 
-export async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
-  if (!_dev) {
-    return root.route;
-  }
+export async function loadRootModule(root: RootLayout, dev: boolean): Promise<RuntimeRoute> {
+  if (!dev) return root.route;
 
   try {
-    const mod = await import(`${root.path}?v=${getModuleVersion(root.path)}`);
+    const mod = await import(root.path);
     const rootRoute = mod.route ?? mod.default;
-    if (rootRoute && rootRoute.__type === "ELYSION_ROUTE") {
-      return rootRoute;
-    }
+    if (rootRoute?.__type === "ELYSION_ROUTE") return rootRoute;
     return root.route;
   } catch (error) {
     console.error(`[elysion] Failed to load root layout ${root.path}:`, error);
@@ -235,30 +230,35 @@ async function renderAndProcess(
   };
 
   const headData = route.page?.head?.(componentProps);
-
   const cssContext = await getCachedCss(process.cwd());
 
   const element = await buildElement(route, componentProps, rootLayout, dev);
-
   const stream = await renderToReadableStream(injectSuppressHydration(element));
   await stream.allReady;
   const html = await streamToString(stream);
 
   if (root) {
     if (!html.includes("<html")) {
-      console.warn(
-        "[elysion] root.tsx layout is missing an <html> element. Add <html> to your root layout."
-      );
+      console.warn("[elysion] root.tsx is missing an <html> element.");
     }
     if (!html.includes("<body")) {
-      console.warn(
-        "[elysion] root.tsx layout is missing a <body> element. Add <body> to your root layout."
-      );
+      console.warn("[elysion] root.tsx is missing a <body> element.");
     }
   }
 
+  // In dev, self-fetch /_bun_entry (once, then cached) to get the
+  // content-hashed <script> tags Bun generated (bundle + HMR client).
+  // In prod, use the static path from our own Bun.build() output.
+  let clientScripts: string;
+  if (dev) {
+    const origin = new URL(ctx.request.url).origin;
+    clientScripts = await getDevBunScripts(origin);
+  } else {
+    clientScripts = PROD_CLIENT_JS;
+  }
+
   const headInjection = buildHeadInjection(headData, cssContext);
-  const bodyInjection = buildBodyInjection(data, CLIENT_JS_PATH, dev);
+  const bodyInjection = buildBodyInjection(data, clientScripts, dev);
 
   return {
     html: postProcessHTML(html, headInjection, bodyInjection),
