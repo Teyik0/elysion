@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun run scripts/generate.ts && bun --hot src/server.ts",
     "test:types": "tsc --noEmit",
-    "start": "NODE_ENV=production bun src/index.ts",
+    "start": "NODE_ENV=production bun src/server.ts",
     "test:e2e": "bun run ./tests/hmr.ts"
   },
   "dependencies": {
