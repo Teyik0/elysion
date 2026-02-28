@@ -272,7 +272,7 @@ async function renderAndProcess(
   await stream.allReady;
   const reactHtml = await streamToString(stream);
 
-  // Dev: self-fetch /_bun_entry (once, then cached) to get the Bun-processed
+  // Dev: self-fetch /_bun_hmr_entry (once, then cached) to get the Bun-processed
   // HTML template with content-hashed chunk paths and HMR WebSocket client.
   // Prod: read .elysion/client/index.html from disk.
   const template = dev ? await getDevTemplate(new URL(ctx.request.url).origin) : getProdTemplate();

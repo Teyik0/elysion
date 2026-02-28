@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
 import type { StaticOptions } from "@elysiajs/static/types";
-import type { AnyElysia } from "elysia";
+import { Elysia } from "elysia";
 import { buildClient, writeDevFiles } from "./build";
 import { registerBunStripPlugin } from "./bun-strip-plugin";
 import { createRoutePlugin, scanPages } from "./router";
@@ -28,7 +28,7 @@ export interface ElysionProps {
  * // server.ts
  * import elysionHtml from "../.elysion/index.html";
  *
- * new Elysia({ serve: { routes: { "/_bun_entry": elysionHtml } } })
+ * new Elysia({ serve: { routes: { "/_bun_hmr_entry": elysionHtml } } })
  *   .use(await elysion({ ... }))
  *   .listen(3000);
  * ```
@@ -46,9 +46,9 @@ export async function elysion({
   pagesDir,
   staticOptions,
   dev = process.env.NODE_ENV !== "production",
-}: ElysionProps): Promise<(app: AnyElysia) => AnyElysia> {
+}: ElysionProps) {
   const cwd = process.cwd();
-  const resolvedPagesDir = resolve(cwd, pagesDir ?? "./src/pages");
+  const resolvedPagesDir = resolve(cwd, pagesDir ?? "/src/pages");
 
   const { root, routes } = await scanPages(resolvedPagesDir, dev);
 
@@ -83,37 +83,38 @@ export async function elysion({
     //    Only writes when content changed so Bun --hot doesn't reload needlessly.
     writeDevFiles(routes, { outDir: elysionDir, rootPath: root?.path ?? null });
 
-    const userStaticPlugin = await staticPlugin(staticOptions);
-
-    const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, root, dev));
-
-    return function elysionDevPlugin(app: AnyElysia): AnyElysia {
-      let result = app.use(userStaticPlugin);
-      for (const plugin of routePlugins) {
-        result = result.use(plugin);
-      }
-      return result;
-    };
+    return routes
+      .map((route) => createRoutePlugin(route, staticOptions, root, dev))
+      .reduce(
+        (app, plugin) => app.use(plugin),
+        new Elysia()
+          .use(
+            await staticPlugin({
+              assets: resolve(cwd, ".elysion"),
+              prefix: "/_bun_hmr_entry",
+            })
+          )
+          .use(await staticPlugin(staticOptions))
+      );
   }
 
   // ── Production ───────────────────────────────────────────────────────────
   const elysionDir = resolve(cwd, ".elysion");
   await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root?.path ?? null });
 
-  const clientStaticPlugin = await staticPlugin({
-    assets: resolve(cwd, ".elysion", "client"),
-    prefix: "/_client",
-  });
-  const userStaticPlugin = await staticPlugin(staticOptions);
-  const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, root, dev));
-
-  return function elysionProdPlugin(app: AnyElysia): AnyElysia {
-    let result = app.use(clientStaticPlugin).use(userStaticPlugin);
-    for (const plugin of routePlugins) {
-      result = result.use(plugin);
-    }
-    return result;
-  };
+  return routes
+    .map((route) => createRoutePlugin(route, staticOptions, root, dev))
+    .reduce(
+      (app, plugin) => app.use(plugin),
+      new Elysia()
+        .use(
+          await staticPlugin({
+            assets: resolve(cwd, ".elysion", "client"),
+            prefix: "/_client",
+          })
+        )
+        .use(await staticPlugin(staticOptions))
+    );
 }
 
 import.meta.hot.accept();

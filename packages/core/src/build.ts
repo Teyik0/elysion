@@ -42,8 +42,7 @@ function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null):
     );
   }
 
-  return `import React from "react";
-import { hydrateRoot, createRoot } from "react-dom/client";
+  return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 
 ${imports.join("\n")}
@@ -117,8 +116,8 @@ export function generateIndexHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!--ssr-head-->
   </head>
   <body>
