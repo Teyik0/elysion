@@ -12,6 +12,7 @@ export interface BuildClientOptions {
 }
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const TS_EXT_RE = /\.tsx?$/;
 const REACT_IMPORT_RE = /import\s+React\b/;
 
 // ── Hydrate entry ──────────────────────────────────────────────────────────
@@ -160,7 +161,7 @@ function writeClientPages(pagesDir: string, outDir: string): Map<string, string>
 
   for (const relPath of glob.scanSync({ cwd: pagesDir, absolute: false })) {
     const sourcePath = join(pagesDir, relPath).replace(/\\/g, "/");
-    const clientRelPath = relPath.replace(/\.tsx?$/, ".js");
+    const clientRelPath = relPath.replace(TS_EXT_RE, ".js");
     const clientPath = join(clientPagesDir, clientRelPath);
 
     const clientDir = dirname(clientPath);

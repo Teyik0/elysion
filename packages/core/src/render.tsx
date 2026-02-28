@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { StaticOptions } from "@elysiajs/static/types";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { getDevTemplate } from "./bun-strip-plugin";
 import type { RouteContext, RuntimeRoute } from "./client";
 import type { ResolvedRoute, RootLayout } from "./router";
 import { buildHeadInjection } from "./shell";
@@ -13,6 +11,25 @@ export type LoaderContext = RouteContext<Record<string, string>, Record<string, 
 const isrCache = new Map<string, { html: string; generatedAt: number; revalidate: number }>();
 
 const ssgCache = new Map<string, string>();
+
+// ── Dev template ────────────────────────────────────────────────────────────
+
+let _devTemplatePromise: Promise<string> | null = null;
+
+function getDevTemplate(origin: string): Promise<string> {
+  _devTemplatePromise ??= fetch(`${origin}/_bun_hmr_entry`)
+    .then((r) => {
+      if (!r.ok) {
+        throw new Error(`/_bun_hmr_entry returned ${r.status}`);
+      }
+      return r.text();
+    })
+    .catch((err) => {
+      _devTemplatePromise = null;
+      throw err;
+    });
+  return _devTemplatePromise;
+}
 
 // ── Template cache ──────────────────────────────────────────────────────────
 
@@ -124,8 +141,7 @@ export async function loadRootModule(root: RootLayout, dev: boolean): Promise<Ru
 export function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
-  rootLayout: RuntimeRoute | null,
-  _dev: boolean
+  rootLayout: RuntimeRoute | null
 ): ReactNode {
   const page = route.page;
   if (!page) {
@@ -267,7 +283,7 @@ async function renderAndProcess(
 
   const headData = buildHeadInjection(route.page?.head?.(componentProps));
 
-  const element = await buildElement(route, componentProps, rootLayout, dev);
+  const element = await buildElement(route, componentProps, rootLayout);
   const stream = await renderToReadableStream(element);
   await stream.allReady;
   const reactHtml = await streamToString(stream);
@@ -312,7 +328,6 @@ export async function renderToStream(
 export async function prerenderSSG(
   route: ResolvedRoute,
   params: Record<string, string>,
-  _config: StaticOptions<string>,
   root: RootLayout | null,
   dev = false,
   origin = "http://localhost:3000"
@@ -338,7 +353,6 @@ export async function prerenderSSG(
 export async function renderSSR(
   route: ResolvedRoute,
   ctx: LoaderContext,
-  _config: StaticOptions<string>,
   root: RootLayout | null,
   dev = false
 ): Promise<Response> {
@@ -363,7 +377,6 @@ export async function renderSSR(
 export async function handleISR(
   route: ResolvedRoute,
   ctx: LoaderContext,
-  _config: StaticOptions<string>,
   root: RootLayout | null,
   dev = false
 ): Promise<Response> {

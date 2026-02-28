@@ -70,7 +70,8 @@ const plugin: BunPlugin = {
         }
 
         return { contents: code, loader: "js" };
-      } catch {
+      } catch (err) {
+        console.error(`[elysion] strip-plugin transform error for ${args.path}:`, err);
         return undefined;
       }
     });

@@ -74,10 +74,13 @@ export async function elysion({
 
     // Regenerate .elysion/_hydrate.tsx with the current page list.
     // Only writes when content changed so Bun --hot doesn't reload needlessly.
+    // pagesDir is intentionally omitted: the bunfig.toml strip plugin handles
+    // server-code stripping in the HTML bundler context, so _hydrate.tsx can
+    // import source files directly without pre-transforming them here.
     writeDevFiles(routes, { outDir: elysionDir, rootPath: root?.path ?? null });
 
     return routes
-      .map((route) => createRoutePlugin(route, staticOptions, root, dev))
+      .map((route) => createRoutePlugin(route, root, dev))
       .reduce(
         (app, plugin) => app.use(plugin),
         new Elysia()
@@ -96,7 +99,7 @@ export async function elysion({
   await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root?.path ?? null });
 
   return routes
-    .map((route) => createRoutePlugin(route, staticOptions, root, dev))
+    .map((route) => createRoutePlugin(route, root, dev))
     .reduce(
       (app, plugin) => app.use(plugin),
       new Elysia()
@@ -110,4 +113,4 @@ export async function elysion({
     );
 }
 
-import.meta.hot.accept();
+import.meta.hot?.accept();

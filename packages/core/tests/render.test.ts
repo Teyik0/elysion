@@ -119,7 +119,7 @@ describe("render.tsx", () => {
       await loadPageModule(nestedRoute, false);
       const rootLayout = await loadRootModule(root, false);
 
-      const element = buildElement(nestedRoute, {}, rootLayout, false);
+      const element = buildElement(nestedRoute, {}, rootLayout);
       expect(element).toBeDefined();
     });
 
@@ -130,7 +130,7 @@ describe("render.tsx", () => {
       await loadPageModule(deepRoute, false);
       const rootLayout = await loadRootModule(root, false);
 
-      const element = buildElement(deepRoute, {}, rootLayout, false);
+      const element = buildElement(deepRoute, {}, rootLayout);
       expect(element).toBeDefined();
     });
 
@@ -141,7 +141,7 @@ describe("render.tsx", () => {
       await loadPageModule(nestedRoute, false);
       const rootLayout = await loadRootModule(root, false);
 
-      const element = buildElement(nestedRoute, {}, rootLayout, false);
+      const element = buildElement(nestedRoute, {}, rootLayout);
       expect(element).toBeDefined();
     });
 
@@ -151,7 +151,7 @@ describe("render.tsx", () => {
         routeChain: [],
       } as unknown as Parameters<typeof buildElement>[0];
 
-      const element = buildElement(route, {}, null, false);
+      const element = buildElement(route, {}, null);
       expect(element).toBeDefined();
     });
   });
@@ -319,8 +319,8 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html1 = await prerenderSSG(indexRoute, {}, {}, root, false);
-      const html2 = await prerenderSSG(indexRoute, {}, {}, root, false);
+      const html1 = await prerenderSSG(indexRoute, {}, root, false);
+      const html2 = await prerenderSSG(indexRoute, {}, root, false);
 
       expect(html1).toBe(html2);
     });
@@ -329,7 +329,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, {}, root, false);
+      const html = await prerenderSSG(indexRoute, {}, root, false);
       expect(html).toContain("<html");
     });
 
@@ -337,8 +337,8 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html1 = await prerenderSSG(indexRoute, {}, {}, root, false);
-      const html2 = await prerenderSSG(indexRoute, {}, {}, root, false);
+      const html1 = await prerenderSSG(indexRoute, {}, root, false);
+      const html2 = await prerenderSSG(indexRoute, {}, root, false);
 
       expect(html1).toBe(html2);
     });
@@ -350,7 +350,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, {}, root, false);
+      const response = await renderSSR(ssrRoute, ctx, root, false);
 
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
@@ -362,7 +362,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, {}, root, false);
+      const response = await renderSSR(ssrRoute, ctx, root, false);
 
       expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
       expect(response.headers.get("Cache-Control")).toBe("no-cache, no-store, must-revalidate");
@@ -373,7 +373,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const response = await renderSSR(withLoaderRoute, ctx, {}, root, false);
+      const response = await renderSSR(withLoaderRoute, ctx, root, false);
 
       expect(response.headers.get("x-loader-ran")).toBe("true");
     });
@@ -400,7 +400,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const response = await renderSSR(customRoute, ctx, {}, root, false);
+      const response = await renderSSR(customRoute, ctx, root, false);
 
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/login");
@@ -413,7 +413,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response = await handleISR(isrRoute, ctx, {}, root, false);
+      const response = await handleISR(isrRoute, ctx, root, false);
       const html = await response.text();
 
       expect(html).toContain("<html");
@@ -425,7 +425,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response = await handleISR(isrRoute, ctx, {}, root, false);
+      const response = await handleISR(isrRoute, ctx, root, false);
 
       const cacheControl = response.headers.get("Cache-Control");
       expect(cacheControl).toContain("public");
@@ -437,10 +437,10 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response1 = await handleISR(isrRoute, ctx, {}, root, false);
+      const response1 = await handleISR(isrRoute, ctx, root, false);
       const html1 = await response1.text();
 
-      const response2 = await handleISR(isrRoute, ctx, {}, root, false);
+      const response2 = await handleISR(isrRoute, ctx, root, false);
       const html2 = await response2.text();
 
       expect(html1).toBe(html2);
@@ -531,7 +531,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, {}, root, false);
+      const html = await prerenderSSG(indexRoute, {}, root, false);
       expect(html).toContain("<html");
     });
   });
