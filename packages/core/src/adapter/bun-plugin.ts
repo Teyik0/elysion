@@ -17,14 +17,14 @@ export default {};
 `;
 
 /**
- * Standalone Bun bundler plugin for Elysion.
+ * Standalone Bun bundler plugin for Elyra.
  *
  * Register it in your project's bunfig.toml so that Bun's HTML bundler
  * applies it when building the client bundle:
  *
  * ```toml
  * [serve.static]
- * plugins = ["@teyik0/elysion/strip-plugin"]
+ * plugins = ["elyra/strip-plugin"]
  * ```
  *
  * The plugin:
@@ -35,20 +35,20 @@ export default {};
  *     they are bundled into the client entry.
  */
 const plugin: BunPlugin = {
-  name: "elysion-strip-server",
+  name: "elyra-strip-server",
   setup(build) {
     // ── browser stubs ───────────────────────────────────────────────────────
     build.onResolve({ filter: ELYSIA_FILTER }, () => ({
       path: "elysia-stub",
-      namespace: "elysion-stubs",
+      namespace: "elyra-stubs",
     }));
 
     build.onResolve({ filter: BUN_BUILTIN_FILTER }, () => ({
       path: "bun-builtin-stub",
-      namespace: "elysion-stubs",
+      namespace: "elyra-stubs",
     }));
 
-    build.onLoad({ namespace: "elysion-stubs", filter: ANY_FILTER }, (args) => ({
+    build.onLoad({ namespace: "elyra-stubs", filter: ANY_FILTER }, (args) => ({
       contents: args.path === "elysia-stub" ? ELYSIA_STUB : "",
       loader: "js",
     }));
@@ -71,7 +71,7 @@ const plugin: BunPlugin = {
 
         return { contents: code, loader: "js" };
       } catch (err) {
-        console.error(`[elysion] strip-plugin transform error for ${args.path}:`, err);
+        console.error(`[elyra] strip-plugin transform error for ${args.path}:`, err);
         return undefined;
       }
     });

@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { RuntimeRoute } from "../src/client";
 import type {
   CacheEntry,
-  ClientRoute,
   LinkProps,
+  LoadedClientRoute,
   PreloadStrategy,
   RouterContextValue,
   RouterProviderProps,
@@ -23,8 +23,14 @@ function makeMatch(
   component: React.FC<Record<string, unknown>>,
   pageRoute: RuntimeRoute,
   pattern = "/"
-): ClientRoute {
-  return { component, pageRoute, pattern, regex: new RegExp(`^${pattern}$`) };
+): LoadedClientRoute {
+  return {
+    component,
+    pageRoute,
+    pattern,
+    regex: new RegExp(`^${pattern}$`),
+    load: () => Promise.resolve({ default: { component, _route: pageRoute } }),
+  };
 }
 
 function makeCacheEntry(msSinceCreated: number): CacheEntry {

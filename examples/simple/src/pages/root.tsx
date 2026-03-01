@@ -1,9 +1,9 @@
-import { createRoute } from "@teyik0/elysion/client";
-import { Link } from "@teyik0/elysion/link";
+import { createRoute } from "elyra/client";
+import { Link } from "elyra/link";
 import "../styles/globals.css";
 
 // Root layout renders body content only — <html>, <head>, <body> are provided
-// by .elysion/index.html (the SSR template processed by Bun's HTML bundler).
+// by .elyra/index.html (the SSR template processed by Bun's HTML bundler).
 export const route = createRoute({
   layout: ({ children }) => (
     <div className="flex min-h-screen flex-col bg-gray-50 text-gray-900">
@@ -12,7 +12,7 @@ export const route = createRoute({
           <div className="flex h-16 justify-between">
             <div className="flex">
               <Link className="flex items-center font-bold text-indigo-600 text-xl" to="/">
-                Elysion Blog
+                Elyra Blog
               </Link>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 <Link
@@ -61,13 +61,11 @@ export const route = createRoute({
       <footer className="mt-auto border-gray-200 border-t bg-white">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <p className="text-gray-500 text-sm">
-              Built with Elysion - React meta-framework on Bun
-            </p>
+            <p className="text-gray-500 text-sm">Built with Elyra - React meta-framework on Bun</p>
             <div className="flex space-x-6">
               <a
                 className="text-gray-400 text-sm hover:text-gray-500"
-                href="https://github.com/teyik0/elysion"
+                href="https://github.com/teyik0/elyra"
               >
                 GitHub
               </a>

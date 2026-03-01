@@ -1,4 +1,4 @@
-import { Link } from "@teyik0/elysion/link";
+import { Link } from "elyra/link";
 import { useState } from "react";
 import { client } from "../client";
 import { route } from "./root";
@@ -35,7 +35,7 @@ export default route.page({
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
             <Link className="font-bold text-2xl text-indigo-600" to="/">
-              Elysion Blog
+              Elyra Blog
             </Link>
             <h1 className="mt-4 font-bold text-3xl text-gray-900">Sign in to your account</h1>
             <p className="mt-2 text-gray-600">Access the admin dashboard to manage your posts</p>

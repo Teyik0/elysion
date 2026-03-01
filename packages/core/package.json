@@ -1,19 +1,19 @@
 {
-  "name": "@teyik0/elysion",
+  "name": "elyra",
   "version": "0.1.0-alpha.1",
   "type": "module",
   "files": [
     "dist",
     "src"
   ],
-  "main": "./dist/elysion.js",
-  "module": "./dist/elysion.js",
-  "types": "./src/elysion.ts",
+  "main": "./dist/elyra.js",
+  "module": "./dist/elyra.js",
+  "types": "./src/elyra.ts",
   "exports": {
     ".": {
-      "types": "./src/elysion.ts",
-      "bun": "./src/elysion.ts",
-      "import": "./dist/elysion.js"
+      "types": "./src/elyra.ts",
+      "bun": "./src/elyra.ts",
+      "import": "./dist/elyra.js"
     },
     "./client": {
       "types": "./src/client.ts",
@@ -59,8 +59,7 @@
     "@types/babel__traverse": "^7.28.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "expect-type": "^1.3.0",
-    "tailwindcss": "4"
+    "expect-type": "^1.3.0"
   },
   "peerDependencies": {
     "elysia": "catalog:",

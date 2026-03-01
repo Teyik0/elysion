@@ -1,4 +1,4 @@
-import { createRoute } from "@teyik0/elysion/client";
+import { createRoute } from "elyra/client";
 import { queries } from "../../../db";
 import { route as dashboardRoute } from "../route";
 

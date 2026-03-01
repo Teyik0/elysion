@@ -1,4 +1,4 @@
-import { Link } from "@teyik0/elysion/link";
+import { Link } from "elyra/link";
 import { useState } from "react";
 import { route } from "./route";
 

@@ -1,4 +1,4 @@
-# Elysion
+# Elyra
 
 React meta-framework powered by Elysia + Bun with file-based routing, SSR/SSG/ISR modes, nested layouts, HMR, and full TypeScript type inference.
 
@@ -17,7 +17,7 @@ React meta-framework powered by Elysia + Bun with file-based routing, SSR/SSG/IS
 ### Installation
 
 ```bash
-bun create elysion my-app
+bun create elyra my-app
 cd my-app
 bun install
 ```
@@ -26,7 +26,7 @@ bun install
 
 ```tsx
 // src/pages/about/index.tsx
-import { createRoute } from 'elysion/client';
+import { createRoute } from 'elyra/client';
 
 const { page } = createRoute({ mode: 'ssg' });
 
@@ -48,7 +48,7 @@ Fetch data server-side with full type safety:
 
 ```tsx
 // src/pages/dashboard/route.tsx
-import { createRoute } from 'elysion/client';
+import { createRoute } from 'elyra/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -109,7 +109,7 @@ Create nested layouts with automatic data propagation:
 
 ```tsx
 // src/pages/dashboard/route.tsx
-import { createRoute } from 'elysion/client';
+import { createRoute } from 'elyra/client';
 
 export const route = createRoute({
   loader: async () => ({ user: await getCurrentUser() }),
@@ -122,7 +122,7 @@ export const route = createRoute({
 });
 
 // src/pages/dashboard/users/route.tsx
-import { createRoute } from 'elysion/client';
+import { createRoute } from 'elyra/client';
 import { route as dashboardRoute } from '../route';
 
 export const route = createRoute({
@@ -172,7 +172,7 @@ export default route.page({
 
 ```tsx
 // src/pages/blog/[slug]/route.tsx
-import { createRoute, type InferProps } from 'elysion/client';
+import { createRoute, type InferProps } from 'elyra/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -342,7 +342,7 @@ pages/
 
 ```tsx
 // src/pages/blog/[slug]/route.tsx
-import { createRoute } from 'elysion/client';
+import { createRoute } from 'elyra/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -451,7 +451,7 @@ export const route = createRoute({
 
 ### `createRoute(config)`
 
-Create a route with loader, layout, and options. Import from `"elysion/client"`.
+Create a route with loader, layout, and options. Import from `"elyra/client"`.
 
 **Config:**
 - `parent?: Route` - Parent route for nested layouts
@@ -517,7 +517,7 @@ my-app/
 ├── packages/
 │   └── core/              # Framework source
 │       └── src/
-│           ├── elysion.ts     # Main plugin
+│           ├── elyra.ts     # Main plugin
 │           ├── client.ts      # createRoute, types
 │           ├── router.ts      # File-based routing
 │           ├── render.tsx     # SSR/SSG/ISR logic
@@ -541,7 +541,7 @@ my-app/
 ```tsx
 // src/server.ts
 import { Elysia } from "elysia";
-import { elysion } from "elysion";
+import { elyra } from "elyra";
 
 const app = new Elysia()
   .get("/api/health", () => ({ status: "ok" }))
@@ -550,7 +550,7 @@ const app = new Elysia()
     return { success: true };
   })
   .use(
-    await elysion({
+    await elyra({
       pagesDir: "./src/pages",
       staticOptions: {
         assets: "./public",

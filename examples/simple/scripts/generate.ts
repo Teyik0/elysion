@@ -11,11 +11,11 @@
  * This is needed because `server.ts` statically imports `.elysion/index.html`,
  * which must exist (along with `_hydrate.tsx`) before Bun evaluates the module.
  */
-import { writeDevFiles } from "@teyik0/elysion/build";
-import { scanPages } from "@teyik0/elysion/router";
+import { writeDevFiles } from "elyra/build";
+import { scanPages } from "elyra/router";
 
 const pagesDir = `${import.meta.dir}/../src/pages`;
-const outDir = `${import.meta.dir}/../.elysion`;
+const outDir = `${import.meta.dir}/../.elyra`;
 
 const { routes, root } = await scanPages(pagesDir, true);
 writeDevFiles(routes, { outDir, rootPath: root?.path ?? null });
