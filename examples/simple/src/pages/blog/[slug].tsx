@@ -1,4 +1,4 @@
-import { createRoute } from "@teyik0/elysion/client";
+import { createRoute } from "elyra/client";
 import { t } from "elysia";
 import { useState } from "react";
 import { type Comment, type Post, parseTags, queries } from "../../db";
@@ -28,7 +28,7 @@ export default route.page({
   },
 
   head: ({ post }) => ({
-    meta: [{ title: `${post.title} - Elysion Blog` }],
+    meta: [{ title: `${post.title} - Elyra Blog` }],
   }),
 
   component: ({ post, comments }: { post: PostWithParsedTags; comments: Comment[] }) => {

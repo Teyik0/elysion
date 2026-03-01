@@ -1,5 +1,5 @@
-import { createRoute } from "@teyik0/elysion/client";
-import { Link } from "@teyik0/elysion/link";
+import { createRoute } from "elyra/client";
+import { Link } from "elyra/link";
 import { t } from "elysia";
 import { getAllTags, queries } from "../../db";
 import { route as rootRoute } from "../root";

@@ -7,7 +7,7 @@ await $`tsc --project tsconfig.dts.json`;
 
 await Bun.build({
   entrypoints: [
-    `${import.meta.dir}/src/elysion.ts`,
+    `${import.meta.dir}/src/elyra.ts`,
     `${import.meta.dir}/src/client.ts`,
     `${import.meta.dir}/src/build.ts`,
     `${import.meta.dir}/src/router.ts`,

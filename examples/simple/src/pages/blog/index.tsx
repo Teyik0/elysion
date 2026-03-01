@@ -1,4 +1,4 @@
-import { Link } from "@teyik0/elysion/link";
+import { Link } from "elyra/link";
 import { type Post, parseTags, queries } from "../../db";
 import { route } from "./route";
 
@@ -38,7 +38,7 @@ export default route.page({
   },
 
   head: ({ currentTag }) => ({
-    meta: [{ title: currentTag ? `${currentTag} - Blog` : "Blog - Elysion" }],
+    meta: [{ title: currentTag ? `${currentTag} - Blog` : "Blog - Elyra" }],
   }),
 
   component: ({ posts, pagination, currentTag }) => (
@@ -48,7 +48,7 @@ export default route.page({
           {currentTag ? `Posts tagged "${currentTag}"` : "Blog"}
         </h1>
         <p className="mt-2 text-gray-600">
-          Thoughts, tutorials, and insights about web development with Elysion.
+          Thoughts, tutorials, and insights about web development with Elyra.
         </p>
       </div>
 

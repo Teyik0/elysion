@@ -1,4 +1,4 @@
-import { elysion } from "@teyik0/elysion";
+import { elyra } from "elyra";
 import Elysia from "elysia";
 import { api } from "./api";
 
@@ -33,7 +33,7 @@ const app = new Elysia()
   })
   .use(api)
   .use(
-    await elysion({
+    await elyra({
       pagesDir: `${import.meta.dir}/pages`,
       staticOptions: {
         assets: `${import.meta.dir}/../public`,
@@ -45,7 +45,7 @@ const app = new Elysia()
   )
   .listen(3000);
 
-console.log(`\n Elysion Blog + Dashboard running at http://localhost:${app.server?.port}`);
+console.log(`\n Elyra Blog + Dashboard running at http://localhost:${app.server?.port}`);
 console.log("\nTest accounts:");
 console.log("  user@example.com (role: user)");
 console.log("  admin@example.com (role: admin)");

@@ -122,7 +122,7 @@ describe("scanRootLayout", () => {
     expect(result).toBeNull();
   });
 
-  test("returns null when export is not a valid Elysion route", async () => {
+  test("returns null when export is not a valid Elyra route", async () => {
     const invalidDir = join(tempDir, "invalid-root");
     mkdirSync(invalidDir, { recursive: true });
 

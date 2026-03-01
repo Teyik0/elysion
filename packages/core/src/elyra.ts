@@ -12,36 +12,36 @@ export interface ElysionProps {
 }
 
 /**
- * Main Elysion plugin.
+ * Main Elyra plugin.
  *
  * Returns a callback plugin `(app: Elysia) => Elysia` instead of an Elysia
  * instance, so it integrates cleanly with the parent app.
  *
  * ## Dev mode (Bun native HMR)
  *
- * The user's server.ts must statically import `.elysion/index.html` and
+ * The user's server.ts must statically import `.elyra/index.html` and
  * register it in serve.routes — this is what triggers Bun's HTML bundler,
  * module graph, HMR WebSocket, and React Fast Refresh.
  *
  * ```ts
  * // server.ts
- * import elysionHtml from "../.elysion/index.html";
+ * import elysionHtml from "../.elyra/index.html";
  *
  * new Elysia({ serve: { routes: { "/_bun_hmr_entry": elysionHtml } } })
- *   .use(await elysion({ ... }))
+ *   .use(await elyra({ ... }))
  *   .listen(3000);
  * ```
  *
  * Run `bun run scripts/generate.ts` before starting the server to generate
- * `.elysion/_hydrate.tsx`.  The `dev` package.json script handles this:
+ * `.elyra/_hydrate.tsx`.  The `dev` package.json script handles this:
  * `"dev": "bun run scripts/generate.ts && bun --hot src/server.ts"`
  *
  * ## Production mode
  *
- * `elysion()` runs `Bun.build()` to produce `.elysion/client/index.html`
+ * `elyra()` runs `Bun.build()` to produce `.elyra/client/index.html`
  * (the SSR template) plus hashed JS/CSS chunks.  No static import needed.
  */
-export async function elysion({
+export async function elyra({
   pagesDir,
   staticOptions,
   dev = process.env.NODE_ENV !== "production",
@@ -53,13 +53,13 @@ export async function elysion({
 
   if (!root) {
     console.warn(
-      "[elysion] No root.tsx found. Create a root.tsx in your pages directory " +
+      "[elyra] No root.tsx found. Create a root.tsx in your pages directory " +
         "with a layout component."
     );
   }
 
   console.log(
-    `[elysion] Configuration: ${routes.length} page(s) — ${dev ? "dev (Bun HMR)" : "production"}`
+    `[elyra] Configuration: ${routes.length} page(s) — ${dev ? "dev (Bun HMR)" : "production"}`
   );
   for (const route of routes) {
     const hasLayout = route.routeChain.some((r) => r.layout);
@@ -70,9 +70,9 @@ export async function elysion({
 
   // ── Dev: Bun native HMR ──────────────────────────────────────────────────
   if (dev) {
-    const elysionDir = resolve(cwd, ".elysion");
+    const elysionDir = resolve(cwd, ".elyra");
 
-    // Regenerate .elysion/_hydrate.tsx with the current page list.
+    // Regenerate .elyra/_hydrate.tsx with the current page list.
     // Only writes when content changed so Bun --hot doesn't reload needlessly.
     // pagesDir is intentionally omitted: the bunfig.toml strip plugin handles
     // server-code stripping in the HTML bundler context, so _hydrate.tsx can
@@ -86,7 +86,7 @@ export async function elysion({
         new Elysia()
           .use(
             await staticPlugin({
-              assets: resolve(cwd, ".elysion"),
+              assets: resolve(cwd, ".elyra"),
               prefix: "/_bun_hmr_entry",
             })
           )
@@ -95,7 +95,7 @@ export async function elysion({
   }
 
   // ── Production ───────────────────────────────────────────────────────────
-  const elysionDir = resolve(cwd, ".elysion");
+  const elysionDir = resolve(cwd, ".elyra");
   await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root?.path ?? null });
 
   return routes
@@ -105,7 +105,7 @@ export async function elysion({
       new Elysia()
         .use(
           await staticPlugin({
-            assets: resolve(cwd, ".elysion", "client"),
+            assets: resolve(cwd, ".elyra", "client"),
             prefix: "/_client",
           })
         )

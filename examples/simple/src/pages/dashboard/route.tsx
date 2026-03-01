@@ -1,5 +1,5 @@
-import { createRoute } from "@teyik0/elysion/client";
-import { Link, type RouteTo } from "@teyik0/elysion/link";
+import { createRoute } from "elyra/client";
+import { Link, type RouteTo } from "elyra/link";
 import { client } from "../../client";
 import { route as rootRoute } from "../root";
 
@@ -44,7 +44,7 @@ export const route = createRoute({
           <aside className="min-h-screen w-64 border-gray-200 border-r bg-white">
             <div className="p-6">
               <Link className="font-bold text-indigo-600 text-xl" to="/">
-                Elysion
+                Elyra
               </Link>
             </div>
             <nav className="space-y-1 px-4">

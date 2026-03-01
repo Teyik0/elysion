@@ -1,25 +1,25 @@
-import { Link } from "@teyik0/elysion/link";
+import { Link } from "elyra/link";
 import { route } from "./root";
 
 export default route.page({
   head: () => ({
-    meta: [{ title: "About - Elysion Blog" }],
+    meta: [{ title: "About - Elyra Blog" }],
   }),
   component: () => (
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
-      <h1 className="mb-8 font-bold text-4xl">About Elysion</h1>
+      <h1 className="mb-8 font-bold text-4xl">About Elyra</h1>
 
       <div className="prose prose-lg max-w-none">
         <p className="mb-8 text-gray-600 text-xl">
-          Elysion is a modern React meta-framework that combines the speed of Bun with the
-          flexibility of Elysia to create blazing fast web applications.
+          Elyra is a modern React meta-framework that combines the speed of Bun with the flexibility
+          of Elysia to create blazing fast web applications.
         </p>
 
-        <h2 className="mt-8 mb-4 font-bold text-2xl">Why Elysion?</h2>
+        <h2 className="mt-8 mb-4 font-bold text-2xl">Why Elyra?</h2>
         <p className="mb-4 text-gray-600">
           Traditional React frameworks often force you to choose between performance and developer
-          experience. Elysion eliminates that compromise by leveraging Bun's native speed and
-          Elysia's elegant API design.
+          experience. Elyra eliminates that compromise by leveraging Bun's native speed and Elysia's
+          elegant API design.
         </p>
 
         <h2 className="mt-8 mb-4 font-bold text-2xl">Key Concepts</h2>
@@ -71,9 +71,7 @@ export default route.page({
         </div>
 
         <h2 className="mt-8 mb-4 font-bold text-2xl">This Demo</h2>
-        <p className="mb-4 text-gray-600">
-          This application demonstrates all of Elysion's features:
-        </p>
+        <p className="mb-4 text-gray-600">This application demonstrates all of Elyra's features:</p>
         <ul className="space-y-2 text-gray-600">
           <li>SSG landing page (this page)</li>
           <li>SSR blog list with pagination</li>

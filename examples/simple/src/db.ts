@@ -91,13 +91,13 @@ const users: User[] = [
 const posts: Post[] = [
   {
     id: "1",
-    slug: "introduction-to-elysion",
-    title: "Introduction to Elysion",
+    slug: "introduction-to-elyra",
+    title: "Introduction to Elyra",
     excerpt:
-      "Discover Elysion, the React meta-framework built on Elysia and Bun for blazing fast web applications.",
-    content: `# Introduction to Elysion
+      "Discover Elyra, the React meta-framework built on Elysia and Bun for blazing fast web applications.",
+    content: `# Introduction to Elyra
 
-Elysion is a powerful React meta-framework that combines the speed of Bun with the flexibility of Elysia.
+Elyra is a powerful React meta-framework that combines the speed of Bun with the flexibility of Elysia.
 
 ## Features
 
@@ -110,14 +110,14 @@ Elysion is a powerful React meta-framework that combines the speed of Bun with t
 ## Getting Started
 
 \`\`\`bash
-bun create elysion my-app
+bun create elyra my-app
 cd my-app
 bun dev
 \`\`\`
 
-## Why Elysion?
+## Why Elyra?
 
-Elysion brings together the best of modern web development:
+Elyra brings together the best of modern web development:
 - Server-side rendering for SEO and initial load performance
 - Static generation for maximum speed
 - Incremental regeneration for dynamic content
@@ -133,7 +133,7 @@ Elysion brings together the best of modern web development:
     slug: "building-with-tailwind-v4",
     title: "Building Modern UIs with Tailwind CSS v4",
     excerpt:
-      "Learn how to leverage Tailwind CSS v4 in your Elysion projects for beautiful, responsive designs.",
+      "Learn how to leverage Tailwind CSS v4 in your Elyra projects for beautiful, responsive designs.",
     content: `# Building Modern UIs with Tailwind CSS v4
 
 Tailwind CSS v4 brings exciting new features and improvements.
@@ -145,9 +145,9 @@ Tailwind CSS v4 brings exciting new features and improvements.
 - **New utilities**: Additional helper classes
 - **Better DX**: Enhanced developer experience
 
-## Integration with Elysion
+## Integration with Elyra
 
-Elysion supports Tailwind v4 out of the box via \`bun-plugin-tailwind\`.
+Elyra supports Tailwind v4 out of the box via \`bun-plugin-tailwind\`.
 
 ### Configuration
 
@@ -193,9 +193,9 @@ Best for:
 - News sites
 - Content that updates periodically
 
-## Elysion's Approach
+## Elyra's Approach
 
-Elysion makes it easy to use all three strategies in a single application:
+Elyra makes it easy to use all three strategies in a single application:
 
 \`\`\`tsx
 // SSG - no loader
@@ -222,10 +222,10 @@ const route = createRoute({
     id: "4",
     slug: "nested-layouts-patterns",
     title: "Mastering Nested Layouts",
-    excerpt: "Learn how to build complex UI hierarchies with Elysion's nested layout system.",
+    excerpt: "Learn how to build complex UI hierarchies with Elyra's nested layout system.",
     content: `# Mastering Nested Layouts
 
-Elysion's nested layout system allows you to compose your UI in powerful ways.
+Elyra's nested layout system allows you to compose your UI in powerful ways.
 
 ## How It Works
 

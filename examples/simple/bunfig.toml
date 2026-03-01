@@ -1,3 +1,3 @@
 [serve.static]
-plugins = ["bun-plugin-tailwind", "@teyik0/elysion/strip-plugin"]
+plugins = ["bun-plugin-tailwind", "elyra/strip-plugin"]
 env = "ELYSION_PUBLIC_*"
