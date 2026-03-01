@@ -1,5 +1,5 @@
 import { createRoute } from "@teyik0/elysion/client";
-import { Link } from "@teyik0/elysion/link";
+import { Link, type RouteTo } from "@teyik0/elysion/link";
 import { client } from "../../client";
 import { route as rootRoute } from "../root";
 
@@ -29,7 +29,7 @@ export const route = createRoute({
             <p className="mb-6 text-gray-600">You need to be signed in to access the dashboard.</p>
             <Link
               className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-700"
-              href="/login"
+              to="/login"
             >
               Sign In
             </Link>
@@ -43,29 +43,19 @@ export const route = createRoute({
         <div className="flex">
           <aside className="min-h-screen w-64 border-gray-200 border-r bg-white">
             <div className="p-6">
-              <Link className="font-bold text-indigo-600 text-xl" href="/">
+              <Link className="font-bold text-indigo-600 text-xl" to="/">
                 Elysion
               </Link>
             </div>
             <nav className="space-y-1 px-4">
+              <NavItem icon="home" label="Dashboard" pathname={pathname} to="/dashboard" />
               <NavItem
-                href="/dashboard"
-                icon="home"
-                label="Dashboard"
-                pathname={pathname as string}
-              />
-              <NavItem
-                href="/dashboard/posts"
                 icon="document"
                 label="Posts"
-                pathname={pathname as string}
+                pathname={pathname}
+                to="/dashboard/posts/new"
               />
-              <NavItem
-                href="/dashboard/settings"
-                icon="settings"
-                label="Settings"
-                pathname={pathname as string}
-              />
+              <NavItem icon="settings" label="Settings" pathname={pathname} to="/dashboard" />
             </nav>
           </aside>
 
@@ -102,17 +92,17 @@ export const route = createRoute({
 });
 
 function NavItem({
-  href,
+  to,
   icon,
   label,
   pathname,
 }: {
-  href: string;
+  to: RouteTo;
   icon: string;
   label: string;
   pathname: string;
 }) {
-  const isActive = pathname === href;
+  const isActive = pathname === to;
 
   const icons: Record<string, React.ReactNode> = {
     home: (
@@ -161,8 +151,8 @@ function NavItem({
       className={`flex items-center gap-3 rounded-lg px-4 py-2 transition-colors ${
         isActive ? "bg-indigo-50 text-indigo-600" : "text-gray-600 hover:bg-gray-50"
       }`}
-      href={href}
       preload="render"
+      to={to}
     >
       {icons[icon]}
       <span className="font-medium">{label}</span>

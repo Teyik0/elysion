@@ -34,7 +34,7 @@ export default route.page({
       <main className="flex min-h-[80vh] items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
-            <Link className="font-bold text-2xl text-indigo-600" href="/">
+            <Link className="font-bold text-2xl text-indigo-600" to="/">
               Elysion Blog
             </Link>
             <h1 className="mt-4 font-bold text-3xl text-gray-900">Sign in to your account</h1>

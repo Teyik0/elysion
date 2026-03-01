@@ -85,10 +85,10 @@ export default route.page({
         <div className="mt-8 rounded-lg bg-indigo-50 p-6">
           <h3 className="mb-2 font-semibold text-indigo-900 text-lg">Ready to explore?</h3>
           <div className="flex gap-4">
-            <Link className="font-medium text-indigo-600 hover:text-indigo-700" href="/blog">
+            <Link className="font-medium text-indigo-600 hover:text-indigo-700" to="/blog">
               Read the Blog →
             </Link>
-            <Link className="font-medium text-indigo-600 hover:text-indigo-700" href="/dashboard">
+            <Link className="font-medium text-indigo-600 hover:text-indigo-700" to="/dashboard">
               View Dashboard →
             </Link>
           </div>

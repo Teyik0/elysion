@@ -61,7 +61,7 @@ export default route.page({
       {posts.length === 0 && (
         <div className="py-12 text-center">
           <p className="text-gray-500">No posts found.</p>
-          <Link className="mt-2 inline-block text-indigo-600 hover:text-indigo-700" href="/blog">
+          <Link className="mt-2 inline-block text-indigo-600 hover:text-indigo-700" to="/blog">
             View all posts →
           </Link>
         </div>
@@ -76,7 +76,11 @@ export default route.page({
             {pagination.hasPrev && (
               <Link
                 className="rounded-md border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 text-sm hover:bg-gray-50"
-                href={`/blog?page=${pagination.page - 1}${currentTag ? `&tag=${encodeURIComponent(currentTag)}` : ""}`}
+                search={{
+                  page: pagination.page - 1,
+                  tag: currentTag ?? undefined,
+                }}
+                to="/blog"
               >
                 Previous
               </Link>
@@ -84,7 +88,11 @@ export default route.page({
             {pagination.hasNext && (
               <Link
                 className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-sm text-white hover:bg-indigo-700"
-                href={`/blog?page=${pagination.page + 1}${currentTag ? `&tag=${encodeURIComponent(currentTag)}` : ""}`}
+                search={{
+                  page: pagination.page + 1,
+                  tag: currentTag ?? undefined,
+                }}
+                to="/blog"
               >
                 Next
               </Link>
@@ -106,7 +114,7 @@ function PostCard({ post }: { post: PostWithParsedTags }) {
 
   return (
     <article className="overflow-hidden rounded-lg border border-gray-200 bg-white transition-shadow hover:shadow-md">
-      <Link className="block p-6" href={`/blog/${post.slug}`}>
+      <Link className="block p-6" to={`/blog/${post.slug}`}>
         <h2 className="mb-2 font-semibold text-gray-900 text-xl transition-colors hover:text-indigo-600">
           {post.title}
         </h2>
