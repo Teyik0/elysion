@@ -55,7 +55,7 @@ export function resolveServerEntrypoint(rootDir: string, target?: BuildTarget): 
 }
 
 export async function loadCliConfig(
-  cwd = process.cwd(),
+  cwd: string,
   explicitConfigPath?: string
 ): Promise<ResolvedCliConfig> {
   const rootDir = resolve(cwd);
@@ -76,10 +76,11 @@ export async function loadCliConfig(
   const imported = await import(pathToFileURL(configPath).href);
   const config = configSchema.parse(imported.default ?? imported) satisfies ElyraConfig;
 
+  const resolvedRootDir = resolve(rootDir, config.rootDir ?? ".");
   return {
     ...config,
     configPath,
-    rootDir: resolve(rootDir, config.rootDir ?? "."),
-    pagesDir: resolve(rootDir, config.pagesDir ?? "src/pages"),
+    rootDir: resolvedRootDir,
+    pagesDir: resolve(resolvedRootDir, config.pagesDir ?? "src/pages"),
   };
 }

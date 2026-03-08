@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { transformForClient } from "./adapter/transform-client";
+import { resolveServerEntrypoint } from "./cli/config";
 import { BUILD_TARGETS, type BuildTarget } from "./config";
 import { type ResolvedRoute, scanPages } from "./router";
 import { generateIndexHtml } from "./template-shell";
@@ -447,18 +448,13 @@ function writeJsonFile(path: string, value: unknown): void {
 }
 
 function resolveServerEntry(rootDir: string, preferred?: string): string | null {
-  const candidates = [preferred, "src/server.bun.ts", "src/server.ts", "src/app.ts"].filter(
-    (value): value is string => !!value
-  );
-
-  for (const candidate of candidates) {
-    const resolvedCandidate = resolve(rootDir, candidate);
-    if (existsSync(resolvedCandidate)) {
-      return resolvedCandidate;
+  if (preferred) {
+    const resolvedPreferred = resolve(rootDir, preferred);
+    if (existsSync(resolvedPreferred)) {
+      return resolvedPreferred;
     }
   }
-
-  return null;
+  return resolveServerEntrypoint(rootDir);
 }
 
 function buildTargetManifest(
@@ -729,7 +725,7 @@ async function buildNodeTarget(
   return targetManifest;
 }
 
-export async function generateTypes(options: TypegenOptions = {}): Promise<string> {
+export async function generateTypes(options: TypegenOptions): Promise<string> {
   const rootDir = resolve(options.rootDir ?? process.cwd());
   const pagesDir = resolve(rootDir, options.pagesDir ?? "src/pages");
   const buildRoot = resolveBuildRoot(rootDir, options.outDir);
@@ -762,9 +758,10 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
   const buildRoot = resolveBuildRoot(rootDir, options.outDir);
   const sharedDir = join(buildRoot, "shared");
   const serverEntry = resolveServerEntry(rootDir, options.serverEntry);
+  const IMPLEMENTED_TARGETS = ["bun", "node"] as const satisfies BuildTarget[];
   const requestedTargets =
     options.target === "all"
-      ? [...BUILD_TARGETS]
+      ? [...IMPLEMENTED_TARGETS]
       : [options.target].map((target) => {
           assertBuildTarget(target);
           return target;

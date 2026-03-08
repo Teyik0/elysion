@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe("CLI config resolution", () => {
   test("loadCliConfig uses defaults when no config file is present", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = await loadCliConfig(app.path);
 
@@ -28,7 +28,7 @@ describe("CLI config resolution", () => {
   });
 
   test("loadCliConfig loads values from elyra.config.ts", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     writeAppFile(
       app.path,
       "elyra.config.ts",
@@ -51,20 +51,20 @@ describe("CLI config resolution", () => {
   });
 
   test("resolveServerEntrypoint prefers src/server.bun.ts over src/server.ts", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     writeAppFile(app.path, "src/server.bun.ts", 'console.log("bun server");');
 
     expect(resolveServerEntrypoint(app.path, "bun")).toBe(join(app.path, "src/server.bun.ts"));
   });
 
   test("resolveServerEntrypoint falls back to src/server.ts", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     expect(resolveServerEntrypoint(app.path, "bun")).toBe(join(app.path, "src/server.ts"));
   });
 
   test("resolveServerEntrypoint falls back to src/app.ts when src/server.ts is absent", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
     writeAppFile(app.path, "src/app.ts", 'console.log("app entry");');
 
@@ -72,7 +72,7 @@ describe("CLI config resolution", () => {
   });
 
   test("resolveServerEntrypoint returns null when no entrypoint is found", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
 
     expect(resolveServerEntrypoint(app.path, "bun")).toBeNull();

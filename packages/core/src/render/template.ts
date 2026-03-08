@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const devTemplatePromises = new Map<string, Promise<string>>();
 let _prodTemplatePath: string | null = null;
+let _prodTemplateContent: string | null = null;
 
 export function getDevTemplate(origin: string): Promise<string> {
   const cached = devTemplatePromises.get(origin);
@@ -29,6 +30,7 @@ export function getDevTemplate(origin: string): Promise<string> {
 
 export function setProductionTemplatePath(path: string | null): void {
   _prodTemplatePath = path;
+  _prodTemplateContent = null;
 }
 
 export function getProductionTemplate(): string | null {
@@ -36,5 +38,14 @@ export function getProductionTemplate(): string | null {
     return null;
   }
 
-  return readFileSync(_prodTemplatePath, "utf8");
+  if (_prodTemplateContent !== null) {
+    return _prodTemplateContent;
+  }
+
+  try {
+    _prodTemplateContent = readFileSync(_prodTemplatePath, "utf8");
+    return _prodTemplateContent;
+  } catch {
+    return null;
+  }
 }

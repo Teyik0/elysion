@@ -49,6 +49,6 @@ export const devCommand = defineCommand({
     process.on("SIGTERM", () => forwardSignal(proc, "SIGTERM"));
 
     const exitCode = await proc.exited;
-    process.exit(exitCode);
+    process.exit(exitCode ?? 1);
   },
 });

@@ -24,13 +24,15 @@ afterEach(() => {
   process.chdir(originalCwd);
 
   if (originalBuildOutDir === undefined) {
-    process.env.ELYRA_BUILD_OUT_DIR = undefined;
+    // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
+    delete process.env.ELYRA_BUILD_OUT_DIR;
   } else {
     process.env.ELYRA_BUILD_OUT_DIR = originalBuildOutDir;
   }
 
   if (originalBuildTarget === undefined) {
-    process.env.ELYRA_BUILD_TARGET = undefined;
+    // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
+    delete process.env.ELYRA_BUILD_TARGET;
   } else {
     process.env.ELYRA_BUILD_TARGET = originalBuildTarget;
   }
@@ -42,7 +44,7 @@ afterEach(() => {
 
 describe.serial("elyra()", () => {
   test("writes dev files and returns an Elysia instance in dev mode", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(true);
     process.chdir(app.path);
 
@@ -56,7 +58,7 @@ describe.serial("elyra()", () => {
   });
 
   test("builds client assets in production when no prebuilt manifest is provided", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(false);
     process.chdir(app.path);
 
@@ -69,7 +71,7 @@ describe.serial("elyra()", () => {
   });
 
   test("uses the prebuilt bun manifest in production and starts successfully", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     await buildApp({
       rootDir: app.path,
       target: "bun",
@@ -94,7 +96,7 @@ describe.serial("elyra()", () => {
   }, 10_000);
 
   test("throws a clear error when no root.tsx is present", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/pages/root.tsx");
     writeAppFile(
       app.path,

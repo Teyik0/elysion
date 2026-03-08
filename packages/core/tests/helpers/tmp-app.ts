@@ -15,7 +15,16 @@ function ensureTmpRoot(): void {
   }
 }
 
-export function createTmpApp(fixtureName = "cli-app"): TmpApp {
+function assertWithinAppPath(appPath: string, relativePath: string): string {
+  const resolved = resolve(appPath, relativePath);
+  const normalizedApp = resolve(appPath);
+  if (resolved !== normalizedApp && !resolved.startsWith(`${normalizedApp}/`)) {
+    throw new Error(`Path traversal detected: "${relativePath}" escapes app root`);
+  }
+  return resolved;
+}
+
+export function createTmpApp(fixtureName: string): TmpApp {
   ensureTmpRoot();
 
   const source = join(FIXTURES_ROOT, fixtureName);
@@ -29,12 +38,13 @@ export function createTmpApp(fixtureName = "cli-app"): TmpApp {
 }
 
 export function writeAppFile(appPath: string, relativePath: string, contents: string): void {
-  const path = join(appPath, relativePath);
-  const directory = resolve(path, "..");
+  const resolvedPath = assertWithinAppPath(appPath, relativePath);
+  const directory = resolve(resolvedPath, "..");
   mkdirSync(directory, { recursive: true });
-  writeFileSync(path, contents);
+  writeFileSync(resolvedPath, contents);
 }
 
 export function removeAppPath(appPath: string, relativePath: string): void {
-  rmSync(join(appPath, relativePath), { recursive: true, force: true });
+  const resolvedPath = assertWithinAppPath(appPath, relativePath);
+  rmSync(resolvedPath, { recursive: true, force: true });
 }

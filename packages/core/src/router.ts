@@ -177,7 +177,7 @@ export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr
 }
 
 export function filePathToPattern(path: string): string {
-  const parts = path.split("/");
+  const parts = path.replaceAll("\\", "/").split("/");
   const segments: string[] = [];
 
   for (const part of parts) {

@@ -47,6 +47,13 @@ export const previewCommand = defineCommand({
     const proc =
       args.target === "bun"
         ? (() => {
+            const manifest = readTargetBuildManifest(config.rootDir, "bun", outDir);
+            if (!manifest) {
+              throw new Error(
+                "[elyra] Could not find a prebuilt Bun build manifest. Run `elyra build --target bun` first."
+              );
+            }
+
             const serverEntry =
               config.serverEntry ?? resolveServerEntrypoint(config.rootDir, "bun");
 
@@ -91,6 +98,6 @@ export const previewCommand = defineCommand({
     process.on("SIGTERM", () => forwardSignal(proc, "SIGTERM"));
 
     const exitCode = await proc.exited;
-    process.exit(exitCode);
+    process.exit(exitCode ?? 1);
   },
 });

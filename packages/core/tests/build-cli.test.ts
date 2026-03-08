@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe.serial("CLI/build Bun feature", () => {
   test("buildApp({ target: 'bun' }) writes manifests and built client assets", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = await buildApp({
       rootDir: app.path,
@@ -45,7 +45,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("generateTypes() writes shared route types and returns the output path", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const output = await generateTypes({
       rootDir: app.path,
@@ -56,7 +56,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI typegen succeeds and writes shared route types", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["typegen"], { cwd: app.path });
 
@@ -65,7 +65,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI build --target bun succeeds and writes expected manifest fields", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["build", "--target", "bun"], { cwd: app.path });
 
@@ -87,7 +87,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI build --target node succeeds and writes a node server bundle", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["build", "--target", "node"], { cwd: app.path });
 
@@ -97,7 +97,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("buildApp() rejects non-implemented deployment targets", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     await expect(buildApp({ rootDir: app.path, target: "vercel" })).rejects.toThrow(
       "planned but not implemented"
@@ -108,7 +108,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("buildApp() rejects --compile for bun until it is implemented", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     await expect(buildApp({ rootDir: app.path, target: "bun", compile: true })).rejects.toThrow(
       "--compile"
@@ -116,7 +116,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("buildApp() rejects apps without a root.tsx layout", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/pages/root.tsx");
     writeAppFile(
       app.path,
@@ -146,7 +146,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI build rejects unsupported targets with a non-zero exit code", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["build", "--target", "vercel"], { cwd: app.path });
 
@@ -155,7 +155,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI preview rejects unsupported targets with a non-zero exit code", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["preview", "--target", "vercel"], { cwd: app.path });
 
@@ -164,7 +164,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI preview --target node requires a prebuilt node bundle", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["preview", "--target", "node"], { cwd: app.path });
 
@@ -173,7 +173,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("buildApp({ target: 'node' }) writes a node manifest and server bundle", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = await buildApp({
       rootDir: app.path,
@@ -187,7 +187,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("CLI build rejects invalid target values", () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = runCli(["build", "--target", "wat"], { cwd: app.path });
 
@@ -196,7 +196,7 @@ describe.serial("CLI/build Bun feature", () => {
   });
 
   test("preview --target node serves the prebuilt node app over HTTP", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     const port = getTestPort();
 
     await buildApp({
@@ -212,7 +212,7 @@ describe.serial("CLI/build Bun feature", () => {
     });
 
     try {
-      const response = await waitForHttp(`http://127.0.0.1:${port}/`);
+      const response = await waitForHttp(`http://127.0.0.1:${port}/`, {});
       const html = await response.text();
 
       expect(response.status).toBe(200);
@@ -226,7 +226,7 @@ describe.serial("CLI/build Bun feature", () => {
   }, 15_000);
 
   test("preview --target bun serves the prebuilt app without rebuilding the production client", async () => {
-    const app = rememberTmpApp(createTmpApp());
+    const app = rememberTmpApp(createTmpApp("cli-app"));
     const port = getTestPort();
 
     await buildApp({
@@ -242,7 +242,7 @@ describe.serial("CLI/build Bun feature", () => {
     });
 
     try {
-      const response = await waitForHttp(`http://127.0.0.1:${port}/`);
+      const response = await waitForHttp(`http://127.0.0.1:${port}/`, {});
       const html = await response.text();
 
       expect(response.status).toBe(200);
