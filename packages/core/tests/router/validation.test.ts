@@ -104,35 +104,32 @@ describe("scanRootLayout", () => {
     }
   });
 
-  test("returns null when root.tsx doesn't exist", async () => {
+  test("throw error when root.tsx doesn't exist", () => {
     const emptyDir = join(tempDir, "no-root");
     mkdirSync(emptyDir, { recursive: true });
 
-    const result = await scanRootLayout(emptyDir);
-    expect(result).toBeNull();
+    expect(scanRootLayout(emptyDir)).rejects.toThrow();
   });
 
-  test("returns null when export is not a valid Elyra route", async () => {
+  test("throw error when export is not a valid Elyra route", () => {
     const invalidDir = join(tempDir, "invalid-root");
     mkdirSync(invalidDir, { recursive: true });
 
     writeFileSync(join(invalidDir, "root.tsx"), "export const route = { notARoute: true };");
 
-    const result = await scanRootLayout(invalidDir);
-    expect(result).toBeNull();
+    expect(scanRootLayout(invalidDir)).rejects.toThrow();
   });
 
-  test("returns null when default export is not a valid route", async () => {
+  test("throw error when default export is not a valid route", () => {
     const invalidDefaultDir = join(tempDir, "invalid-default");
     mkdirSync(invalidDefaultDir, { recursive: true });
 
     writeFileSync(join(invalidDefaultDir, "root.tsx"), "export default { invalid: true };");
 
-    const result = await scanRootLayout(invalidDefaultDir);
-    expect(result).toBeNull();
+    expect(scanRootLayout(invalidDefaultDir)).rejects.toThrow();
   });
 
-  test("warns when root has no layout", async () => {
+  test("throw error when root has no layout", () => {
     const noLayoutDir = join(tempDir, "no-layout");
     mkdirSync(noLayoutDir, { recursive: true });
 
@@ -142,17 +139,7 @@ describe("scanRootLayout", () => {
 export { route };`
     );
 
-    const logs: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (msg: string) => logs.push(msg);
-
-    const result = await scanRootLayout(noLayoutDir);
-
-    console.warn = originalWarn;
-
-    expect(result).not.toBeNull();
-    expect(result?.route).toBeDefined();
-    expect(logs.some((l) => l.includes("no layout"))).toBe(true);
+    expect(scanRootLayout(noLayoutDir)).rejects.toThrow();
   });
 
   test("returns root layout when valid", async () => {
@@ -168,8 +155,8 @@ export { route };`
     const result = await scanRootLayout(validDir);
 
     expect(result).not.toBeNull();
-    expect(result?.path).toContain("root.tsx");
-    expect(result?.route).toBeDefined();
-    expect(result?.route.layout).toBeDefined();
+    expect(result.path).toContain("root.tsx");
+    expect(result.route).toBeDefined();
+    expect(result.route.layout).toBeDefined();
   });
 });
