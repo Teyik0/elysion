@@ -12,7 +12,7 @@ import { isrCache, ssgCache } from "./cache";
 import { buildElement } from "./element";
 import { runLoaders } from "./loaders";
 import { loadPageModule, loadRootModule } from "./module-loader";
-import { getDevTemplate, readProdTemplate } from "./template";
+import { getDevTemplate, getProductionTemplate } from "./template";
 
 // ── Re-exports (public API) ──────────────────────────────────────────────────
 // biome-ignore lint/performance/noBarrelFile: acnowledged
@@ -23,8 +23,9 @@ export { loadPageModule, loadRootModule } from "./module-loader";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-import { IS_DEV } from "../elyra";
 import type { ResolvedRoute } from "../router";
+import { IS_DEV } from "../runtime-env";
+import { generateIndexHtml } from "../template-shell";
 import type { LoaderContext } from "./assemble";
 
 interface RenderResult {
@@ -90,7 +91,7 @@ export async function renderToHTML(
   // Prod: read .elysion/client/index.html from disk.
   const template = IS_DEV
     ? await getDevTemplate(new URL(ctx.request.url).origin)
-    : readProdTemplate();
+    : (getProductionTemplate() ?? generateIndexHtml());
 
   return {
     html: assembleHTML(template, headData, reactHtml, data),
@@ -155,7 +156,7 @@ export async function renderSSR(
     const headData = buildHeadInjection(route.page?.head?.(componentProps));
     const template = IS_DEV
       ? await getDevTemplate(new URL(ctx.request.url).origin)
-      : readProdTemplate();
+      : (getProductionTemplate() ?? generateIndexHtml());
 
     // Phase 2: split template around placeholders
     const { headPre, bodyPre, bodyPost } = splitTemplate(template);

@@ -1,6 +1,6 @@
 {
   "name": "elyra",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "type": "module",
   "files": [
     "dist",
@@ -9,6 +9,9 @@
   "main": "./dist/elyra.js",
   "module": "./dist/elyra.js",
   "types": "./src/elyra.ts",
+  "bin": {
+    "elyra": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./src/elyra.ts",
@@ -24,6 +27,11 @@
       "types": "./src/build.ts",
       "bun": "./src/build.ts",
       "import": "./dist/build.js"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "bun": "./src/config.ts",
+      "import": "./dist/config.js"
     },
     "./router": {
       "types": "./src/router.ts",
@@ -48,8 +56,11 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.7",
+    "citty": "^0.2.0",
+    "consola": "^3.4.2",
     "magic-string": "^0.30.21",
-    "oxc-parser": "^0.116.0"
+    "oxc-parser": "^0.116.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/react": "catalog:",

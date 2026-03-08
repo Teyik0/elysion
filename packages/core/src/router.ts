@@ -1,5 +1,6 @@
-import { parse } from "node:path";
-import { Glob } from "bun";
+import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join, parse } from "node:path";
 import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
@@ -62,8 +63,7 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout | null)
 
 export async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
   const rootPath = `${pagesDir}/root.tsx`;
-  const rootFile = Bun.file(rootPath);
-  if (!(await rootFile.exists())) {
+  if (!existsSync(rootPath)) {
     return null;
   }
 
@@ -86,14 +86,30 @@ async function loadPageModule(pagePath: string): Promise<RuntimePage> {
   return mod.default;
 }
 
+async function collectPageFilePaths(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const absolutePath = join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...(await collectPageFilePaths(absolutePath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files;
+}
+
 async function scanPageFiles(pagesDir: string, root: RootLayout | null): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
-  const glob = new Glob("**/*.{tsx,ts}");
 
-  for await (const absolutePath of glob.scan({
-    cwd: pagesDir,
-    absolute: true,
-  })) {
+  for (const absolutePath of await collectPageFilePaths(pagesDir)) {
     if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
       continue;
     }

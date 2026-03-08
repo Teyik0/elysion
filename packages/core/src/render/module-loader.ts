@@ -1,6 +1,6 @@
 import type { RuntimeRoute } from "../client";
-import { IS_DEV } from "../elyra";
 import type { ResolvedRoute, RootLayout } from "../router";
+import { IS_DEV } from "../runtime-env";
 
 /**
  * Loads the page module for a given route.

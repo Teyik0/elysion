@@ -1,18 +1,14 @@
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
-import { buildClient, writeDevFiles } from "./build";
+import { buildClient, readTargetBuildManifest, writeDevFiles } from "./build";
 import { warmSSGCache } from "./render/index";
+import { setProductionTemplatePath } from "./render/template";
 import { createRoutePlugin, scanPages } from "./router";
+import { IS_DEV } from "./runtime-env";
 
 export interface ElysionProps {
   pagesDir?: string;
-}
-
-export let IS_DEV = process.env.NODE_ENV !== "production";
-/** @internal test-only — overrides IS_DEV via live binding */
-export function __setDevMode(val: boolean): void {
-  IS_DEV = val;
 }
 
 /**
@@ -44,6 +40,10 @@ export function __setDevMode(val: boolean): void {
 export async function elyra({ pagesDir }: ElysionProps) {
   const cwd = process.cwd();
   const resolvedPagesDir = resolve(cwd, pagesDir ?? "src/pages");
+  const buildTarget = process.env.ELYRA_BUILD_TARGET;
+  const buildOutDir = process.env.ELYRA_BUILD_OUT_DIR;
+  const prebuiltManifest =
+    !IS_DEV && buildTarget === "bun" ? readTargetBuildManifest(cwd, "bun", buildOutDir) : null;
 
   const { root, routes } = await scanPages(resolvedPagesDir);
 
@@ -88,13 +88,22 @@ export async function elyra({ pagesDir }: ElysionProps) {
   }
 
   // ── Production ──────────────────────────────────────────────────────────
-  const elysionDir = resolve(cwd, ".elyra");
-  await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root.path ?? null });
+  const defaultProdDir = resolve(cwd, ".elyra");
+  const elysionDir = prebuiltManifest ? resolve(cwd, prebuiltManifest.targetDir) : defaultProdDir;
+
+  if (prebuiltManifest) {
+    setProductionTemplatePath(resolve(cwd, prebuiltManifest.templatePath));
+  } else {
+    setProductionTemplatePath(null);
+    await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root.path });
+  }
 
   let instance = new Elysia()
     .use(
       await staticPlugin({
-        assets: resolve(cwd, ".elyra", "client"),
+        assets: prebuiltManifest
+          ? resolve(cwd, prebuiltManifest.clientDir)
+          : resolve(cwd, ".elyra", "client"),
         prefix: "/_client",
       })
     )

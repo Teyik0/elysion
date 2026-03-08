@@ -3,7 +3,6 @@ import { join } from "node:path";
 import type { Cookie } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import type { RuntimeRoute } from "../src/client";
-import { __setDevMode, IS_DEV } from "../src/elyra";
 import {
   buildElement,
   handleISR,
@@ -21,6 +20,7 @@ import {
 import { ssgCache } from "../src/render/cache";
 import type { ResolvedRoute } from "../src/router";
 import { scanPages } from "../src/router";
+import { __setDevMode, IS_DEV } from "../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 

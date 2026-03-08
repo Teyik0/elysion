@@ -9,11 +9,9 @@ coverage = true
 coveragePathIgnorePatterns = [
   "**/*.test.ts",
   "**/fixtures/**/*",
-  "**/render/template.ts",   # Requires running HTTP server + filesystem, not unit-testable
   "**/render/module-loader.ts", # Dev HMR reload paths require Bun module system failure, integration-test only
-  "**/elyra.ts", # Not unit testable
-  "**/build.ts",  # Majority is Bun.build() orchestration + file-system writes, not unit-testable
   "**/link.tsx",  # Majority is browser-only (IntersectionObserver, history, fetch) — no DOM environment in tests
+  "**/.tmp-tests/**", # Temporary apps created by CLI/build integration tests
   "**/private/var/**",  # macOS temp files
   "**/var/folders/**", # macOS temp files (symlink)
   "**/tmp/**" # linux CI temp files

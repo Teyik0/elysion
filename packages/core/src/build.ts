@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { transformForClient } from "./adapter/transform-client";
-import type { ResolvedRoute } from "./router";
+import { BUILD_TARGETS, type BuildTarget } from "./config";
+import { type ResolvedRoute, scanPages } from "./router";
+import { generateIndexHtml } from "./template-shell";
 
 export interface BuildClientOptions {
   dev?: boolean;
@@ -10,8 +12,64 @@ export interface BuildClientOptions {
   rootPath: string;
 }
 
+export interface BuildRouteManifestEntry {
+  hasLayout: boolean;
+  hasStaticParams: boolean;
+  mode: ResolvedRoute["mode"];
+  pagePath: string;
+  pattern: string;
+  revalidate: number | null;
+}
+
+export interface TargetBuildManifest {
+  clientDir: string;
+  generatedAt: string;
+  manifestPath: string;
+  routeTypesPath: string;
+  serverEntry: string | null;
+  serverPath: string | null;
+  target: BuildTarget;
+  targetDir: string;
+  templatePath: string;
+}
+
+export interface BuildManifest {
+  generatedAt: string;
+  pagesDir: string;
+  rootDir: string;
+  rootPath: string;
+  routes: BuildRouteManifestEntry[];
+  serverEntry: string | null;
+  targets: Partial<Record<BuildTarget, TargetBuildManifest>>;
+  version: 1;
+}
+
+export interface BuildAppOptions {
+  compile?: boolean;
+  minify?: boolean;
+  outDir?: string;
+  pagesDir?: string;
+  rootDir?: string;
+  serverEntry?: string;
+  sourcemap?: boolean;
+  target: BuildTarget | "all";
+}
+
+export interface BuildAppResult {
+  manifest: BuildManifest;
+  targets: Partial<Record<BuildTarget, TargetBuildManifest>>;
+}
+
+export interface TypegenOptions {
+  outDir?: string;
+  pagesDir?: string;
+  rootDir?: string;
+}
+
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
 const REACT_IMPORT_RE = /import\s+React\b/;
+
+const DEFAULT_BUILD_ROOT = ".elyra/build";
 
 // ── Hydrate entry ──────────────────────────────────────────────────────────
 
@@ -183,22 +241,6 @@ ${entries.join(";\n")};
  *  - Injects the HMR WebSocket client into <head>.
  *  - Preserves <!--ssr-head--> and <!--ssr-outlet--> comments for SSR injection.
  */
-export function generateIndexHtml(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!--ssr-head-->
-  </head>
-  <body>
-    <div id="root"><!--ssr-outlet--></div>
-    <script type="module" src="./_hydrate.tsx"></script>
-  </body>
-</html>
-`;
-}
-
 /**
  * Writes _hydrate.tsx + index.html to outDir for dev (Bun HMR) mode.
  *
@@ -333,4 +375,412 @@ export async function buildClient(
   }
 
   console.log("[elyra] Production client build complete");
+}
+
+function assertBuildTarget(target: string): asserts target is BuildTarget {
+  if ((BUILD_TARGETS as readonly string[]).includes(target)) {
+    return;
+  }
+
+  throw new Error(`[elyra] Unsupported build target "${target}"`);
+}
+
+function ensureDir(path: string): void {
+  if (!existsSync(path)) {
+    mkdirSync(path, { recursive: true });
+  }
+}
+
+function resolveBuildRoot(rootDir: string, outDir?: string): string {
+  return resolve(rootDir, outDir ?? DEFAULT_BUILD_ROOT);
+}
+
+function toPosixPath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function toImportSpecifier(fromDir: string, targetPath: string): string {
+  const relativePath = toPosixPath(relative(fromDir, targetPath));
+  if (relativePath.startsWith(".")) {
+    return relativePath;
+  }
+  return `./${relativePath}`;
+}
+
+function toBuildRouteManifestEntry(route: ResolvedRoute, rootDir: string): BuildRouteManifestEntry {
+  return {
+    pattern: route.pattern,
+    mode: route.mode,
+    pagePath: toPosixPath(relative(rootDir, route.pagePath)),
+    hasLayout: route.routeChain.some((entry) => !!entry.layout),
+    hasStaticParams: !!route.page?.staticParams,
+    revalidate: route.page?._route.revalidate ?? null,
+  };
+}
+
+function writeJsonFile(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function resolveServerEntry(rootDir: string, preferred?: string): string | null {
+  const candidates = [preferred, "src/server.bun.ts", "src/server.ts", "src/app.ts"].filter(
+    (value): value is string => !!value
+  );
+
+  for (const candidate of candidates) {
+    const resolvedCandidate = resolve(rootDir, candidate);
+    if (existsSync(resolvedCandidate)) {
+      return resolvedCandidate;
+    }
+  }
+
+  return null;
+}
+
+function buildTargetManifest(
+  rootDir: string,
+  buildRoot: string,
+  target: BuildTarget,
+  serverEntry: string | null
+): TargetBuildManifest {
+  const targetDir = join(buildRoot, target);
+  const manifestPath = join(targetDir, "manifest.json");
+  return {
+    target,
+    generatedAt: new Date().toISOString(),
+    targetDir: toPosixPath(relative(rootDir, targetDir)),
+    clientDir: toPosixPath(relative(rootDir, join(targetDir, "client"))),
+    templatePath: toPosixPath(relative(rootDir, join(targetDir, "client", "index.html"))),
+    routeTypesPath: toPosixPath(relative(rootDir, join(targetDir, "routes.d.ts"))),
+    manifestPath: toPosixPath(relative(rootDir, manifestPath)),
+    serverPath: null,
+    serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry)) : null,
+  };
+}
+
+async function buildBunTarget(
+  routes: ResolvedRoute[],
+  rootDir: string,
+  buildRoot: string,
+  rootPath: string,
+  serverEntry: string | null,
+  options: BuildAppOptions
+): Promise<TargetBuildManifest> {
+  if (options.compile) {
+    throw new Error(
+      "[elyra] `--compile` for `--target bun` is not wired yet. Use the default split output for now."
+    );
+  }
+
+  const target = "bun" satisfies BuildTarget;
+  const targetManifest = buildTargetManifest(rootDir, buildRoot, target, serverEntry);
+  const targetDir = resolve(rootDir, targetManifest.targetDir);
+
+  rmSync(targetDir, { force: true, recursive: true });
+  ensureDir(targetDir);
+
+  await buildClient(routes, {
+    outDir: targetDir,
+    rootPath,
+  });
+
+  writeJsonFile(resolve(rootDir, targetManifest.manifestPath), targetManifest);
+  return targetManifest;
+}
+
+function generateNodeRuntimeModule(
+  routes: ResolvedRoute[],
+  rootPath: string,
+  targetDir: string
+): string {
+  const routerModulePath = resolve(import.meta.dir, "router.ts");
+  const utilsModulePath = resolve(import.meta.dir, "utils.ts");
+  const rootImportPath = toImportSpecifier(targetDir, rootPath);
+  const routerImportPath = toImportSpecifier(targetDir, routerModulePath);
+  const utilsImportPath = toImportSpecifier(targetDir, utilsModulePath);
+
+  const pageImports = routes
+    .map(
+      (route, index) =>
+        `import page${index} from "${toImportSpecifier(targetDir, route.pagePath)}";`
+    )
+    .join("\n");
+
+  const routeEntries = routes
+    .map((route, index) => {
+      const pageVar = `page${index}`;
+      return [
+        "(() => {",
+        `  const page = ${pageVar};`,
+        "  const routeChain = collectRouteChain(page);",
+        "  return {",
+        `    pattern: ${JSON.stringify(route.pattern)},`,
+        "    page,",
+        `    pagePath: ${JSON.stringify(route.pagePath)},`,
+        `    path: ${JSON.stringify(route.path)},`,
+        "    routeChain,",
+        "    mode: resolveMode(page, routeChain),",
+        "  };",
+        "})()",
+      ].join("\n");
+    })
+    .join(",\n");
+
+  return [
+    `import * as rootModule from "${rootImportPath}";`,
+    pageImports,
+    `import { resolveMode } from "${routerImportPath}";`,
+    `import { collectRouteChain } from "${utilsImportPath}";`,
+    "",
+    `const rootRoute = "route" in rootModule ? rootModule.route : rootModule["default"];`,
+    "",
+    "export const root = {",
+    `  path: ${JSON.stringify(rootPath)},`,
+    "  route: rootRoute,",
+    "};",
+    "",
+    "export const routes = [",
+    routeEntries,
+    "];",
+    "",
+  ].join("\n");
+}
+
+function generateNodeServerEntry(targetDir: string): string {
+  const routerModulePath = resolve(import.meta.dir, "router.ts");
+  const templateModulePath = resolve(import.meta.dir, "render/template.ts");
+  const routerImportPath = toImportSpecifier(targetDir, routerModulePath);
+  const templateImportPath = toImportSpecifier(targetDir, templateModulePath);
+
+  return [
+    `import { createServer } from "node:http";`,
+    `import { fileURLToPath } from "node:url";`,
+    `import { Readable } from "node:stream";`,
+    `import { Elysia } from "elysia";`,
+    `import { staticPlugin } from "@elysiajs/static";`,
+    `import { createRoutePlugin } from "${routerImportPath}";`,
+    `import { setProductionTemplatePath } from "${templateImportPath}";`,
+    `import { root, routes } from "./runtime";`,
+    "",
+    `const clientDir = fileURLToPath(new URL("./client", import.meta.url));`,
+    `const templatePath = fileURLToPath(new URL("./client/index.html", import.meta.url));`,
+    "setProductionTemplatePath(templatePath);",
+    "",
+    "let app = new Elysia()",
+    `  .use(await staticPlugin({ assets: clientDir, prefix: "/_client" }))`,
+    "  .use(await staticPlugin());",
+    "",
+    "for (const route of routes) {",
+    "  app = app.use(createRoutePlugin(route, root));",
+    "}",
+    "",
+    "function toRequest(req, port) {",
+    '  const origin = "http://" + (req.headers.host ?? "127.0.0.1:" + port);',
+    `  const url = new URL(req.url ?? "/", origin);`,
+    "  const headers = new Headers();",
+    "  for (const [key, value] of Object.entries(req.headers)) {",
+    "    if (Array.isArray(value)) {",
+    "      for (const item of value) headers.append(key, item);",
+    "    } else if (value !== undefined) {",
+    "      headers.set(key, value);",
+    "    }",
+    "  }",
+    `  const method = req.method ?? "GET";`,
+    "  return new Request(url, {",
+    "    method,",
+    "    headers,",
+    `    body: method === "GET" || method === "HEAD" ? undefined : Readable.toWeb(req),`,
+    `    duplex: "half",`,
+    "  });",
+    "}",
+    "",
+    "const port = Number(process.env.PORT ?? 3000);",
+    "const server = createServer(async (req, res) => {",
+    "  const response = await app.fetch(toRequest(req, port));",
+    "  res.statusCode = response.status;",
+    "  response.headers.forEach((value, key) => {",
+    "    res.setHeader(key, value);",
+    "  });",
+    "  if (!response.body) {",
+    "    res.end();",
+    "    return;",
+    "  }",
+    "  const body = Buffer.from(await response.arrayBuffer());",
+    "  res.end(body);",
+    "});",
+    "",
+    "server.listen(port, () => {",
+    '  console.log("[elyra:node] listening on " + port);',
+    "});",
+    "",
+  ].join("\n");
+}
+
+async function buildNodeTarget(
+  routes: ResolvedRoute[],
+  rootDir: string,
+  buildRoot: string,
+  rootPath: string,
+  serverEntry: string | null,
+  options: BuildAppOptions
+): Promise<TargetBuildManifest> {
+  const target = "node" satisfies BuildTarget;
+  const targetManifest = buildTargetManifest(rootDir, buildRoot, target, serverEntry);
+  const targetDir = resolve(rootDir, targetManifest.targetDir);
+  const runtimeEntryPath = join(targetDir, "runtime.ts");
+  const serverEntryPath = join(targetDir, "server.entry.ts");
+  const outputServerPath = join(targetDir, "server.js");
+
+  rmSync(targetDir, { force: true, recursive: true });
+  ensureDir(targetDir);
+
+  await buildClient(routes, {
+    outDir: targetDir,
+    rootPath,
+  });
+
+  writeFileSync(runtimeEntryPath, generateNodeRuntimeModule(routes, rootPath, targetDir));
+  writeFileSync(serverEntryPath, generateNodeServerEntry(targetDir));
+
+  const command = [
+    "bun",
+    "build",
+    serverEntryPath,
+    "--outfile",
+    outputServerPath,
+    "--target",
+    "node",
+    "--format",
+    "esm",
+  ];
+
+  if (options.minify ?? true) {
+    command.push("--minify");
+  }
+
+  if (options.sourcemap ?? false) {
+    command.push("--sourcemap");
+  }
+
+  const cliBuild = Bun.spawnSync(command, {
+    cwd: rootDir,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+    },
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+
+  if (cliBuild.exitCode !== 0) {
+    const errorOutput = new TextDecoder().decode(cliBuild.stderr);
+    throw new Error(`[elyra] Node server build failed\n${errorOutput}`.trim());
+  }
+
+  targetManifest.serverPath = toPosixPath(relative(rootDir, outputServerPath));
+  writeJsonFile(resolve(rootDir, targetManifest.manifestPath), targetManifest);
+  return targetManifest;
+}
+
+export async function generateTypes(options: TypegenOptions = {}): Promise<string> {
+  const rootDir = resolve(options.rootDir ?? process.cwd());
+  const pagesDir = resolve(rootDir, options.pagesDir ?? "src/pages");
+  const buildRoot = resolveBuildRoot(rootDir, options.outDir);
+  const typesDir = join(buildRoot, "shared");
+  const { routes } = await scanPages(pagesDir);
+
+  ensureDir(typesDir);
+  writeRouteTypes(routes, typesDir);
+
+  return join(typesDir, "routes.d.ts");
+}
+
+export function readTargetBuildManifest(
+  rootDir: string,
+  target: BuildTarget,
+  outDir?: string
+): TargetBuildManifest | null {
+  const buildRoot = resolveBuildRoot(rootDir, outDir);
+  const path = join(buildRoot, target, "manifest.json");
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  return JSON.parse(readFileSync(path, "utf8")) as TargetBuildManifest;
+}
+
+export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult> {
+  const rootDir = resolve(options.rootDir ?? process.cwd());
+  const pagesDir = resolve(rootDir, options.pagesDir ?? "src/pages");
+  const buildRoot = resolveBuildRoot(rootDir, options.outDir);
+  const sharedDir = join(buildRoot, "shared");
+  const serverEntry = resolveServerEntry(rootDir, options.serverEntry);
+  const requestedTargets =
+    options.target === "all"
+      ? [...BUILD_TARGETS]
+      : [options.target].map((target) => {
+          assertBuildTarget(target);
+          return target;
+        });
+
+  const { root, routes } = await scanPages(pagesDir);
+  if (!root) {
+    throw new Error(
+      "[elyra] No root.tsx found. Create a root.tsx in your pages directory with a layout component."
+    );
+  }
+
+  ensureDir(buildRoot);
+  ensureDir(sharedDir);
+  writeRouteTypes(routes, sharedDir);
+
+  const manifest: BuildManifest = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    rootDir: toPosixPath(rootDir),
+    pagesDir: toPosixPath(relative(rootDir, pagesDir)),
+    rootPath: toPosixPath(relative(rootDir, root.path)),
+    serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry)) : null,
+    routes: routes.map((route) => toBuildRouteManifestEntry(route, rootDir)),
+    targets: {},
+  };
+
+  for (const target of requestedTargets) {
+    switch (target) {
+      case "bun":
+        manifest.targets.bun = await buildBunTarget(
+          routes,
+          rootDir,
+          buildRoot,
+          root.path,
+          serverEntry,
+          options
+        );
+        break;
+      case "node":
+        manifest.targets.node = await buildNodeTarget(
+          routes,
+          rootDir,
+          buildRoot,
+          root.path,
+          serverEntry,
+          options
+        );
+        break;
+      case "vercel":
+      case "cloudflare":
+        throw new Error(
+          `[elyra] \`--target ${target}\` is planned but not implemented yet in this branch.`
+        );
+      default:
+        throw new Error(`[elyra] Unsupported build target "${target}"`);
+    }
+  }
+
+  writeJsonFile(join(buildRoot, "manifest.json"), manifest);
+
+  return {
+    manifest,
+    targets: manifest.targets,
+  };
 }

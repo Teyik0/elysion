@@ -1,0 +1,259 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type BuildManifest,
+  buildApp,
+  generateTypes,
+  type TargetBuildManifest,
+} from "../src/build";
+import { getTestPort, waitForHttp } from "./helpers/http";
+import { runCli, startCli, startProcess } from "./helpers/run-cli";
+import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app";
+
+const tmpApps: Array<{ cleanup: () => void }> = [];
+
+function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
+  tmpApps.push(app);
+  return app;
+}
+
+function readJsonFile<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+
+afterEach(() => {
+  while (tmpApps.length > 0) {
+    tmpApps.pop()?.cleanup();
+  }
+});
+
+describe.serial("CLI/build Bun feature", () => {
+  test("buildApp({ target: 'bun' }) writes manifests and built client assets", async () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = await buildApp({
+      rootDir: app.path,
+      target: "bun",
+    });
+
+    expect(result.targets.bun).toBeDefined();
+    expect(existsSync(join(app.path, ".elyra/build/manifest.json"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/bun/manifest.json"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/bun/client/index.html"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/shared/routes.d.ts"))).toBe(true);
+  });
+
+  test("generateTypes() writes shared route types and returns the output path", async () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const output = await generateTypes({
+      rootDir: app.path,
+    });
+
+    expect(output).toBe(join(app.path, ".elyra/build/shared/routes.d.ts"));
+    expect(existsSync(output)).toBe(true);
+  });
+
+  test("CLI typegen succeeds and writes shared route types", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["typegen"], { cwd: app.path });
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(app.path, ".elyra/build/shared/routes.d.ts"))).toBe(true);
+  });
+
+  test("CLI build --target bun succeeds and writes expected manifest fields", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["build", "--target", "bun"], { cwd: app.path });
+
+    expect(result.exitCode).toBe(0);
+
+    const manifest = readJsonFile<BuildManifest>(join(app.path, ".elyra/build/manifest.json"));
+    const targetManifest = readJsonFile<TargetBuildManifest>(
+      join(app.path, ".elyra/build/bun/manifest.json")
+    );
+
+    expect(manifest.rootPath).toBe("src/pages/root.tsx");
+    expect(manifest.serverEntry).toBe("src/server.ts");
+    expect(
+      manifest.routes.some((route) => route.pattern === "/blog/:slug" && route.hasStaticParams)
+    ).toBe(true);
+    expect(targetManifest.targetDir).toBe(".elyra/build/bun");
+    expect(targetManifest.clientDir).toBe(".elyra/build/bun/client");
+    expect(targetManifest.templatePath).toBe(".elyra/build/bun/client/index.html");
+  });
+
+  test("CLI build --target node succeeds and writes a node server bundle", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["build", "--target", "node"], { cwd: app.path });
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(app.path, ".elyra/build/node/manifest.json"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/node/server.js"))).toBe(true);
+  });
+
+  test("buildApp() rejects non-implemented deployment targets", async () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    await expect(buildApp({ rootDir: app.path, target: "vercel" })).rejects.toThrow(
+      "planned but not implemented"
+    );
+    await expect(buildApp({ rootDir: app.path, target: "cloudflare" })).rejects.toThrow(
+      "planned but not implemented"
+    );
+  });
+
+  test("buildApp() rejects --compile for bun until it is implemented", async () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    await expect(buildApp({ rootDir: app.path, target: "bun", compile: true })).rejects.toThrow(
+      "--compile"
+    );
+  });
+
+  test("buildApp() rejects apps without a root.tsx layout", async () => {
+    const app = rememberTmpApp(createTmpApp());
+    removeAppPath(app.path, "src/pages/root.tsx");
+    writeAppFile(
+      app.path,
+      "src/pages/index.tsx",
+      [
+        'import { createRoute } from "elyra/client";',
+        "const route = createRoute({ mode: 'ssg' });",
+        "export default route.page({ component: () => <main>No root</main> });",
+      ].join("\n")
+    );
+    writeAppFile(
+      app.path,
+      "src/pages/blog/[slug].tsx",
+      [
+        'import { createRoute } from "elyra/client";',
+        "const route = createRoute({ mode: 'ssg' });",
+        "export default route.page({",
+        "  staticParams: () => [{ slug: 'hello-world' }],",
+        "  component: () => <article>No root blog</article>,",
+        "});",
+      ].join("\n")
+    );
+
+    await expect(buildApp({ rootDir: app.path, target: "bun" })).rejects.toThrow(
+      "No root layout found"
+    );
+  });
+
+  test("CLI build rejects unsupported targets with a non-zero exit code", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["build", "--target", "vercel"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain("planned but not implemented");
+  });
+
+  test("CLI preview rejects unsupported targets with a non-zero exit code", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["preview", "--target", "vercel"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain("not implemented yet");
+  });
+
+  test("CLI preview --target node requires a prebuilt node bundle", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["preview", "--target", "node"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain("Run `elyra build --target node` first");
+  });
+
+  test("buildApp({ target: 'node' }) writes a node manifest and server bundle", async () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = await buildApp({
+      rootDir: app.path,
+      target: "node",
+    });
+
+    expect(result.targets.node).toBeDefined();
+    expect(existsSync(join(app.path, ".elyra/build/node/manifest.json"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/node/server.js"))).toBe(true);
+    expect(existsSync(join(app.path, ".elyra/build/node/client/index.html"))).toBe(true);
+  });
+
+  test("CLI build rejects invalid target values", () => {
+    const app = rememberTmpApp(createTmpApp());
+
+    const result = runCli(["build", "--target", "wat"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
+  });
+
+  test("preview --target node serves the prebuilt node app over HTTP", async () => {
+    const app = rememberTmpApp(createTmpApp());
+    const port = getTestPort();
+
+    await buildApp({
+      rootDir: app.path,
+      target: "node",
+    });
+
+    const proc = startProcess(["node", join(app.path, ".elyra/build/node/server.js")], {
+      cwd: app.path,
+      env: {
+        PORT: `${port}`,
+      },
+    });
+
+    try {
+      const response = await waitForHttp(`http://127.0.0.1:${port}/`);
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain("<main>Home page</main>");
+      expect(html).toContain("chunk-");
+      expect(proc.getStdout()).toContain("[elyra:node] listening on");
+    } finally {
+      proc.kill();
+      await proc.exitCode;
+    }
+  }, 15_000);
+
+  test("preview --target bun serves the prebuilt app without rebuilding the production client", async () => {
+    const app = rememberTmpApp(createTmpApp());
+    const port = getTestPort();
+
+    await buildApp({
+      rootDir: app.path,
+      target: "bun",
+    });
+
+    const proc = startCli(["preview", "--target", "bun"], {
+      cwd: app.path,
+      env: {
+        PORT: `${port}`,
+      },
+    });
+
+    try {
+      const response = await waitForHttp(`http://127.0.0.1:${port}/`);
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain("<main>Home page</main>");
+      expect(html).toContain("chunk-");
+      expect(proc.getStdout()).not.toContain("Building production client bundle…");
+      expect(proc.getStdout()).toContain("[test-app] listening on");
+      expect(proc.getStdout()).toContain("production");
+    } finally {
+      proc.kill();
+      await proc.exitCode;
+    }
+  }, 15_000);
+});
