@@ -62,13 +62,5 @@
     "react-dom": "catalog:",
     "typescript": ">= 5.0.0",
     "@types/bun": ">= 1.3.0"
-  },
-  "peerDependenciesMeta": {
-    "@types/bun": {
-      "optional": true
-    },
-    "typescript": {
-      "optional": true
-    }
   }
 }
