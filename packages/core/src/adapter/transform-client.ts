@@ -127,6 +127,9 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
     }
     const { key } = p;
     // Static identifier key: { loader: fn }
+    if (p.computed) {
+      return false;
+    }
     if (key.type === "Identifier" && typeof key.name === "string") {
       return SERVER_ONLY_PROPERTIES.has(key.name);
     }
