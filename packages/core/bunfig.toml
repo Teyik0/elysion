@@ -7,7 +7,7 @@ coverageThreshold = { lines = 0.8, functions = 0.8 }
 coverageReporter = ["text", "lcov"]
 coverage = true
 coveragePathIgnorePatterns = [
-  "**/*.test.ts",
+  "**/tests/**",
   "**/fixtures/**/*",
   "**/render/module-loader.ts", # Dev HMR reload paths require Bun module system failure, integration-test only
   "**/link.tsx",  # Majority is browser-only (IntersectionObserver, history, fetch) — no DOM environment in tests
