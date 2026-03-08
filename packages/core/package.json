@@ -24,9 +24,9 @@
       "import": "./dist/client.js"
     },
     "./build": {
-      "types": "./src/build.ts",
-      "bun": "./src/build.ts",
-      "import": "./dist/build.js"
+      "types": "./src/build/index.ts",
+      "bun": "./src/build/index.ts",
+      "import": "./dist/build/index.js"
     },
     "./config": {
       "types": "./src/config.ts",
@@ -39,9 +39,9 @@
       "import": "./dist/router.js"
     },
     "./strip-plugin": {
-      "types": "./src/adapter/bun-plugin.ts",
-      "bun": "./src/adapter/bun-plugin.ts",
-      "import": "./dist/adapter/bun-plugin.js"
+      "types": "./src/plugin/index.ts",
+      "bun": "./src/plugin/index.ts",
+      "import": "./dist/plugin/index.js"
     },
     "./link": {
       "types": "./src/link.tsx",
@@ -56,11 +56,8 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.7",
-    "citty": "^0.2.0",
-    "consola": "^3.4.2",
     "magic-string": "^0.30.21",
-    "oxc-parser": "^0.116.0",
-    "zod": "^3.25.76"
+    "oxc-parser": "^0.116.0"
   },
   "devDependencies": {
     "@types/react": "catalog:",

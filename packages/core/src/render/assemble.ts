@@ -1,6 +1,6 @@
 import type { RouteContext } from "../client";
-import type { buildHeadInjection } from "../shell";
-import { safeJson } from "../shell";
+import type { buildHeadInjection } from "./shell";
+import { safeJson } from "./shell";
 
 export type LoaderContext = RouteContext<Record<string, string>, Record<string, string>>;
 
@@ -46,7 +46,7 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
   return html;
 }
 
-export interface SplitTemplate {
+interface SplitTemplate {
   bodyPost: string;
   bodyPre: string;
   headPre: string;

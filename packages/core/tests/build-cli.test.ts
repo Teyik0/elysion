@@ -8,7 +8,7 @@ import {
   type TargetBuildManifest,
 } from "../src/build";
 import { getTestPort, waitForHttp } from "./helpers/http";
-import { runCli, startCli, startProcess } from "./helpers/run-cli";
+import { runCli, startProcess } from "./helpers/run-cli";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
@@ -53,15 +53,6 @@ describe.serial("CLI/build Bun feature", () => {
 
     expect(output).toBe(join(app.path, ".elyra/build/shared/routes.d.ts"));
     expect(existsSync(output)).toBe(true);
-  });
-
-  test("CLI typegen succeeds and writes shared route types", () => {
-    const app = rememberTmpApp(createTmpApp("cli-app"));
-
-    const result = runCli(["typegen"], { cwd: app.path });
-
-    expect(result.exitCode).toBe(0);
-    expect(existsSync(join(app.path, ".elyra/build/shared/routes.d.ts"))).toBe(true);
   });
 
   test("CLI build --target bun succeeds and writes expected manifest fields", () => {
@@ -154,22 +145,13 @@ describe.serial("CLI/build Bun feature", () => {
     expect(result.stderr + result.stdout).toContain("planned but not implemented");
   });
 
-  test("CLI preview rejects unsupported targets with a non-zero exit code", () => {
+  test("CLI build rejects invalid target values", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    const result = runCli(["preview", "--target", "vercel"], { cwd: app.path });
+    const result = runCli(["build", "--target", "wat"], { cwd: app.path });
 
     expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stderr + result.stdout).toContain("not implemented yet");
-  });
-
-  test("CLI preview --target node requires a prebuilt node bundle", () => {
-    const app = rememberTmpApp(createTmpApp("cli-app"));
-
-    const result = runCli(["preview", "--target", "node"], { cwd: app.path });
-
-    expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stderr + result.stdout).toContain("Run `elyra build --target node` first");
+    expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
   });
 
   test("buildApp({ target: 'node' }) writes a node manifest and server bundle", async () => {
@@ -186,16 +168,7 @@ describe.serial("CLI/build Bun feature", () => {
     expect(existsSync(join(app.path, ".elyra/build/node/client/index.html"))).toBe(true);
   });
 
-  test("CLI build rejects invalid target values", () => {
-    const app = rememberTmpApp(createTmpApp("cli-app"));
-
-    const result = runCli(["build", "--target", "wat"], { cwd: app.path });
-
-    expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
-  });
-
-  test("preview --target node serves the prebuilt node app over HTTP", async () => {
+  test("node server bundle serves the prebuilt app over HTTP", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     const port = getTestPort();
 
@@ -219,38 +192,6 @@ describe.serial("CLI/build Bun feature", () => {
       expect(html).toContain("<main>Home page</main>");
       expect(html).toContain("chunk-");
       expect(proc.getStdout()).toContain("[elyra:node] listening on");
-    } finally {
-      proc.kill();
-      await proc.exitCode;
-    }
-  }, 15_000);
-
-  test("preview --target bun serves the prebuilt app without rebuilding the production client", async () => {
-    const app = rememberTmpApp(createTmpApp("cli-app"));
-    const port = getTestPort();
-
-    await buildApp({
-      rootDir: app.path,
-      target: "bun",
-    });
-
-    const proc = startCli(["preview", "--target", "bun"], {
-      cwd: app.path,
-      env: {
-        PORT: `${port}`,
-      },
-    });
-
-    try {
-      const response = await waitForHttp(`http://127.0.0.1:${port}/`, {});
-      const html = await response.text();
-
-      expect(response.status).toBe(200);
-      expect(html).toContain("<main>Home page</main>");
-      expect(html).toContain("chunk-");
-      expect(proc.getStdout()).not.toContain("Building production client bundle…");
-      expect(proc.getStdout()).toContain("[test-app] listening on");
-      expect(proc.getStdout()).toContain("production");
     } finally {
       proc.kill();
       await proc.exitCode;

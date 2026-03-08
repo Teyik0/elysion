@@ -1,6 +1,5 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { RootLayout } from "../router";
-import { buildHeadInjection, safeJson } from "../shell";
 import {
   assembleHTML,
   createSSGContext,
@@ -12,6 +11,7 @@ import { isrCache, ssgCache } from "./cache";
 import { buildElement } from "./element";
 import { runLoaders } from "./loaders";
 import { loadPageModule, loadRootModule } from "./module-loader";
+import { buildHeadInjection, safeJson } from "./shell";
 import { getDevTemplate, getProductionTemplate } from "./template";
 
 // ── Re-exports (public API) ──────────────────────────────────────────────────
@@ -25,8 +25,8 @@ export { loadPageModule, loadRootModule } from "./module-loader";
 
 import type { ResolvedRoute } from "../router";
 import { IS_DEV } from "../runtime-env";
-import { generateIndexHtml } from "../template-shell";
 import type { LoaderContext } from "./assemble";
+import { generateIndexHtml } from "./shell";
 
 interface RenderResult {
   headers: Record<string, string>;

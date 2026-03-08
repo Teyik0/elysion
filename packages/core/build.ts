@@ -2,7 +2,7 @@ import { $ } from "bun";
 
 $.cwd(import.meta.dir);
 
-await $`rm -rf dist`;
+await $`rm -rf dist bin`;
 await $`bunx tsc --project tsconfig.dts.json`;
 
 // Each entrypoint is built in its own Bun.build() call.
@@ -20,12 +20,12 @@ const shared = {
 };
 
 await Promise.all([
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/cli/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/elyra.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/config.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/cli.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/router.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/adapter/bun-plugin.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/link.tsx`] }),
 ]);

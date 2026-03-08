@@ -1,29 +1,32 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { z } from "zod";
+import { t } from "elysia";
+import { TypeCompiler } from "elysia/type-system";
 import { BUILD_TARGETS, type BuildTarget, type ElyraConfig } from "../config";
 
-const buildTargetSchema = z.enum(BUILD_TARGETS);
+const buildTargetSchema = t.Union(BUILD_TARGETS.map((v) => t.Literal(v)));
 
-const configSchema = z.object({
-  rootDir: z.string().optional(),
-  pagesDir: z.string().optional(),
-  outDir: z.string().optional(),
-  serverEntry: z.string().optional(),
-  targets: z.array(buildTargetSchema).optional(),
-  client: z
-    .object({
-      minify: z.boolean().optional(),
-      sourcemap: z.boolean().optional(),
+const configSchema = t.Object({
+  rootDir: t.Optional(t.String()),
+  pagesDir: t.Optional(t.String()),
+  outDir: t.Optional(t.String()),
+  serverEntry: t.Optional(t.String()),
+  targets: t.Optional(t.Array(buildTargetSchema)),
+  client: t.Optional(
+    t.Object({
+      minify: t.Optional(t.Boolean()),
+      sourcemap: t.Optional(t.Boolean()),
     })
-    .optional(),
-  bun: z
-    .object({
-      compile: z.boolean().optional(),
+  ),
+  bun: t.Optional(
+    t.Object({
+      compile: t.Optional(t.Boolean()),
     })
-    .optional(),
+  ),
 });
+
+const compiledConfigSchema = TypeCompiler.Compile(configSchema);
 
 const DEFAULT_CONFIG_FILENAMES = [
   "elyra.config.ts",
@@ -31,7 +34,7 @@ const DEFAULT_CONFIG_FILENAMES = [
   "elyra.config.mjs",
 ] as const;
 
-export interface ResolvedCliConfig extends ElyraConfig {
+interface ResolvedCliConfig extends ElyraConfig {
   configPath: string | null;
   pagesDir: string;
   rootDir: string;
@@ -74,7 +77,14 @@ export async function loadCliConfig(
   }
 
   const imported = await import(pathToFileURL(configPath).href);
-  const config = configSchema.parse(imported.default ?? imported) satisfies ElyraConfig;
+  const config: ElyraConfig = imported.default ?? imported;
+
+  if (!compiledConfigSchema.Check(config)) {
+    const [firstError] = compiledConfigSchema.Errors(config);
+    throw new Error(
+      `[elyra] Invalid config at ${configPath}: ${firstError?.message ?? "unknown error"} (path: ${firstError?.path ?? "/"})`
+    );
+  }
 
   const resolvedRootDir = resolve(rootDir, config.rootDir ?? ".");
   return {

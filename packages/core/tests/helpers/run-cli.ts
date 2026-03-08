@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-const CLI_ENTRY = resolve(import.meta.dir, "../../src/cli.ts");
+const CLI_ENTRY = resolve(import.meta.dir, "../../src/cli/index.ts");
 
 export interface CliResult {
   exitCode: number;
