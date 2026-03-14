@@ -39,7 +39,7 @@ export interface BuildManifest {
 }
 
 export interface BuildAppOptions {
-  compile?: "split" | "embed";
+  compile?: "server" | "embed";
   pagesDir?: string;
   plugins?: Bun.BunPlugin[];
   rootDir?: string;

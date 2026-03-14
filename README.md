@@ -588,6 +588,14 @@ bun run tsc           # Type-check
 bun test              # Run tests
 ```
 
+### Production Runtime
+
+By default, Elyra resolves client assets from a `client/` folder next to the running server (`server.js` or compiled `server`). If you run the binary from a different working directory, set `ELYRA_CLIENT_DIR` to the client bundle path:
+
+```bash
+ELYRA_CLIENT_DIR=/absolute/path/to/client ./server
+```
+
 ### Project Structure
 
 ```

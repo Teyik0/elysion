@@ -3,10 +3,15 @@ import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
-import type { RuntimePage, RuntimeRoute } from "./client";
-import { getCompileContext } from "./internal";
-import { handleISR, prerenderSSG, renderSSR } from "./render";
-import { collectRouteChainFromRoute, isElyraPage, isElyraRoute, validateRouteChain } from "./utils";
+import type { RuntimePage, RuntimeRoute } from "./client.ts";
+import { type CompileContext, getCompileContext } from "./internal.ts";
+import { handleISR, prerenderSSG, renderSSR } from "./render/index.ts";
+import {
+  collectRouteChainFromRoute,
+  isElyraPage,
+  isElyraRoute,
+  validateRouteChain,
+} from "./utils.ts";
 
 export interface ResolvedRoute {
   isrCache?: { html: string; generatedAt: number; revalidate: number };
@@ -80,21 +85,14 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
   return { path: rootPath, route: rootExport };
 }
 
-async function collectPageFilePaths(dir: string, pagesDir: string): Promise<string[]> {
-  // In compiled binaries, the filesystem may not be accessible.
-  // Use the pre-registered path list if available.
-  const ctx = getCompileContext();
-  if (ctx) {
-    return ctx.pagePaths;
-  }
-
+async function collectPageFilePaths(dir: string): Promise<string[]> {
   const files: string[] = [];
 
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const absolutePath = join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...(await collectPageFilePaths(absolutePath, pagesDir)));
+      files.push(...(await collectPageFilePaths(absolutePath)));
       continue;
     }
 
@@ -109,7 +107,7 @@ async function collectPageFilePaths(dir: string, pagesDir: string): Promise<stri
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
 
-  for (const absolutePath of await collectPageFilePaths(pagesDir, pagesDir)) {
+  for (const absolutePath of await collectPageFilePaths(pagesDir)) {
     if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
       continue;
     }
@@ -151,8 +149,38 @@ export async function scanPages(pagesDir: string): Promise<{
   root: RootLayout;
   routes: ResolvedRoute[];
 }> {
+  const ctx = getCompileContext();
+  if (ctx) {
+    return loadProdRoutes(ctx);
+  }
   const root = await scanRootLayout(pagesDir);
   const routes = await scanPageFiles(pagesDir, root);
+  return { root, routes };
+}
+
+export function loadProdRoutes(ctx: CompileContext): {
+  root: RootLayout;
+  routes: ResolvedRoute[];
+} {
+  const rootMod = ctx.modules[ctx.rootPath] as Record<string, unknown>;
+  const rootExport = rootMod.route ?? rootMod.default;
+  if (!(rootExport && isElyraRoute(rootExport) && rootExport.layout)) {
+    throw new Error("[elyra] root.tsx: createRoute() with layout not found in CompileContext.");
+  }
+  const root: RootLayout = { path: ctx.rootPath, route: rootExport };
+
+  const routes: ResolvedRoute[] = [];
+  for (const { pattern, path, mode } of ctx.routes) {
+    const pageMod = ctx.modules[path] as { default: RuntimePage };
+    const page: RuntimePage = pageMod.default;
+    if (!isElyraPage(page)) {
+      throw new Error(`[elyra] ${path}: invalid page module in CompileContext.`);
+    }
+    const routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
+    validateRouteChain(routeChain, root.route, path);
+    routes.push({ pattern, page, path, routeChain, mode });
+  }
+
   return { root, routes };
 }
 

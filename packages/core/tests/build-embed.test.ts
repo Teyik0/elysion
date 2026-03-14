@@ -68,7 +68,7 @@ describe.serial("compile: embed", () => {
 
     const entryPath = generateCompileEntry({
       rootPath: join(app.path, "src/pages/root.tsx"),
-      pagePaths: [join(app.path, "src/pages/index.tsx")],
+      routes: [{ pattern: "/", path: join(app.path, "src/pages/index.tsx"), mode: "ssg" }],
       serverEntry: join(app.path, "src/server.ts"),
       outDir: app.path,
       embed: { clientDir },
@@ -89,7 +89,7 @@ describe.serial("compile: embed", () => {
 
     const entryPath = generateCompileEntry({
       rootPath: join(app.path, "src/pages/root.tsx"),
-      pagePaths: [join(app.path, "src/pages/index.tsx")],
+      routes: [{ pattern: "/", path: join(app.path, "src/pages/index.tsx"), mode: "ssg" }],
       serverEntry: join(app.path, "src/server.ts"),
       outDir: app.path,
     });
@@ -108,7 +108,7 @@ describe.serial("compile: embed", () => {
     expect(() =>
       generateCompileEntry({
         rootPath: join(app.path, "src/pages/root.tsx"),
-        pagePaths: [],
+        routes: [],
         serverEntry: join(app.path, "src/server.ts"),
         outDir: app.path,
         embed: { clientDir: join(app.path, "nonexistent") },

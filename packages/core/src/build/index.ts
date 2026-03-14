@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { buildBunTarget } from "../adapter/bun";
 import { BUILD_TARGETS, type BuildTarget } from "../config";
@@ -8,7 +8,6 @@ import {
   ensureDir,
   toBuildRouteManifestEntry,
   toPosixPath,
-  writeJsonFile,
 } from "./shared";
 import type {
   BuildAppOptions,
@@ -112,7 +111,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
     }
   }
 
-  writeJsonFile(join(buildRoot, "manifest.json"), manifest);
+  writeFileSync(join(buildRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 
   return {
     manifest,

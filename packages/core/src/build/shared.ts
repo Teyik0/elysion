@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { BuildTarget } from "../config";
 import type { ResolvedRoute } from "../router";
@@ -15,10 +15,6 @@ export function ensureDir(path: string): void {
 
 export function toPosixPath(path: string): string {
   return path.replace(/\\/g, "/");
-}
-
-export function writeJsonFile(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function toBuildRouteManifestEntry(

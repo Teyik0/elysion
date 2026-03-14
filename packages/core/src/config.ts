@@ -7,7 +7,7 @@ export const BUILD_TARGETS = ["bun", "node", "vercel", "cloudflare"] as const;
 export type BuildTarget = (typeof BUILD_TARGETS)[number];
 
 const buildTargetSchema = t.Union(BUILD_TARGETS.map((v) => t.Literal(v)));
-const compileTargetSchema = t.Union([t.Literal("split"), t.Literal("embed")]);
+const compileTargetSchema = t.Union([t.Literal("server"), t.Literal("embed")]);
 
 export const configSchema = t.Object({
   rootDir: t.Optional(t.String()),

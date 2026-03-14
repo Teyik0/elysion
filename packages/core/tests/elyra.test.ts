@@ -2,15 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Elysia from "elysia";
-import { buildApp } from "../src/build";
-import { elyra } from "../src/elyra";
-import { __resetCompileContext, __setCompileContext } from "../src/internal";
-import { setProductionTemplatePath } from "../src/render/template";
-import { __setDevMode } from "../src/runtime-env";
-import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app";
+import { elyra } from "../src/elyra.ts";
+import { __resetCompileContext, __setCompileContext } from "../src/internal.ts";
+import { setProductionTemplatePath } from "../src/render/template.ts";
+import { __setDevMode } from "../src/runtime-env.ts";
+import { runCli } from "./helpers/run-cli.ts";
+import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
 const originalCwd = process.cwd();
+const originalArgv = process.argv.slice();
 const originalBuildOutDir = process.env.ELYRA_BUILD_OUT_DIR;
 const originalBuildTarget = process.env.ELYRA_BUILD_TARGET;
 
@@ -24,6 +25,8 @@ afterEach(() => {
   setProductionTemplatePath(null);
   __resetCompileContext();
   process.chdir(originalCwd);
+  process.argv.length = 0;
+  process.argv.push(...originalArgv);
 
   if (originalBuildOutDir === undefined) {
     // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
@@ -59,30 +62,46 @@ describe.serial("elyra()", () => {
     expect(existsSync(join(app.path, ".elyra/_hydrate.tsx"))).toBe(true);
   });
 
-  test("builds client assets in production when no prebuilt manifest is provided", async () => {
+  test("throws a clear error in production when no CompileContext is set", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(false);
     process.chdir(app.path);
 
-    const instance = await elyra({
-      pagesDir: join(app.path, "src/pages"),
-    });
-
-    expect(instance).toBeInstanceOf(Elysia);
-    expect(existsSync(join(app.path, ".elyra/client/index.html"))).toBe(true);
+    expect(elyra({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow("bun run build");
   });
 
-  test("uses the prebuilt bun manifest in production and starts successfully", async () => {
+  test("uses the prebuilt bun manifest in production via CompileContext", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
-    await buildApp({
-      rootDir: app.path,
-      target: "bun",
-    });
+    // Use subprocess to avoid Bun.build() EISDIR race with parallel test files
+    const result = runCli(["build", "--target", "bun"], { cwd: app.path });
+    expect(result.exitCode).toBe(0);
 
     __setDevMode(false);
     process.chdir(app.path);
-    process.env.ELYRA_BUILD_OUT_DIR = ".elyra/build";
-    process.env.ELYRA_BUILD_TARGET = "bun";
+    process.argv[1] = join(app.path, ".elyra/build/bun/server.js");
+
+    const rootPath = join(app.path, "src/pages/root.tsx");
+    const indexPath = join(app.path, "src/pages/index.tsx");
+    const blogSlugPath = join(app.path, "src/pages/blog/[slug].tsx");
+
+    const [rootMod, indexMod, blogSlugMod] = await Promise.all([
+      import(rootPath),
+      import(indexPath),
+      import(blogSlugPath),
+    ]);
+
+    __setCompileContext({
+      rootPath,
+      modules: {
+        [rootPath]: rootMod,
+        [indexPath]: indexMod,
+        [blogSlugPath]: blogSlugMod,
+      },
+      routes: [
+        { pattern: "/", path: indexPath, mode: "ssg" },
+        { pattern: "/blog/:slug", path: blogSlugPath, mode: "ssg" },
+      ],
+    });
 
     const plugin = await elyra({
       pagesDir: join(app.path, "src/pages"),
@@ -116,12 +135,16 @@ describe.serial("elyra()", () => {
     ]);
 
     __setCompileContext({
-      pagePaths: [indexPath, blogSlugPath],
+      rootPath,
       modules: {
         [rootPath]: rootMod,
         [indexPath]: indexMod,
         [blogSlugPath]: blogSlugMod,
       },
+      routes: [
+        { pattern: "/", path: indexPath, mode: "ssg" },
+        { pattern: "/blog/:slug", path: blogSlugPath, mode: "ssg" },
+      ],
       embedded: {
         template: templatePath,
         assets: {},

@@ -1,27 +1,83 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
-import type { TargetBuildManifest } from "./build/types.ts";
 import type { EmbeddedAppData } from "./internal.ts";
 import { getCompileContext } from "./internal.ts";
 import { warmSSGCache } from "./render/index.ts";
 import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
-import type { ResolvedRoute, RootLayout } from "./router.ts";
-import { createRoutePlugin, scanPages } from "./router.ts";
+import { createRoutePlugin, loadProdRoutes, scanPages } from "./router.ts";
 import { IS_DEV } from "./runtime-env.ts";
 
 export interface ElysionProps {
   pagesDir?: string;
 }
 
+function resolveClientDirFromArgv(): string {
+  const envClientDir = process.env.ELYRA_CLIENT_DIR;
+  if (envClientDir) {
+    const resolvedEnvDir = envClientDir.startsWith("/")
+      ? envClientDir
+      : resolve(process.cwd(), envClientDir);
+    return resolvedEnvDir;
+  }
+
+  try {
+    const moduleUrl = new URL(import.meta.url);
+    if (moduleUrl.protocol === "file:") {
+      const modulePath = fileURLToPath(moduleUrl);
+      if (!modulePath.includes("/$bunfs/")) {
+        const moduleClientDir = join(dirname(modulePath), "client");
+        if (existsSync(join(moduleClientDir, "index.html"))) {
+          return moduleClientDir;
+        }
+      }
+    }
+  } catch {
+    // ignore, fallback to argv-based resolution
+  }
+  const candidates = [
+    process.argv[1],
+    process.argv[0],
+    (process as { argv0?: string }).argv0,
+    process.execPath,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const candidate of candidates) {
+    const name = basename(candidate);
+    if (name === "bun" || name === "node") {
+      continue;
+    }
+    if (candidate.includes("/$bunfs/") || candidate.startsWith("bunfs:")) {
+      continue;
+    }
+    const absolute = candidate.startsWith("/") ? candidate : resolve(process.cwd(), candidate);
+    if (existsSync(absolute)) {
+      return join(dirname(absolute), "client");
+    }
+
+    if (!candidate.includes("/") && process.env.PATH) {
+      for (const dir of process.env.PATH.split(":")) {
+        const fullPath = join(dir, candidate);
+        if (existsSync(fullPath)) {
+          return join(dirname(fullPath), "client");
+        }
+      }
+    }
+  }
+
+  const defaultClientDir = resolve(process.cwd(), ".elyra/build/bun/client");
+  if (existsSync(join(defaultClientDir, "index.html"))) {
+    return defaultClientDir;
+  }
+
+  return join(process.cwd(), "client");
+}
+
 async function setupProdTemplate(
   embedded: EmbeddedAppData | undefined,
-  prebuiltManifest: TargetBuildManifest | null,
-  elysionDir: string,
-  cwd: string,
-  routes: ResolvedRoute[],
-  root: RootLayout
+  clientDir: string
 ): Promise<void> {
   if (embedded) {
     if (!embedded.template) {
@@ -29,14 +85,14 @@ async function setupProdTemplate(
     }
     const html = await Bun.file(embedded.template).text();
     setProductionTemplateContent(html);
-  } else if (prebuiltManifest) {
-    setProductionTemplatePath(resolve(cwd, prebuiltManifest.templatePath));
-  } else {
-    setProductionTemplatePath(null);
-    // Lazy import — build pipeline has native deps not available in compiled binaries
-    const { buildClient } = await import("./build/client.ts");
-    await buildClient(routes, { outDir: elysionDir, rootLayout: root.path });
+    return;
   }
+
+  const templatePath = join(clientDir, "index.html");
+  if (!existsSync(templatePath)) {
+    throw new Error("[elyra] No pre-built assets found. Run `bun run build` first.");
+  }
+  setProductionTemplatePath(templatePath);
 }
 
 function buildEmbedInstance(
@@ -60,12 +116,8 @@ function buildEmbedInstance(
 async function buildDiskInstance(
   instanceName: string,
   resolvedPagesDir: string,
-  prebuiltManifest: TargetBuildManifest | null,
-  cwd: string
+  clientDir: string
 ): Promise<Elysia> {
-  const clientDir = prebuiltManifest
-    ? resolve(cwd, prebuiltManifest.clientDir)
-    : resolve(cwd, ".elyra", "client");
   return new Elysia({ name: instanceName, seed: resolvedPagesDir })
     .use(await staticPlugin())
     .use(await staticPlugin({ assets: clientDir, prefix: "/_client" }));
@@ -87,25 +139,27 @@ async function buildDiskInstance(
  */
 export async function elyra({ pagesDir }: ElysionProps) {
   const cwd = process.cwd();
-  const resolvedPagesDir = resolve(cwd, pagesDir ?? "src/pages");
+  const ctx = getCompileContext();
+  const resolvedPagesDir = ctx?.rootPath
+    ? dirname(ctx.rootPath)
+    : resolve(cwd, pagesDir ?? "src/pages");
+
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
   const instanceName = `elyra-${resolvedPagesDir.replaceAll("\\", "/")}`;
-
-  const { root, routes } = await scanPages(resolvedPagesDir);
-
-  console.info(
-    `[elyra] Configuration: ${routes.length} page(s) — ${IS_DEV ? "dev (Bun HMR)" : "production"}`
-  );
-  for (const route of routes) {
-    const hasLayout = route.routeChain.some((r) => r.layout);
-    console.info(
-      `  ${route.mode.toUpperCase().padEnd(4)} ${route.pattern}${hasLayout ? " + layout" : ""}`
-    );
-  }
 
   // ── Dev: Bun native HMR ────────────────────────────────────────────────
   const elyraDir = resolve(cwd, ".elyra");
   if (IS_DEV) {
+    const { root, routes } = await scanPages(resolvedPagesDir);
+    console.info(
+      `[elyra] Configuration: ${routes.length} page(s) — ${IS_DEV ? "dev (Bun HMR)" : "production"}`
+    );
+    for (const route of routes) {
+      const hasLayout = route.routeChain.some((r) => r.layout);
+      console.info(
+        `  ${route.mode.toUpperCase().padEnd(4)} ${route.pattern}${hasLayout ? " + layout" : ""}`
+      );
+    }
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { writeDevFiles } = await import("./build/hydrate.ts");
     writeDevFiles(routes, { outDir: elyraDir, rootLayout: root.path });
@@ -122,18 +176,19 @@ export async function elyra({ pagesDir }: ElysionProps) {
   }
 
   // ── Production ──────────────────────────────────────────────────────────
-  const manifestPath = resolve(elyraDir, "manifest.json");
-  const prebuiltManifest = existsSync(manifestPath)
-    ? (JSON.parse(readFileSync(manifestPath, "utf8")) as TargetBuildManifest)
-    : null;
+  if (!ctx) {
+    throw new Error("[elyra] No pre-built assets found. Run `bun run build` first.");
+  }
+  const { root, routes } = loadProdRoutes(ctx);
 
-  const embedded = getCompileContext()?.embedded;
+  const embedded = ctx?.embedded;
+  const clientDir = embedded ? "" : resolveClientDirFromArgv();
 
-  await setupProdTemplate(embedded, prebuiltManifest, elyraDir, cwd, routes, root);
+  await setupProdTemplate(embedded, clientDir);
 
   let instance = embedded
     ? buildEmbedInstance(instanceName, resolvedPagesDir, embedded)
-    : await buildDiskInstance(instanceName, resolvedPagesDir, prebuiltManifest, cwd);
+    : await buildDiskInstance(instanceName, resolvedPagesDir, clientDir);
 
   for (const route of routes) {
     instance = instance.use(createRoutePlugin(route, root));

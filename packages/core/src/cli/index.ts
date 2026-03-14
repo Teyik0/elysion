@@ -18,14 +18,17 @@ function bail(msg: string): never {
 }
 
 function resolveCompileMode(
-  flag: string | undefined,
-  configCompile: "split" | "embed" | undefined
-): "split" | "embed" | undefined {
-  if (flag === "split" || flag === "embed") {
-    return flag;
+  flag: string | boolean | undefined,
+  configCompile: "server" | "embed" | undefined
+): "server" | "embed" | undefined {
+  if (flag === "embed") {
+    return "embed";
   }
-  if (flag !== undefined) {
-    bail(`Invalid compile mode "${flag}". Valid: split, embed`);
+  if (flag === true || flag === "server") {
+    return "server";
+  }
+  if (flag !== undefined && flag !== false) {
+    bail(`Invalid compile mode "${flag}". Valid: --compile server or --compile embed`);
   }
   return configCompile;
 }
@@ -37,7 +40,6 @@ if (command === "build") {
       target: { type: "string" },
       pagesDir: { type: "string" },
       config: { type: "string" },
-      compile: { type: "string" },
     },
     strict: false,
   });
@@ -46,8 +48,18 @@ if (command === "build") {
     target?: string;
     pagesDir?: string;
     config?: string;
-    compile?: string;
   };
+
+  // --compile has an optional value: absent → undefined, present alone → true, present with "embed" → "embed"
+  const buildArgv = argv.slice(1);
+  const compileIdx = buildArgv.indexOf("--compile");
+  let compileFlag: string | boolean | undefined;
+  if (compileIdx < 0) {
+    compileFlag = undefined;
+  } else {
+    const next = buildArgv[compileIdx + 1];
+    compileFlag = next && !next.startsWith("-") ? next : true;
+  }
 
   const target = values.target ?? "bun";
 
@@ -66,7 +78,7 @@ if (command === "build") {
 
   const result = await buildApp({
     target: target as BuildTarget | "all",
-    compile: resolveCompileMode(values.compile, config.bun?.compile),
+    compile: resolveCompileMode(compileFlag, config.bun?.compile),
     rootDir: config.rootDir,
     pagesDir: values.pagesDir ?? config.pagesDir,
     serverEntry: config.serverEntry ?? serverEntry ?? undefined,
@@ -85,7 +97,7 @@ OPTIONS
   --target    ${BUILD_TARGETS.join(" | ")} | all  (default: bun)
   --pagesDir  Pages directory
   --config    Config file path
-  --compile   split | embed  Compile to binary (bun only, default: split)
+  --compile   server | embed  Compile to binary: "server" keeps client on disk, "embed" is self-contained
 `
   );
 } else {

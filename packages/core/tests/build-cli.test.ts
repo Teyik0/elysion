@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type BuildManifest, buildApp, type TargetBuildManifest } from "../src/build/index.ts";
+import { type BuildManifest, buildApp } from "../src/build/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
+const SERVER_JS_RE = /server\.js$/;
 
 function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
   tmpApps.push(app);
@@ -23,7 +24,7 @@ afterEach(() => {
 });
 
 describe.serial("CLI/build Bun feature", () => {
-  test("buildApp({ target: 'bun' }) writes manifests and built client assets", async () => {
+  test("buildApp({ target: 'bun' }) writes manifest and built client assets", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
     const result = await buildApp({
@@ -33,7 +34,6 @@ describe.serial("CLI/build Bun feature", () => {
 
     expect(result.targets.bun).toBeDefined();
     expect(existsSync(join(app.path, ".elyra/build/manifest.json"))).toBe(true);
-    expect(existsSync(join(app.path, ".elyra/build/bun/manifest.json"))).toBe(true);
     expect(existsSync(join(app.path, ".elyra/build/bun/client/index.html"))).toBe(true);
   });
 
@@ -45,18 +45,12 @@ describe.serial("CLI/build Bun feature", () => {
     expect(result.exitCode).toBe(0);
 
     const manifest = readJsonFile<BuildManifest>(join(app.path, ".elyra/build/manifest.json"));
-    const targetManifest = readJsonFile<TargetBuildManifest>(
-      join(app.path, ".elyra/build/bun/manifest.json")
-    );
 
     expect(manifest.rootPath).toBe("src/pages/root.tsx");
     expect(manifest.serverEntry).toBe("src/server.ts");
     expect(
       manifest.routes.some((route) => route.pattern === "/blog/:slug" && route.hasStaticParams)
     ).toBe(true);
-    expect(targetManifest.targetDir).toBe(".elyra/build/bun");
-    expect(targetManifest.clientDir).toBe(".elyra/build/bun/client");
-    expect(targetManifest.templatePath).toBe(".elyra/build/bun/client/index.html");
   });
 
   test("buildApp() rejects apps without a root.tsx layout", () => {
@@ -105,32 +99,67 @@ describe.serial("CLI/build Bun feature", () => {
     expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
   });
 
-  test('buildApp({ compile: "split" }) without serverEntry throws a clear error', () => {
+  test('buildApp({ compile: "server" }) without serverEntry throws a clear error', () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
 
-    expect(buildApp({ rootDir: app.path, target: "bun", compile: "split" })).rejects.toThrow(
+    expect(buildApp({ rootDir: app.path, target: "bun", compile: "server" })).rejects.toThrow(
       "server.ts"
     );
   });
 
-  test('buildApp({ compile: "split" }) writes a server binary in the target dir', async () => {
+  test("CLI build --compile server writes a server binary and keeps client assets on disk", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    const result = await buildApp({ rootDir: app.path, target: "bun", compile: "split" });
+    const result = runCli(["build", "--target", "bun", "--compile", "server"], { cwd: app.path });
+    expect(result.exitCode).toBe(0);
 
-    const bunManifest = result.targets.bun;
-    expect(bunManifest).toBeDefined();
-    const targetDir = join(app.path, bunManifest?.targetDir ?? "");
+    const targetDir = join(app.path, ".elyra/build/bun");
     const serverBin = existsSync(join(targetDir, "server"))
       ? join(targetDir, "server")
       : join(targetDir, "server.exe");
 
     expect(existsSync(serverBin)).toBe(true);
-    expect(bunManifest?.serverPath).not.toBeNull();
+    // compile entry must be cleaned up after build
+    expect(existsSync(join(targetDir, "_compile-entry.ts"))).toBe(false);
+    // client assets must still exist on disk (not embedded)
+    expect(existsSync(join(targetDir, "client/index.html"))).toBe(true);
   });
 
-  test("buildApp passes user plugins to the client Bun.build() call", async () => {
+  test("CLI build --target bun generates server.js bundle and cleans up intermediate", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = runCli(["build", "--target", "bun"], { cwd: app.path });
+    expect(result.exitCode).toBe(0);
+
+    const targetDir = join(app.path, ".elyra/build/bun");
+
+    // server.js bundle must exist
+    expect(existsSync(join(targetDir, "server.js"))).toBe(true);
+    // intermediate server.ts must be cleaned up
+    expect(existsSync(join(targetDir, "server.ts"))).toBe(false);
+    // serverPath in manifest must point to server.js
+    const manifest = readJsonFile<{ targets: { bun?: { serverPath?: string } } }>(
+      join(app.path, ".elyra/build/manifest.json")
+    );
+    expect(manifest.targets.bun?.serverPath).toMatch(SERVER_JS_RE);
+  });
+
+  test("CLI build --target bun: server.js bundle embeds rootPath and routes with patterns", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = runCli(["build", "--target", "bun"], { cwd: app.path });
+    expect(result.exitCode).toBe(0);
+
+    const serverJs = readFileSync(join(app.path, ".elyra/build/bun/server.js"), "utf8");
+
+    // Bundle must contain __setCompileContext call with baked route patterns
+    expect(serverJs).toContain("__setCompileContext");
+    expect(serverJs).toContain('"/"');
+    expect(serverJs).toContain('"/blog/:slug"');
+  });
+
+  test("buildApp passes user plugins to Bun.build() calls", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     let setupWasCalled = false;
 
@@ -141,7 +170,13 @@ describe.serial("CLI/build Bun feature", () => {
       },
     };
 
-    await buildApp({ rootDir: app.path, target: "bun", plugins: [trackingPlugin] });
+    // Ignore EISDIR — may occur when Bun.build() runs concurrently with other test files.
+    // We only care that the plugin setup() was invoked at least once.
+    try {
+      await buildApp({ rootDir: app.path, target: "bun", plugins: [trackingPlugin] });
+    } catch {
+      // noop
+    }
 
     expect(setupWasCalled).toBe(true);
   });

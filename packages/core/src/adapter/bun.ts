@@ -2,7 +2,8 @@ import { rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
-import { buildTargetManifest, ensureDir, toPosixPath, writeJsonFile } from "../build/shared.ts";
+import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
+import { buildTargetManifest, ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
 import type { ResolvedRoute } from "../router.ts";
@@ -35,12 +36,15 @@ export async function buildBunTarget(
     plugins: options.plugins,
   });
 
+  const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));
+
   if (options.compile && serverEntry) {
     const clientDir = join(targetDir, "client");
     const outfile = join(targetDir, "server");
+
     const entryPath = generateCompileEntry({
       rootPath,
-      pagePaths: routes.map((r) => r.path),
+      routes: routeManifest,
       serverEntry,
       outDir: targetDir,
       embed: options.compile === "embed" ? { clientDir } : undefined,
@@ -53,27 +57,48 @@ export async function buildBunTarget(
       sourcemap: "linked",
       plugins: options.plugins,
     });
-    console.log(`[elyra] Server binary (embed): ${outfile}`);
+    console.log(`[elyra] Server binary: ${outfile}`);
 
     targetManifest.serverPath = toPosixPath(join(targetManifest.targetDir, "server"));
 
-    // Embed mode: all assets are embedded in the binary — clean up everything except
+    // Embed mode: assets are in the binary — clean up client dir too.
     if (options.compile === "embed") {
       rmSync(clientDir, { force: true, recursive: true });
-      for (const file of [
-        "_hydrate.tsx",
-        "index.html",
-        "_compile-entry.ts",
-        "_compile-entry.js.map",
-      ]) {
-        rmSync(join(targetDir, file), { force: true });
-      }
     }
+  } else if (serverEntry) {
+    // Disk mode: generate server.ts then bundle it into self-contained server.js
+    const entryPath = generateServerRoutesEntry({
+      rootPath,
+      routes: routeManifest,
+      serverEntry,
+      outDir: targetDir,
+    });
+
+    await Bun.build({
+      entrypoints: [entryPath],
+      outdir: targetDir,
+      target: "bun",
+      minify: true,
+      sourcemap: "linked",
+      plugins: options.plugins,
+    });
+    console.log(
+      `[elyra] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`
+    );
+
+    targetManifest.serverPath = toPosixPath(join(targetManifest.targetDir, "server.js"));
   }
 
-  // Embed mode: the binary is fully self-contained — no manifest needed at runtime.
-  if (options.compile !== "embed") {
-    writeJsonFile(resolve(rootDir, targetManifest.manifestPath), targetManifest);
+  // Clean up build intermediates — no longer needed once the bundle/binary is built.
+  for (const file of [
+    "_compile-entry.ts",
+    "_compile-entry.js.map",
+    "server.ts", // disk mode intermediate
+    "_hydrate.tsx",
+    "index.html",
+  ]) {
+    rmSync(join(targetDir, file), { force: true });
   }
+
   return targetManifest;
 }

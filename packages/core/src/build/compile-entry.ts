@@ -7,8 +7,8 @@ const RUNTIME_ENV_MODULE_PATH = resolve(import.meta.dir, "../runtime-env.ts").re
 
 export interface CompileEntryOptions {
   outDir: string;
-  pagePaths: string[];
   rootPath: string;
+  routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
   serverEntry: string;
   embed?: { clientDir: string };
 }
@@ -21,10 +21,10 @@ export interface CompileEntryOptions {
  * 4. Dynamically imports server.ts to boot the app
  */
 export function generateCompileEntry(options: CompileEntryOptions): string {
-  const { outDir, pagePaths, rootPath, serverEntry, embed } = options;
+  const { outDir, rootPath, routes, serverEntry, embed } = options;
   ensureDir(outDir);
 
-  const allModulePaths = [rootPath, ...pagePaths];
+  const allModulePaths = [rootPath, ...routes.map((r) => r.path)];
   const moduleImports: string[] = [];
   const moduleEntries: string[] = [];
 
@@ -35,9 +35,10 @@ export function generateCompileEntry(options: CompileEntryOptions): string {
     moduleEntries.push(`  ${JSON.stringify(absPath)}: ${varName},`);
   }
 
-  const pagePathsEntries = pagePaths
-    .map((p) => `  ${JSON.stringify(p.replace(/\\/g, "/"))},`)
-    .join("\n");
+  const routeEntries = routes.map(
+    (r) =>
+      `    { pattern: ${JSON.stringify(r.pattern)}, path: ${JSON.stringify(r.path.replace(/\\/g, "/"))}, mode: ${JSON.stringify(r.mode)} },`
+  );
 
   // Build embedded asset imports if embed mode
   const assetImports: string[] = [];
@@ -94,11 +95,12 @@ export function generateCompileEntry(options: CompileEntryOptions): string {
     'process.env.ELYRA_BUILD_TARGET = "bun";',
     "",
     "__setCompileContext({",
+    `  rootPath: ${JSON.stringify(rootPath.replace(/\\/g, "/"))},`,
     "  modules: {",
     ...moduleEntries,
     "  },",
-    "  pagePaths: [",
-    pagePathsEntries,
+    "  routes: [",
+    ...routeEntries,
     "  ],",
     ...(embeddedBlock ? [embeddedBlock] : []),
     "});",
