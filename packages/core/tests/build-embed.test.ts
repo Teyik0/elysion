@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { TargetBuildManifest } from "../src/build";
 import { generateCompileEntry } from "../src/build/compile-entry";
 import { runCli } from "./helpers/run-cli";
 import { createTmpApp, removeAppPath } from "./helpers/tmp-app";
@@ -29,7 +28,7 @@ describe.serial("compile: embed", () => {
     const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
 
     expect(result.exitCode).toBeGreaterThan(0);
-    expect(result.stderr + result.stdout).toContain("compile");
+    expect(result.stderr + result.stdout).toContain("server.ts");
   });
 
   test("CLI build --compile embed writes a single server binary", () => {
@@ -45,10 +44,18 @@ describe.serial("compile: embed", () => {
 
     expect(existsSync(serverBin)).toBe(true);
 
-    const manifest = JSON.parse(
-      readFileSync(join(targetDir, "manifest.json"), "utf8")
-    ) as TargetBuildManifest;
-    expect(manifest.serverPath).not.toBeNull();
+    // All intermediate files must be cleaned up — only the binary should remain.
+    for (const file of [
+      "client",
+      "_hydrate.tsx",
+      "index.html",
+      "_compile-entry.ts",
+      "_compile-entry.js.map",
+      "routes.d.ts",
+      "manifest.json",
+    ]) {
+      expect(existsSync(join(targetDir, file))).toBe(false);
+    }
   });
 
   test("generateCompileEntry with embed produces file imports and __setCompileContext", () => {

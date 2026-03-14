@@ -1,16 +1,15 @@
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
-// Lightweight manifest reader — no native-addon deps (safe in compiled binaries)
-import { readTargetBuildManifest } from "./build/manifest";
-import type { TargetBuildManifest } from "./build/types";
-import type { EmbeddedAppData } from "./internal";
-import { getCompileContext } from "./internal";
-import { warmSSGCache } from "./render/index";
-import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template";
-import type { ResolvedRoute, RootLayout } from "./router";
-import { createRoutePlugin, scanPages } from "./router";
-import { IS_DEV } from "./runtime-env";
+import type { TargetBuildManifest } from "./build/types.ts";
+import type { EmbeddedAppData } from "./internal.ts";
+import { getCompileContext } from "./internal.ts";
+import { warmSSGCache } from "./render/index.ts";
+import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
+import type { ResolvedRoute, RootLayout } from "./router.ts";
+import { createRoutePlugin, scanPages } from "./router.ts";
+import { IS_DEV } from "./runtime-env.ts";
 
 export interface ElysionProps {
   pagesDir?: string;
@@ -35,7 +34,7 @@ async function setupProdTemplate(
   } else {
     setProductionTemplatePath(null);
     // Lazy import — build pipeline has native deps not available in compiled binaries
-    const { buildClient } = await import("./build/client");
+    const { buildClient } = await import("./build/client.ts");
     await buildClient(routes, { outDir: elysionDir, rootLayout: root.path });
   }
 }
@@ -91,10 +90,6 @@ export async function elyra({ pagesDir }: ElysionProps) {
   const resolvedPagesDir = resolve(cwd, pagesDir ?? "src/pages");
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
   const instanceName = `elyra-${resolvedPagesDir.replaceAll("\\", "/")}`;
-  const buildTarget = process.env.ELYRA_BUILD_TARGET;
-  const buildOutDir = process.env.ELYRA_BUILD_OUT_DIR;
-  const prebuiltManifest =
-    !IS_DEV && buildTarget === "bun" ? readTargetBuildManifest(cwd, "bun", buildOutDir) : null;
 
   const { root, routes } = await scanPages(resolvedPagesDir);
 
@@ -109,14 +104,14 @@ export async function elyra({ pagesDir }: ElysionProps) {
   }
 
   // ── Dev: Bun native HMR ────────────────────────────────────────────────
+  const elyraDir = resolve(cwd, ".elyra");
   if (IS_DEV) {
-    const elysionDir = resolve(cwd, ".elyra");
     // Lazy import — build pipeline has native deps not available in compiled binaries
-    const { writeDevFiles } = await import("./build/hydrate");
-    writeDevFiles(routes, { outDir: elysionDir, rootLayout: root.path });
+    const { writeDevFiles } = await import("./build/hydrate.ts");
+    writeDevFiles(routes, { outDir: elyraDir, rootLayout: root.path });
 
     let instance = new Elysia({ name: instanceName, seed: resolvedPagesDir })
-      .use(await staticPlugin({ assets: elysionDir, prefix: "/_bun_hmr_entry" }))
+      .use(await staticPlugin({ assets: elyraDir, prefix: "/_bun_hmr_entry" }))
       .use(await staticPlugin());
 
     for (const route of routes) {
@@ -127,11 +122,14 @@ export async function elyra({ pagesDir }: ElysionProps) {
   }
 
   // ── Production ──────────────────────────────────────────────────────────
-  const defaultProdDir = resolve(cwd, ".elyra");
-  const elysionDir = prebuiltManifest ? resolve(cwd, prebuiltManifest.targetDir) : defaultProdDir;
+  const manifestPath = resolve(elyraDir, "manifest.json");
+  const prebuiltManifest = existsSync(manifestPath)
+    ? (JSON.parse(readFileSync(manifestPath, "utf8")) as TargetBuildManifest)
+    : null;
+
   const embedded = getCompileContext()?.embedded;
 
-  await setupProdTemplate(embedded, prebuiltManifest, elysionDir, cwd, routes, root);
+  await setupProdTemplate(embedded, prebuiltManifest, elyraDir, cwd, routes, root);
 
   let instance = embedded
     ? buildEmbedInstance(instanceName, resolvedPagesDir, embedded)

@@ -4,7 +4,6 @@ import { transformForClient } from "../plugin/transform-client";
 import { generateIndexHtml } from "../render/shell";
 import type { ResolvedRoute } from "../router";
 import { generateHydrateEntry } from "./hydrate";
-import { writeRouteTypes } from "./route-types";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH } from "./shared";
 import type { BunBuildAliasConfig, BuildClientOptions } from "./types";
 
@@ -24,7 +23,7 @@ const REACT_IMPORT_RE = /import\s+React\b/;
  */
 export async function buildClient(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, minify, sourcemap, plugins }: BuildClientOptions
+  { outDir, rootLayout, plugins }: BuildClientOptions
 ): Promise<void> {
   const clientDir = join(outDir, "client");
 
@@ -42,8 +41,6 @@ export async function buildClient(
   const indexHtml = generateIndexHtml();
   const indexPath = join(outDir, "index.html");
   writeFileSync(indexPath, indexHtml);
-
-  writeRouteTypes(routes, outDir);
 
   console.log("[elyra] Building production client bundle…");
 
@@ -89,12 +86,12 @@ export async function buildClient(
     target: "browser",
     format: "esm",
     splitting: true,
-    minify: minify ?? true,
-    sourcemap: sourcemap ? "linked" : undefined,
+    minify: true,
+    sourcemap: "linked",
     // Absolute public path so SSR template asset URLs resolve on any route
     publicPath: "/_client/",
     // User plugins run before the internal transform so they pre-process files first
-    plugins: [...(plugins ?? []), transformPlugin],
+    plugins: plugins ? [...plugins, transformPlugin] :  [transformPlugin],
     alias: {
       "elyra/client": CLIENT_MODULE_PATH,
       "elyra/link": LINK_MODULE_PATH,
@@ -105,15 +102,6 @@ export async function buildClient(
   };
 
   const result = await Bun.build(clientBuildConfig);
-
-  if (!result.success) {
-    console.error("[elyra] Client build failed:");
-    for (const log of result.logs) {
-      console.error(log);
-    }
-    throw new Error("Client build failed");
-  }
-
   for (const output of result.outputs) {
     console.log(`[elyra]   ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
   }

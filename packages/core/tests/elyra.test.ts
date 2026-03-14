@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Elysia from "elysia";
 import { buildApp } from "../src/build";
 import { elyra } from "../src/elyra";
+import { __resetCompileContext, __setCompileContext } from "../src/internal";
 import { setProductionTemplatePath } from "../src/render/template";
 import { __setDevMode } from "../src/runtime-env";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app";
@@ -21,6 +22,7 @@ function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
 afterEach(() => {
   __setDevMode(true);
   setProductionTemplatePath(null);
+  __resetCompileContext();
   process.chdir(originalCwd);
 
   if (originalBuildOutDir === undefined) {
@@ -93,6 +95,41 @@ describe.serial("elyra()", () => {
     } finally {
       server.stop();
     }
+  }, 10_000);
+
+  test("uses embedded assets in production (compiled binary mode)", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    __setDevMode(false);
+    process.chdir(app.path);
+
+    const templatePath = join(app.path, "fake-template.html");
+    writeFileSync(templatePath, "<html><head></head><body><!--ssr-outlet--></body></html>");
+
+    const rootPath = join(app.path, "src/pages/root.tsx");
+    const indexPath = join(app.path, "src/pages/index.tsx");
+    const blogSlugPath = join(app.path, "src/pages/blog/[slug].tsx");
+
+    const [rootMod, indexMod, blogSlugMod] = await Promise.all([
+      import(rootPath),
+      import(indexPath),
+      import(blogSlugPath),
+    ]);
+
+    __setCompileContext({
+      pagePaths: [indexPath, blogSlugPath],
+      modules: {
+        [rootPath]: rootMod,
+        [indexPath]: indexMod,
+        [blogSlugPath]: blogSlugMod,
+      },
+      embedded: {
+        template: templatePath,
+        assets: {},
+      },
+    });
+
+    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    expect(instance).toBeInstanceOf(Elysia);
   }, 10_000);
 
   test("throws a clear error when no root.tsx is present", () => {

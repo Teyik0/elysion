@@ -1,5 +1,5 @@
 import type { BunPlugin } from "bun";
-import { transformForClient } from "./transform-client";
+import { transformForClient } from "./transform-client.ts";
 
 const ELYSIA_FILTER = /^elysia$/;
 const BUN_BUILTIN_FILTER = /^bun:/;
