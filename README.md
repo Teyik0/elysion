@@ -1,4 +1,4 @@
-# Elyra
+# Furin
 
 Web meta-framework as a plugin powered by Elysia with file-based routing, SSR/SSG/ISR modes, and full TypeScript type inference. No vite, one process, backend and frontend at the same place.
 
@@ -17,7 +17,7 @@ Web meta-framework as a plugin powered by Elysia with file-based routing, SSR/SS
 ### Installation
 
 ```bash
-bun create elyra my-app
+bun create furin my-app
 cd my-app
 bun install
 ```
@@ -26,7 +26,7 @@ bun install
 
 ```tsx
 // src/pages/about/index.tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 
 const { page } = createRoute({ mode: 'ssg' });
 
@@ -48,7 +48,7 @@ Fetch data server-side with full type safety:
 
 ```tsx
 // src/pages/dashboard/route.tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -109,7 +109,7 @@ Create nested layouts with automatic data propagation:
 
 ```tsx
 // src/pages/dashboard/route.tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 
 export const route = createRoute({
   loader: async () => ({ user: await getCurrentUser() }),
@@ -122,7 +122,7 @@ export const route = createRoute({
 });
 
 // src/pages/dashboard/users/route.tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 import { route as dashboardRoute } from '../route';
 
 export const route = createRoute({
@@ -172,7 +172,7 @@ export default route.page({
 
 ```tsx
 // src/pages/blog/[slug]/route.tsx
-import { createRoute, type InferProps } from 'elyra/client';
+import { createRoute, type InferProps } from 'furin/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -311,12 +311,12 @@ export default route.page({
 ### SSG with Dynamic Routes
 
 Use `staticParams` on `route.page()` to enumerate all paths for a dynamic SSG route.
-Elyra calls this function once on server start (production) and pre-renders every
+furin calls this function once on server start (production) and pre-renders every
 returned parameter set before the first request arrives.
 
 ```tsx
 // src/pages/blog/[slug].tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -336,8 +336,8 @@ export default route.page({
 
 On production start you will see:
 ```
-[elyra] Warming SSG cache for 1 route(s)…
-[elyra] SSG warm-up complete.
+[furin] Warming SSG cache for 1 route(s)…
+[furin] SSG warm-up complete.
 ```
 
 The first request to `/blog/my-post` is served instantly from the in-memory cache.
@@ -419,7 +419,7 @@ pages/
 
 ```tsx
 // src/pages/blog/[slug]/route.tsx
-import { createRoute } from 'elyra/client';
+import { createRoute } from 'furin/client';
 import { t } from "elysia";
 
 export const route = createRoute({
@@ -528,7 +528,7 @@ export const route = createRoute({
 
 ### `createRoute(config)`
 
-Create a route with loader, layout, and options. Import from `"elyra/client"`.
+Create a route with loader, layout, and options. Import from `"furin/client"`.
 
 **Config:**
 - `parent?: Route` - Parent route for nested layouts
@@ -590,16 +590,15 @@ bun test              # Run tests
 
 ### Production Runtime
 
-By default, Elyra resolves client assets from a `client/` folder next to the running server (`server.js` or compiled `server`). If you run the binary from a different working directory, set `ELYRA_CLIENT_DIR` to the client bundle path:
+By default, furin resolves client assets from a `client/` folder next to the running server (`server.js` or compiled `server`). If you run the binary from a different working directory, set `FURIN_CLIENT_DIR` to the client bundle path:
 
 ```bash
-ELYRA_CLIENT_DIR=/absolute/path/to/client ./server
+FURIN_CLIENT_DIR=/absolute/path/to/client ./server
 ```
 
-In `--compile embed` mode, Elyra bundles `public/` into the executable and serves it under `/public/*`.
-For non-embed builds, `public/` is copied to `.elyra/build/bun/public` and served from there so the build stays portable.
+In `--compile embed` mode, furin bundles `public/` into the executable and serves it under `/public/*`.
+For non-embed builds, `public/` is copied to `.furin/build/bun/public` and served from there so the build stays portable.
 Embed includes every file under `public/` (including subfolders), so keep secrets out of that directory.
-Each target also writes its own manifest at `.elyra/build/bun/manifest.json`.
 
 ### Project Structure
 
@@ -608,7 +607,7 @@ my-app/
 ├── packages/
 │   └── core/              # Framework source
 │       └── src/
-│           ├── elyra.ts     # Main plugin
+│           ├── furin.ts       # Main plugin
 │           ├── client.ts      # createRoute, types
 │           ├── router.ts      # File-based routing
 │           ├── render.tsx     # SSR/SSG/ISR logic
@@ -632,7 +631,7 @@ my-app/
 ```tsx
 // src/server.ts
 import { Elysia } from "elysia";
-import { elyra } from "elyra";
+import { furin } from "furin";
 
 const app = new Elysia()
   .get("/api/health", () => ({ status: "ok" }))
@@ -640,15 +639,7 @@ const app = new Elysia()
     // Your API logic here
     return { success: true };
   })
-  .use(
-    await elyra({
-      pagesDir: "./src/pages",
-      staticOptions: {
-        assets: "./public",
-        prefix: "/",
-      },
-    })
-  )
+  .use(await furin({ pagesDir: "./src/pages" }))
   .listen(3000);
 
 console.log(`🦊 Server running at http://localhost:${app.server?.port}`);

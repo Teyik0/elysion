@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Elyra** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, nested layouts, HMR with React Fast Refresh, and full TypeScript type inference — similar to Next.js but built on Elysia + Bun.
+**Furin** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, nested layouts, HMR with React Fast Refresh, and full TypeScript type inference — similar to Next.js but built on Elysia + Bun.
 
 ## Commands
 
@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Runtime**: Bun only. Never use Node.js, npm, yarn, pnpm, dotenv, express, vite, or webpack.
 - **Linting**: Ultracite (wraps Biome). Config in `biome.jsonc`.
 - **CSS**: Tailwind v4 via `bun-plugin-tailwind` (configured in `bunfig.toml`).
-- **Path alias**: `"elyra"` maps to `./packages/core/src/elyra.ts` (see `tsconfig.json` paths).
+- **Path alias**: `"furin"` maps to `./packages/core/src/furin.ts` (see `tsconfig.json` paths).
 
 ## HMR
 
@@ -29,16 +29,16 @@ The user can then use this plugin in this project as such:
 ```toml
 # in bunfig.toml
 [serve.static]
-plugins = ["bun-plugin-tailwind", "elyra/strip-plugin"]
-env = "ELYRA_PUBLIC_*"
+plugins = ["bun-plugin-tailwind", "furin/strip-plugin"]
+env = "furin_PUBLIC_*"
 ```
 
 And for the production build
 
 ```ts
-// in elyra.config.ts
+// in furin.config.ts
 import tailwind from "bun-plugin-tailwind";
-import { defineConfig } from "elyra/config";
+import { defineConfig } from "furin/config";
 
 export default defineConfig({
   plugins: [tailwind],
@@ -48,7 +48,7 @@ export default defineConfig({
 ## DX
 
 - **./packages/core/src/client.ts**: The whole typesafe DX lie in this file.
-- **./packages/core/src/elyra.ts**: Main lib export, your frontend served as an Elysia plugin. WinterCG compliant out of the box. Serve as much Elyra plugin you need with different pagesDir.
+- **./packages/core/src/furin.ts**: Main lib export, your frontend served as an Elysia plugin. WinterCG compliant out of the box. Serve as much Furin plugin you need with different pagesDir.
 
 ## Elysia best practices
 
