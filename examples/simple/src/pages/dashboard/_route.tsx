@@ -1,5 +1,5 @@
-import { createRoute } from "elyra/client";
-import { Link, type RouteTo } from "elyra/link";
+import { createRoute } from "furin/client";
+import { Link, type RouteTo } from "furin/link";
 import { client } from "../../client";
 import { route as rootRoute } from "../root";
 

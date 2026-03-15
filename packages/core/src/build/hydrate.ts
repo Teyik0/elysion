@@ -29,7 +29,7 @@ export function generateHydrateEntry(routes: ResolvedRoute[], rootLayout: string
 
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
-import { RouterProvider } from "elyra/link";
+import { RouterProvider } from "furin/link";
 import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
 
 const routes = [
@@ -45,7 +45,7 @@ if (_match) {
   const _mod = await _match.load();
   const match = { ..._match, component: _mod.default.component, pageRoute: _mod.default._route };
 
-  const dataEl = document.getElementById("__ELYRA_DATA__");
+  const dataEl = document.getElementById("__FURIN_DATA__");
   const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
   const rootEl = document.getElementById("root") as HTMLElement;
 
@@ -68,7 +68,7 @@ if (_match) {
     createRoot(rootEl).render(app);
   }
 } else {
-  console.error("[elyra] No matching route for", pathname);
+  console.error("[furin] No matching route for", pathname);
 }
 `;
 }
@@ -101,6 +101,6 @@ export function writeDevFiles(routes: ResolvedRoute[], {outDir, rootLayout}: Bui
   writeRouteTypes(routes, outDir);
 
   console.log(
-    "[elyra] Dev files written (.elyra/_hydrate.tsx + .elyra/index.html + .elyra/routes.d.ts)"
+    "[furin] Dev files written (.furin/_hydrate.tsx + .furin/index.html + .furin/routes.d.ts)"
   );
 }

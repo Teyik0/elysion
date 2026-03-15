@@ -72,10 +72,10 @@ if (command === "build") {
   const resolvedServerEntry = resolve(config.rootDir, config.serverEntry ?? "src/server.ts");
   if (!existsSync(resolvedServerEntry)) {
     const expected = config.serverEntry ?? "src/server.ts";
-    throw new Error(`[elyra] Entrypoint ${expected} not found`);
+    throw new Error(`[furin] Entrypoint ${expected} not found`);
   }
 
-  log(`Building Elyra for ${target}…`);
+  log(`Building Furin for ${target}…`);
 
   const result = await buildApp({
     target: target as BuildTarget | "all",
@@ -87,12 +87,12 @@ if (command === "build") {
   });
 
   const built = Object.keys(result.targets).join(", ") || "none";
-  log(`Done: ${built} → .elyra/build`);
+  log(`Done: ${built} → .furin/build`);
 } else if (!command || command === "help") {
   console.log(
-    `Elyra CLI
+    `Furin CLI
 
-USAGE  elyra build [options]
+USAGE  furin build [options]
 
 OPTIONS
   --target    ${BUILD_TARGETS.join(" | ")} | all  (default: bun)
@@ -102,5 +102,5 @@ OPTIONS
 `
   );
 } else {
-  bail(`Unknown command "${command}". Run "elyra help" for usage.`);
+  bail(`Unknown command "${command}". Run "furin help" for usage.`);
 }

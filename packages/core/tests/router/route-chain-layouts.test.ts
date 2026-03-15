@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../src/client";
-import { resolveMode, scanPages } from "../../src/router";
-import { collectRouteChainFromRoute } from "../../src/utils";
-import { expectDefined } from "../helpers/utils";
+import type { RuntimePage, RuntimeRoute } from "../../src/client.ts";
+import { resolveMode, scanPages } from "../../src/router.ts";
+import { collectRouteChainFromRoute } from "../../src/utils.ts";
+import { expectDefined } from "../helpers/utils.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 
@@ -71,38 +71,38 @@ describe("route chain contains layouts", () => {
 describe("resolveMode", () => {
   test("returns isr when revalidate > 0", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE", revalidate: 60 },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE", revalidate: 60 },
     } as RuntimePage;
-    const chain = [{ __type: "ELYRA_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
+    const chain = [{ __type: "FURIN_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("isr");
   });
 
   test("returns ssg when no loader", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE" },
     } as RuntimePage;
-    const chain = [{ __type: "ELYRA_ROUTE" }] as RuntimeRoute[];
+    const chain = [{ __type: "FURIN_ROUTE" }] as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("ssg");
   });
 
   test("returns ssr when has loader but no revalidate", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE" },
     } as RuntimePage;
-    const chain = [{ __type: "ELYRA_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
+    const chain = [{ __type: "FURIN_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("ssr");
   });
 
   test("respects explicit mode ssr", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE", mode: "ssr" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE", mode: "ssr" },
     } as RuntimePage;
     const chain = [] as RuntimeRoute[];
 
@@ -111,18 +111,18 @@ describe("resolveMode", () => {
 
   test("respects explicit mode ssg", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE", mode: "ssg" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE", mode: "ssg" },
     } as RuntimePage;
-    const chain = [{ __type: "ELYRA_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
+    const chain = [{ __type: "FURIN_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("ssg");
   });
 
   test("respects explicit mode isr", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE", mode: "isr" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE", mode: "isr" },
     } as RuntimePage;
     const chain = [] as RuntimeRoute[];
 
@@ -131,8 +131,8 @@ describe("resolveMode", () => {
 
   test("detects loader in page", () => {
     const page = {
-      __type: "ELYRA_PAGE" as const,
-      _route: { __type: "ELYRA_ROUTE" as const },
+      __type: "FURIN_PAGE" as const,
+      _route: { __type: "FURIN_ROUTE" as const },
       loader: async () => ({ data: "test" }),
       component: () => null,
     } as RuntimePage;
@@ -143,10 +143,10 @@ describe("resolveMode", () => {
 
   test("detects loader in route chain", () => {
     const page = {
-      __type: "ELYRA_PAGE",
-      _route: { __type: "ELYRA_ROUTE" },
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE" },
     } as RuntimePage;
-    const chain = [{ __type: "ELYRA_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
+    const chain = [{ __type: "FURIN_ROUTE", loader: async () => ({}) }] as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("ssr");
   });
@@ -156,12 +156,12 @@ describe("scanPageFiles throw", () => {
   let tempDir: string;
 
   test("throw error when page has no valid export", () => {
-    tempDir = join(tmpdir(), `elysion-invalid-page-${Date.now()}`);
+    tempDir = join(tmpdir(), `furin-invalid-page-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
 
     writeFileSync(
       join(tempDir, "root.tsx"),
-      `const route = { __type: "ELYRA_ROUTE", layout: () => null };
+      `const route = { __type: "FURIN_ROUTE", layout: () => null };
 export { route };`
     );
 

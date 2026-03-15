@@ -19,7 +19,7 @@ describe.serial("render/template", () => {
   });
 
   test("getProductionTemplate reads the configured template from disk", () => {
-    const dir = mkdtempSync(join(tmpdir(), "elyra-template-"));
+    const dir = mkdtempSync(join(tmpdir(), "furin-template-"));
     const file = join(dir, "index.html");
     writeFileSync(file, "<html>prod-template</html>");
 
@@ -34,7 +34,7 @@ describe.serial("render/template", () => {
   });
 
   test("setProductionTemplateContent takes priority over path-based template", () => {
-    const dir = mkdtempSync(join(tmpdir(), "elyra-template-"));
+    const dir = mkdtempSync(join(tmpdir(), "furin-template-"));
     const file = join(dir, "index.html");
     writeFileSync(file, "<html>from-disk</html>");
 

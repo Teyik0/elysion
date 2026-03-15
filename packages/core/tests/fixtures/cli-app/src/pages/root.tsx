@@ -1,4 +1,4 @@
-import { createRoute } from "elyra/client";
+import { createRoute } from "furin/client";
 
 export const route = createRoute({
   layout: ({ children }) => <div data-testid="root-layout">{children}</div>,

@@ -3,7 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { buildBunTarget } from "../adapter/bun";
 import { BUILD_TARGETS, type BuildTarget } from "../config";
 import { scanPages } from "../router";
-import { scanElyraInstances } from "./scan-server";
+import { scanFurinInstances } from "./scan-server";
 import {
   ensureDir,
   toBuildRouteManifestEntry,
@@ -28,11 +28,11 @@ export { writeDevFiles } from "./hydrate";
 export { patternToTypeString, schemaToTypeString, writeRouteTypes } from "./route-types";
 
 const IMPLEMENTED_TARGETS = ["bun"] as const satisfies BuildTarget[];
-export const BUILD_OUTPUT_DIR = ".elyra/build";
+export const BUILD_OUTPUT_DIR = ".furin/build";
 
 function resolvePagesDirFromServer(serverEntry: string | null, rootDir: string): string | null {
   if (!serverEntry) return null;
-  const detected = scanElyraInstances(serverEntry);
+  const detected = scanFurinInstances(serverEntry);
   if (detected.length === 0) return null;
   // Use the first detected pagesDir relative to rootDir
   return resolve(rootDir, detected[0] as string);
@@ -48,7 +48,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
     }
     const serverEntry = resolve(rootDir, "src/server.ts");
     if (!existsSync(serverEntry)) {
-      throw new Error("[elyra] Entrypoint server.ts not found");
+      throw new Error("[furin] Entrypoint server.ts not found");
     }
     return serverEntry
   })();
@@ -63,7 +63,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
       ? [...IMPLEMENTED_TARGETS]
       : [options.target].map((target) => {
           if (!(BUILD_TARGETS as readonly string[]).includes(target)) {
-            throw new Error(`[elyra] Unsupported build target "${target}"`);
+            throw new Error(`[furin] Unsupported build target "${target}"`);
           }
           return target as BuildTarget;
         });
@@ -71,7 +71,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
   const { root, routes } = await scanPages(pagesDir);
   if (!root) {
     throw new Error(
-      "[elyra] No root layout found. Create a root.tsx in your pages directory with a layout component."
+      "[furin] No root layout found. Create a root.tsx in your pages directory with a layout component."
     );
   }
 
@@ -104,10 +104,10 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
       case "vercel":
       case "cloudflare":
         throw new Error(
-          `[elyra] \`--target ${target}\` is planned but not implemented yet in this branch.`
+          `[furin] \`--target ${target}\` is planned but not implemented yet in this branch.`
         );
       default:
-        throw new Error(`[elyra] Unsupported build target "${target}"`);
+        throw new Error(`[furin] Unsupported build target "${target}"`);
     }
   }
 

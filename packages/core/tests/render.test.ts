@@ -50,7 +50,7 @@ async function getRoot() {
 }
 
 function makeRuntimeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): RuntimeRoute {
-  return { __type: "ELYRA_ROUTE", ...opts };
+  return { __type: "FURIN_ROUTE", ...opts };
 }
 
 describe("render.tsx", () => {
@@ -343,7 +343,7 @@ describe("render.tsx", () => {
       const ctx = createMockLoaderContext({ path: "/with-loader" });
       const result = await renderToHTML(withLoaderRoute, ctx, root);
 
-      expect(result.html).toContain("__ELYRA_DATA__");
+      expect(result.html).toContain("__FURIN_DATA__");
     });
 
     test("injects head tags from page head() function", async () => {
@@ -498,7 +498,7 @@ describe("render.tsx", () => {
         expect(html).not.toContain("<!--ssr-head-->");
         expect(html).not.toContain("<!--ssr-outlet-->");
         expect(html).toContain('data-testid="suspense-page"');
-        expect(html).toContain("__ELYRA_DATA__");
+        expect(html).toContain("__FURIN_DATA__");
       });
     });
   });

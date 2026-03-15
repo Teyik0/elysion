@@ -9,12 +9,12 @@ interface AstNode {
 
 /**
  * Statically scans a server entry file and returns all `pagesDir` string
- * literal values found inside `elyra({ pagesDir: "..." })` call expressions.
+ * literal values found inside `furin({ pagesDir: "..." })` call expressions.
  *
  * Dynamic paths (template literals, variables) are silently ignored.
  * Returns an empty array when nothing is detected.
  */
-export function scanElyraInstances(serverEntryPath: string): string[] {
+export function scanFurinInstances(serverEntryPath: string): string[] {
   const code = readFileSync(serverEntryPath, "utf8");
   const { program, errors } = parseSync(serverEntryPath, code);
   if (errors.length > 0) {
@@ -34,7 +34,7 @@ function walkNode(node: AstNode, out: string[]): void {
     const args = node.arguments as AstNode[] | undefined;
 
     const isElyraCall =
-      callee?.type === "Identifier" && (callee as { name?: string }).name === "elyra";
+      callee?.type === "Identifier" && (callee as { name?: string }).name === "furin";
 
     if (isElyraCall && Array.isArray(args) && args.length > 0) {
       const firstArg = args[0] as AstNode;

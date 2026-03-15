@@ -1,4 +1,4 @@
-import { Link } from "elyra/link";
+import { Link } from "furin/link";
 import { useState } from "react";
 import { route } from "./_route";
 

@@ -6,7 +6,7 @@ await $`rm -rf dist bin`;
 await $`bunx tsc --project tsconfig.dts.json`;
 
 // Each entrypoint is built in its own Bun.build() call.
-// Bun bug: when entrypoints share imports (elyra → router, elyra → build),
+// Bun bug: when entrypoints share imports (furin → router, furin → build),
 // Bun folds some outputs into others or omits them entirely. Building each
 // entrypoint separately produces correct, self-contained bundles.
 const shared = {
@@ -21,7 +21,7 @@ const shared = {
 
 await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/cli/index.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/elyra.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/furin.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/config.ts`] }),

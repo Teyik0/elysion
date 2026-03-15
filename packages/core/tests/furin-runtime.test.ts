@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Elysia } from "elysia";
-import { elyra } from "../src/elyra.ts";
+import { furin } from "../src/furin.ts";
 import { __resetCompileContext, __setCompileContext } from "../src/internal.ts";
 import { getProductionTemplate, setProductionTemplatePath } from "../src/render/template.ts";
 import { __setDevMode } from "../src/runtime-env.ts";
@@ -13,7 +13,7 @@ const tmpApps: Array<{ cleanup: () => void }> = [];
 const originalCwd = process.cwd();
 const originalArgv = process.argv.slice();
 const originalPath = process.env.PATH;
-const originalClientDir = process.env.ELYRA_CLIENT_DIR;
+const originalClientDir = process.env.FURIN_CLIENT_DIR;
 const originalURL = globalThis.URL;
 
 function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
@@ -54,9 +54,9 @@ function resetProcessState(): void {
 
   if (originalClientDir === undefined) {
     // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
-    delete process.env.ELYRA_CLIENT_DIR;
+    delete process.env.FURIN_CLIENT_DIR;
   } else {
-    process.env.ELYRA_CLIENT_DIR = originalClientDir;
+    process.env.FURIN_CLIENT_DIR = originalClientDir;
   }
 }
 
@@ -72,8 +72,8 @@ afterEach(() => {
   }
 });
 
-describe.serial("elyra() production runtime resolution", () => {
-  test("uses ELYRA_CLIENT_DIR when provided", async () => {
+describe.serial("furin() production runtime resolution", () => {
+  test("uses FURIN_CLIENT_DIR when provided", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(false);
     process.chdir(app.path);
@@ -81,23 +81,23 @@ describe.serial("elyra() production runtime resolution", () => {
     const clientDir = join(app.path, "custom-client");
     mkdirSync(clientDir, { recursive: true });
     writeFileSync(join(clientDir, "index.html"), "<html>custom</html>");
-    process.env.ELYRA_CLIENT_DIR = "custom-client";
+    process.env.FURIN_CLIENT_DIR = "custom-client";
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("custom");
   });
 
-  test("throws when ELYRA_CLIENT_DIR has no index.html", async () => {
+  test("throws when FURIN_CLIENT_DIR has no index.html", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(false);
     process.chdir(app.path);
-    process.env.ELYRA_CLIENT_DIR = "missing-client";
+    process.env.FURIN_CLIENT_DIR = "missing-client";
 
     await setCompileContext(app.path);
-    expect(elyra({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow(
+    expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow(
       "No pre-built assets found"
     );
   });
@@ -112,7 +112,7 @@ describe.serial("elyra() production runtime resolution", () => {
     mkdirSync(moduleClientDir, { recursive: true });
     writeFileSync(join(moduleClientDir, "index.html"), "<html>module-client</html>");
 
-    const fakeModuleUrl = pathToFileURL(join(moduleRoot, "elyra.ts")).href;
+    const fakeModuleUrl = pathToFileURL(join(moduleRoot, "furin.ts")).href;
     class FakeURL extends originalURL {
       constructor(_input: string, _base?: string | URL) {
         super(fakeModuleUrl);
@@ -125,7 +125,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.env.PATH = "";
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("module-client");
@@ -155,7 +155,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.env.PATH = "";
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("argv-client");
@@ -167,7 +167,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.chdir(app.path);
 
     const binDir = join(app.path, "bin");
-    const binaryName = "elyra-server";
+    const binaryName = "furin-server";
     const binaryPath = join(binDir, binaryName);
     const clientDir = join(binDir, "client");
     mkdirSync(clientDir, { recursive: true });
@@ -176,7 +176,7 @@ describe.serial("elyra() production runtime resolution", () => {
 
     class FakeURL extends originalURL {
       constructor(_input: string, _base?: string | URL) {
-        super("file:///$bunfs/elyra.ts");
+        super("file:///$bunfs/furin.ts");
       }
     }
     globalThis.URL = FakeURL as typeof URL;
@@ -186,18 +186,18 @@ describe.serial("elyra() production runtime resolution", () => {
     process.env.PATH = binDir;
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("path-client");
   });
 
-  test("fallback uses .elyra/build/bun/client when present", async () => {
+  test("fallback uses .furin/build/bun/client when present", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     __setDevMode(false);
     process.chdir(app.path);
 
-    const fallbackDir = join(app.path, ".elyra/build/bun/client");
+    const fallbackDir = join(app.path, ".furin/build/bun/client");
     mkdirSync(fallbackDir, { recursive: true });
     writeFileSync(join(fallbackDir, "index.html"), "<html>fallback-client</html>");
 
@@ -213,7 +213,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.env.PATH = "";
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("fallback-client");
@@ -240,7 +240,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.env.PATH = "";
 
     await setCompileContext(app.path);
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("cwd-client");
@@ -252,7 +252,7 @@ describe.serial("elyra() production runtime resolution", () => {
     process.chdir(app.path);
 
     await setCompileContext(app.path, { template: "", assets: {} });
-    expect(elyra({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow("HTML template");
+    expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow("HTML template");
   });
 
   test("embedded assets serve /_client and /public", async () => {
@@ -275,12 +275,12 @@ describe.serial("elyra() production runtime resolution", () => {
       },
     });
 
-    const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-    const okClient = await instance.handle(new Request("http://elyra/_client/app.js"));
-    const okPublic = await instance.handle(new Request("http://elyra/public/logo.png"));
-    const missClient = await instance.handle(new Request("http://elyra/_client/missing.js"));
-    const missPublic = await instance.handle(new Request("http://elyra/public/missing.png"));
+    const okClient = await instance.handle(new Request("http://furin/_client/app.js"));
+    const okPublic = await instance.handle(new Request("http://furin/public/logo.png"));
+    const missClient = await instance.handle(new Request("http://furin/_client/missing.js"));
+    const missPublic = await instance.handle(new Request("http://furin/public/missing.png"));
 
     expect(okClient.status).toBe(200);
     expect(okPublic.status).toBe(200);

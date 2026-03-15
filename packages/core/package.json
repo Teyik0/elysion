@@ -1,22 +1,22 @@
 {
-  "name": "elyra",
+  "name": "furin",
   "version": "0.1.0-alpha.3",
   "type": "module",
   "files": [
     "dist",
     "src"
   ],
-  "main": "./dist/elyra.js",
-  "module": "./dist/elyra.js",
-  "types": "./src/elyra.ts",
+  "main": "./dist/furin.js",
+  "module": "./dist/furin.js",
+  "types": "./src/furin.ts",
   "bin": {
-    "elyra": "./dist/cli/index.js"
+    "furin": "./dist/cli/index.js"
   },
   "exports": {
     ".": {
-      "types": "./src/elyra.ts",
-      "bun": "./src/elyra.ts",
-      "import": "./dist/elyra.js"
+      "types": "./src/furin.ts",
+      "bun": "./src/furin.ts",
+      "import": "./dist/furin.js"
     },
     "./client": {
       "types": "./src/client.ts",

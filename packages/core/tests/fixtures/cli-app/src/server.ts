@@ -1,11 +1,11 @@
-import { elyra } from "elyra";
 import Elysia from "elysia";
+import { furin } from "furin";
 
 const port = Number(process.env.PORT ?? 3111);
 
 const app = new Elysia()
   .use(
-    await elyra({
+    await furin({
       pagesDir: `${import.meta.dir}/pages`,
     })
   )

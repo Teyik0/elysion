@@ -8,8 +8,8 @@ import { type CompileContext, getCompileContext } from "./internal.ts";
 import { handleISR, prerenderSSG, renderSSR } from "./render/index.ts";
 import {
   collectRouteChainFromRoute,
-  isElyraPage,
-  isElyraRoute,
+  isFurinPage,
+  isFurinRoute,
   validateRouteChain,
 } from "./utils.ts";
 
@@ -70,17 +70,17 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
   const rootPath = `${pagesDir}/root.tsx`;
   const ctx = getCompileContext();
   if (!(existsSync(rootPath) || ctx?.modules[rootPath])) {
-    throw new Error("[elyra] root.tsx: not found.");
+    throw new Error("[furin] root.tsx: not found.");
   }
 
   const mod = (ctx?.modules[rootPath] ?? (await import(rootPath))) as Record<string, unknown>;
   const rootExport = mod.route ?? mod.default;
-  if (!(rootExport && isElyraRoute(rootExport))) {
-    throw new Error("[elyra] root.tsx: createRoute() export not found.");
+  if (!(rootExport && isFurinRoute(rootExport))) {
+    throw new Error("[furin] root.tsx: createRoute() export not found.");
   }
 
   if (!rootExport.layout) {
-    throw new Error("[elyra] root.tsx: createRoute() has no layout.");
+    throw new Error("[furin] root.tsx: createRoute() has no layout.");
   }
   return { path: rootPath, route: rootExport };
 }
@@ -125,8 +125,8 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       default: RuntimePage;
     };
     const page: RuntimePage = pageMod.default;
-    if (!isElyraPage(page)) {
-      throw new Error(`[elyra] ${relativePath}: no valid createRoute().page() export found`);
+    if (!isFurinPage(page)) {
+      throw new Error(`[furin] ${relativePath}: no valid createRoute().page() export found`);
     }
 
     const routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
@@ -164,8 +164,8 @@ export function loadProdRoutes(ctx: CompileContext): {
 } {
   const rootMod = ctx.modules[ctx.rootPath] as Record<string, unknown>;
   const rootExport = rootMod.route ?? rootMod.default;
-  if (!(rootExport && isElyraRoute(rootExport) && rootExport.layout)) {
-    throw new Error("[elyra] root.tsx: createRoute() with layout not found in CompileContext.");
+  if (!(rootExport && isFurinRoute(rootExport) && rootExport.layout)) {
+    throw new Error("[furin] root.tsx: createRoute() with layout not found in CompileContext.");
   }
   const root: RootLayout = { path: ctx.rootPath, route: rootExport };
 
@@ -173,8 +173,8 @@ export function loadProdRoutes(ctx: CompileContext): {
   for (const { pattern, path, mode } of ctx.routes) {
     const pageMod = ctx.modules[path] as { default: RuntimePage };
     const page: RuntimePage = pageMod.default;
-    if (!isElyraPage(page)) {
-      throw new Error(`[elyra] ${path}: invalid page module in CompileContext.`);
+    if (!isFurinPage(page)) {
+      throw new Error(`[furin] ${path}: invalid page module in CompileContext.`);
     }
     const routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
     validateRouteChain(routeChain, root.route, path);

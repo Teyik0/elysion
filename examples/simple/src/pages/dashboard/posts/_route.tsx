@@ -1,4 +1,4 @@
-import { createRoute } from "elyra/client";
+import { createRoute } from "furin/client";
 import { queries } from "../../../db";
 import { route as dashboardRoute } from "../_route";
 

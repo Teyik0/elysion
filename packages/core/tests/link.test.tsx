@@ -16,7 +16,7 @@ import { buildHref, buildPageElement, Link, shouldRefetch } from "../src/link";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): RuntimeRoute {
-  return { __type: "ELYRA_ROUTE", ...opts };
+  return { __type: "FURIN_ROUTE", ...opts };
 }
 
 function makeMatch(

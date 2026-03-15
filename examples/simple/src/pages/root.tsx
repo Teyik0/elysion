@@ -1,9 +1,9 @@
-import { createRoute } from "elyra/client";
-import { Link } from "elyra/link";
+import { createRoute } from "furin/client";
+import { Link } from "furin/link";
 import "../styles/globals.css";
 
 // Root layout renders body content only — <html>, <head>, <body> are provided
-// by .elyra/index.html (the SSR template processed by Bun's HTML bundler).
+// by .furin/index.html (the SSR template processed by Bun's HTML bundler).
 export const route = createRoute({
   layout: ({ children }) => (
     <div className="flex min-h-screen flex-col bg-gray-50 text-gray-900">
@@ -13,13 +13,13 @@ export const route = createRoute({
             <div className="flex">
               <Link className="flex items-center gap-2 font-bold text-indigo-600 text-xl" to="/">
                 <img
-                  alt="Elyra logo"
+                  alt="Furin logo"
                   className="rounded-full"
                   height={30}
-                  src="/public/elyra-logo.png"
+                  src="/public/furin-logo.png"
                   width={30}
                 />
-                Elyra
+                Furin
               </Link>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 <Link
@@ -68,11 +68,11 @@ export const route = createRoute({
       <footer className="mt-auto border-gray-200 border-t bg-white">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <p className="text-gray-500 text-sm">Built with Elyra - React meta-framework on Bun</p>
+            <p className="text-gray-500 text-sm">Built with Furin - React meta-framework on Bun</p>
             <div className="flex space-x-6">
               <a
                 className="text-gray-400 text-sm hover:text-gray-500"
-                href="https://github.com/teyik0/elyra"
+                href="https://github.com/teyik0/furin"
               >
                 GitHub
               </a>

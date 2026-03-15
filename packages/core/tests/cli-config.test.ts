@@ -27,13 +27,13 @@ describe("CLI config resolution", () => {
     expect(result.pagesDir).toBe(join(app.path, "src/pages"));
   });
 
-  test("loadCliConfig loads values from elyra.config.ts", async () => {
+  test("loadCliConfig loads values from furin.config.ts", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     writeAppFile(
       app.path,
-      "elyra.config.ts",
+      "furin.config.ts",
       [
-        'import { defineConfig } from "elyra/config";',
+        'import { defineConfig } from "furin/config";',
         "export default defineConfig({",
         '  pagesDir: "src/custom-pages",',
         "});",
@@ -42,7 +42,7 @@ describe("CLI config resolution", () => {
 
     const result = await loadCliConfig(app.path);
 
-    expect(result.configPath).toBe(join(app.path, "elyra.config.ts"));
+    expect(result.configPath).toBe(join(app.path, "furin.config.ts"));
     expect(result.pagesDir).toBe(join(app.path, "src/custom-pages"));
   });
 
@@ -51,10 +51,10 @@ describe("CLI config resolution", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     writeAppFile(
       app.path,
-      "elyra.config.ts",
+      "furin.config.ts",
       [
-        'import { defineConfig } from "elyra/config";',
-        'const mockPlugin: import("elyra/config").BunPlugin = { name: "test-plugin", setup() {} };',
+        'import { defineConfig } from "furin/config";',
+        'const mockPlugin: import("furin/config").BunPlugin = { name: "test-plugin", setup() {} };',
         "export default defineConfig({ plugins: [mockPlugin] });",
       ].join("\n")
     );
@@ -70,10 +70,10 @@ describe("CLI config resolution", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     writeAppFile(
       app.path,
-      "elyra.config.ts",
+      "furin.config.ts",
       [
-        'import { defineConfig } from "elyra/config";',
-        'const p: import("elyra/config").BunPlugin = { name: "p", setup() {} };',
+        'import { defineConfig } from "furin/config";',
+        'const p: import("furin/config").BunPlugin = { name: "p", setup() {} };',
         "export default defineConfig({",
         "  plugins: [p],",
         "});",

@@ -1,4 +1,4 @@
-import { Link } from "elyra/link";
+import { Link } from "furin/link";
 import { route } from "./root";
 
 export default route.page({
@@ -72,7 +72,7 @@ export default route.page({
               title="Bun Binary Compile"
             />
             <FeatureCard
-              description="Pass Bun plugins (e.g. Tailwind, custom transforms) directly in elyra.config.ts. They run before the internal client transform."
+              description="Pass Bun plugins (e.g. Tailwind, custom transforms) directly in furin.config.ts. They run before the internal client transform."
               icon="plugin"
               title="User Plugins"
             />
@@ -84,7 +84,7 @@ export default route.page({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-4 text-center font-bold text-3xl">This Demo App</h2>
           <p className="mx-auto mb-12 max-w-2xl text-center text-gray-600">
-            Explore all Elyra features through this complete blog + admin dashboard example.
+            Explore all Furin features through this complete blog + admin dashboard example.
           </p>
           <div className="grid gap-6 md:grid-cols-2">
             <DemoCard

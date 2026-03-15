@@ -91,13 +91,13 @@ const users: User[] = [
 const posts: Post[] = [
   {
     id: "1",
-    slug: "introduction-to-elyra",
-    title: "Introduction to Elyra",
+    slug: "introduction-to-furin",
+    title: "Introduction to Furin",
     excerpt:
-      "Discover Elyra, the React meta-framework built on Elysia and Bun for blazing fast web applications.",
-    content: `# Introduction to Elyra
+      "Discover Furin, the React meta-framework built on Elysia and Bun for blazing fast web applications.",
+    content: `# Introduction to Furin
 
-Elyra is a powerful React meta-framework that combines the speed of Bun with the flexibility of Elysia.
+Furin is a powerful React meta-framework that combines the speed of Bun with the flexibility of Elysia.
 
 ## Features
 
@@ -110,14 +110,14 @@ Elyra is a powerful React meta-framework that combines the speed of Bun with the
 ## Getting Started
 
 \`\`\`bash
-bun create elyra my-app
+bun create furin my-app
 cd my-app
 bun dev
 \`\`\`
 
-## Why Elyra?
+## Why Furin?
 
-Elyra brings together the best of modern web development:
+Furin brings together the best of modern web development:
 - Server-side rendering for SEO and initial load performance
 - Static generation for maximum speed
 - Incremental regeneration for dynamic content
@@ -133,7 +133,7 @@ Elyra brings together the best of modern web development:
     slug: "building-with-tailwind-v4",
     title: "Building Modern UIs with Tailwind CSS v4",
     excerpt:
-      "Learn how to leverage Tailwind CSS v4 in your Elyra projects for beautiful, responsive designs.",
+      "Learn how to leverage Tailwind CSS v4 in your Furin projects for beautiful, responsive designs.",
     content: `# Building Modern UIs with Tailwind CSS v4
 
 Tailwind CSS v4 brings exciting new features and improvements.

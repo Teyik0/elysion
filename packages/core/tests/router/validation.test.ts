@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeRoute } from "../../src/client";
-import { scanRootLayout } from "../../src/router";
-import { collectRouteChainFromRoute, hasCycle, validateRouteChain } from "../../src/utils";
+import type { RuntimeRoute } from "../../src/client.ts";
+import { scanRootLayout } from "../../src/router.ts";
+import { collectRouteChainFromRoute, hasCycle, validateRouteChain } from "../../src/utils.ts";
 
 const MUST_INHERIT_FROM_ROOT_RE = /must inherit from root/i;
 const CYCLE_RE = /cycle/i;
@@ -12,14 +12,14 @@ const CYCLE_RE = /cycle/i;
 describe("route chain validation (pure functions)", () => {
   describe("collectRouteChainFromRoute", () => {
     test("returns single route when no parent", () => {
-      const route: RuntimeRoute = { __type: "ELYRA_ROUTE" };
+      const route: RuntimeRoute = { __type: "FURIN_ROUTE" };
       expect(collectRouteChainFromRoute(route)).toEqual([route]);
     });
 
     test("returns chain in correct order (parent first)", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const child: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: root };
-      const grandchild: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: child };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const child: RuntimeRoute = { __type: "FURIN_ROUTE", parent: root };
+      const grandchild: RuntimeRoute = { __type: "FURIN_ROUTE", parent: child };
 
       expect(collectRouteChainFromRoute(grandchild)).toEqual([root, child, grandchild]);
     });
@@ -27,25 +27,25 @@ describe("route chain validation (pure functions)", () => {
 
   describe("hasCycle", () => {
     test("returns false for route without parent", () => {
-      const route: RuntimeRoute = { __type: "ELYRA_ROUTE" };
+      const route: RuntimeRoute = { __type: "FURIN_ROUTE" };
       expect(hasCycle(route)).toBe(false);
     });
 
     test("returns false for valid chain", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const child: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: root };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const child: RuntimeRoute = { __type: "FURIN_ROUTE", parent: root };
       expect(hasCycle(child)).toBe(false);
     });
 
     test("returns true for direct self-cycle", () => {
-      const route: RuntimeRoute = { __type: "ELYRA_ROUTE" };
+      const route: RuntimeRoute = { __type: "FURIN_ROUTE" };
       route.parent = route;
       expect(hasCycle(route)).toBe(true);
     });
 
     test("returns true for indirect cycle A→B→A", () => {
-      const routeA: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const routeB: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: routeA };
+      const routeA: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const routeB: RuntimeRoute = { __type: "FURIN_ROUTE", parent: routeA };
       routeA.parent = routeB;
       expect(hasCycle(routeA)).toBe(true);
       expect(hasCycle(routeB)).toBe(true);
@@ -54,24 +54,24 @@ describe("route chain validation (pure functions)", () => {
 
   describe("validateRouteChain", () => {
     test("throws when chain does not contain root", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const otherRoute: RuntimeRoute = { __type: "ELYRA_ROUTE" };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const otherRoute: RuntimeRoute = { __type: "FURIN_ROUTE" };
       const chain = [otherRoute];
 
       expect(() => validateRouteChain(chain, root)).toThrow(MUST_INHERIT_FROM_ROOT_RE);
     });
 
     test("succeeds when chain contains root", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const child: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: root };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const child: RuntimeRoute = { __type: "FURIN_ROUTE", parent: root };
       const chain = [root, child];
 
       expect(() => validateRouteChain(chain, root)).not.toThrow();
     });
 
     test("succeeds when level-3 page uses root directly (skips level-2)", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const level3DirectRoot: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: root };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const level3DirectRoot: RuntimeRoute = { __type: "FURIN_ROUTE", parent: root };
 
       const chain = [root, level3DirectRoot];
 
@@ -79,8 +79,8 @@ describe("route chain validation (pure functions)", () => {
     });
 
     test("throws when cycle is detected", () => {
-      const root: RuntimeRoute = { __type: "ELYRA_ROUTE" };
-      const cyclicRoute: RuntimeRoute = { __type: "ELYRA_ROUTE", parent: root };
+      const root: RuntimeRoute = { __type: "FURIN_ROUTE" };
+      const cyclicRoute: RuntimeRoute = { __type: "FURIN_ROUTE", parent: root };
       cyclicRoute.parent = cyclicRoute;
 
       const chain = [root, cyclicRoute];
@@ -94,7 +94,7 @@ describe("scanRootLayout", () => {
   let tempDir: string;
 
   beforeAll(() => {
-    tempDir = join(tmpdir(), `elysion-router-test-${Date.now()}`);
+    tempDir = join(tmpdir(), `furin-router-test-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
   });
 
@@ -135,7 +135,7 @@ describe("scanRootLayout", () => {
 
     writeFileSync(
       join(noLayoutDir, "root.tsx"),
-      `const route = { __type: "ELYRA_ROUTE" };
+      `const route = { __type: "FURIN_ROUTE" };
 export { route };`
     );
 
@@ -148,7 +148,7 @@ export { route };`
 
     writeFileSync(
       join(validDir, "root.tsx"),
-      `const route = { __type: "ELYRA_ROUTE", layout: () => null };
+      `const route = { __type: "FURIN_ROUTE", layout: () => null };
 export { route };`
     );
 

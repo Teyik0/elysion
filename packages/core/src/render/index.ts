@@ -89,7 +89,7 @@ export async function renderToHTML(
 
   // Dev: self-fetch /_bun_hmr_entry (once, then cached) to get the Bun-processed
   // HTML template with content-hashed chunk paths and HMR WebSocket client.
-  // Prod: read .elyra/client/index.html from disk.
+  // Prod: read .furin/client/index.html from disk.
   const template = IS_DEV
     ? await getDevTemplate(new URL(ctx.request.url).origin)
     : (getProductionTemplate() ?? generateIndexHtml());
@@ -157,7 +157,7 @@ export async function renderSSR(
 
     // Phase 2: split template around placeholders
     const { headPre, bodyPre, bodyPost } = splitTemplate(template);
-    const dataScript = `<script id="__ELYRA_DATA__" type="application/json">${safeJson(data)}</script>`;
+    const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`;
 
     // Phase 3: start React render without awaiting allReady
     const element = buildElement(route, componentProps, root.route);
@@ -262,7 +262,7 @@ export async function warmSSGCache(
     try {
       paramSets = (await route.page.staticParams?.()) ?? [];
     } catch (err) {
-      console.error(`[elyra] SSG warm-up failed for ${route.pattern}:`, err);
+      console.error(`[furin] SSG warm-up failed for ${route.pattern}:`, err);
       continue;
     }
     for (const params of paramSets) {
@@ -270,7 +270,7 @@ export async function warmSSGCache(
         try {
           await prerenderSSG(route, params, root, origin);
         } catch (err) {
-          console.error(`[elyra] SSG prerender failed for ${route.pattern}:`, err);
+          console.error(`[furin] SSG prerender failed for ${route.pattern}:`, err);
         }
       });
     }
@@ -307,6 +307,6 @@ function revalidateInBackground(
       });
     })
     .catch((err: unknown) => {
-      console.error("[elyra] ISR background revalidation failed:", err);
+      console.error("[furin] ISR background revalidation failed:", err);
     });
 }

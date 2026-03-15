@@ -22,10 +22,10 @@ export const configSchema = t.Object({
   // plugins omitted : TypeBox can't validate Bun.BunPlugin[] (functions)
 });
 
-export type ElyraConfig = (typeof configSchema)["static"] & {
+export type FurinConfig = (typeof configSchema)["static"] & {
   plugins?: Bun.BunPlugin[];
 };
 
-export function defineConfig(config: ElyraConfig): ElyraConfig {
+export function defineConfig(config: FurinConfig): FurinConfig {
   return config;
 }

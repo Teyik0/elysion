@@ -45,7 +45,7 @@ describe.serial("buildBunTarget compile branches", () => {
       buildBunTarget(
         [],
         app.path,
-        join(app.path, ".elyra/build"),
+        join(app.path, ".furin/build"),
         join(app.path, "src/pages/root.tsx"),
         null,
         options
@@ -61,14 +61,14 @@ describe.serial("buildBunTarget compile branches", () => {
       await buildBunTarget(
         routes,
         app.path,
-        join(app.path, ".elyra/build"),
+        join(app.path, ".furin/build"),
         root.path,
         join(app.path, "src/server.ts"),
         { target: "bun", compile: "server" }
       );
     });
 
-    const targetDir = join(app.path, ".elyra/build/bun");
+    const targetDir = join(app.path, ".furin/build/bun");
     expect(existsSync(join(targetDir, "client"))).toBe(true);
     expect(existsSync(join(targetDir, "public/.gitkeep"))).toBe(true);
   });
@@ -81,14 +81,14 @@ describe.serial("buildBunTarget compile branches", () => {
       await buildBunTarget(
         routes,
         app.path,
-        join(app.path, ".elyra/build"),
+        join(app.path, ".furin/build"),
         root.path,
         join(app.path, "src/server.ts"),
         { target: "bun", compile: "embed" }
       );
     });
 
-    const targetDir = join(app.path, ".elyra/build/bun");
+    const targetDir = join(app.path, ".furin/build/bun");
     expect(existsSync(join(targetDir, "client"))).toBe(false);
   });
 });

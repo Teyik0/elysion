@@ -24,8 +24,8 @@ export async function buildBunTarget(
 ): Promise<TargetBuildManifest> {
   if (options.compile && !serverEntry) {
     throw new Error(
-      `[elyra] \`compile: "${options.compile}"\` requires a server entry point. ` +
-        "Create src/server.ts or set `serverEntry` in your elyra.config.ts."
+      `[furin] \`compile: "${options.compile}"\` requires a server entry point. ` +
+        "Create src/server.ts or set `serverEntry` in your furin.config.ts."
     );
   }
 
@@ -70,7 +70,7 @@ export async function buildBunTarget(
       sourcemap: "linked",
       plugins: options.plugins,
     });
-    console.log(`[elyra] Server binary: ${outfile}`);
+    console.log(`[furin] Server binary: ${outfile}`);
 
     targetManifest.serverPath = toPosixPath(join(targetManifest.targetDir, "server"));
 
@@ -96,7 +96,7 @@ export async function buildBunTarget(
       plugins: options.plugins,
     });
     console.log(
-      `[elyra] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`
+      `[furin] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`
     );
 
     targetManifest.serverPath = toPosixPath(join(targetManifest.targetDir, "server.js"));

@@ -50,7 +50,7 @@ export function assembleHTML(
   const { headPre, bodyPre, bodyPost } = splitTemplate(template);
 
   const dataScript = data
-    ? `<script id="__ELYRA_DATA__" type="application/json">${safeJson(data)}</script>`
+    ? `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`
     : "";
 
   return headPre + headData + bodyPre + reactHtml + dataScript + bodyPost;

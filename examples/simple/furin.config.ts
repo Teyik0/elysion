@@ -1,8 +1,8 @@
 import tailwind from "bun-plugin-tailwind";
-import { defineConfig } from "elyra/config";
+import { defineConfig } from "furin/config";
 
 /**
- * Elyra build config.
+ * Furin build config.
  * - `plugins`  — Bun plugins applied to the client bundle at build time.
  *                (Tailwind here: matches the dev bunfig.toml entry for parity)
  */

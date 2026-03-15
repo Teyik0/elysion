@@ -1,4 +1,4 @@
-import { Link } from "elyra/link";
+import { Link } from "furin/link";
 import { route } from "./root";
 
 export default route.page({

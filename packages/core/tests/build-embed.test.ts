@@ -37,7 +37,7 @@ describe.serial("compile: embed", () => {
     const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
 
     expect(result.exitCode).toBe(0);
-    const targetDir = join(app.path, ".elyra/build/bun");
+    const targetDir = join(app.path, ".furin/build/bun");
     const serverBin = existsSync(join(targetDir, "server"))
       ? join(targetDir, "server")
       : join(targetDir, "server.exe");

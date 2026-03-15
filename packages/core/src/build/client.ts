@@ -42,10 +42,10 @@ export async function buildClient(
   const indexPath = join(outDir, "index.html");
   writeFileSync(indexPath, indexHtml);
 
-  console.log("[elyra] Building production client bundle…");
+  console.log("[furin] Building production client bundle…");
 
   const transformPlugin: Bun.BunPlugin = {
-    name: "elyra-transform-client",
+    name: "furin-transform-client",
     setup(build) {
       build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
         const { path } = args;
@@ -63,17 +63,17 @@ export async function buildClient(
           }
 
           transformed = transformed
-            .replaceAll(`"elyra/client"`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`'elyra/client'`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`"elyra/link"`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`'elyra/link'`, JSON.stringify(LINK_MODULE_PATH));
+            .replaceAll(`"furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
+            .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
+            .replaceAll(`"furin/link"`, JSON.stringify(LINK_MODULE_PATH))
+            .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH));
 
           return {
             contents: transformed,
             loader: path.endsWith(".tsx") ? "tsx" : "ts",
           };
         } catch (error) {
-          console.error(`[elyra] Transform error for ${path}:`, error);
+          console.error(`[furin] Transform error for ${path}:`, error);
           return undefined;
         }
       });
@@ -93,8 +93,8 @@ export async function buildClient(
     // User plugins run before the internal transform so they pre-process files first
     plugins: plugins ? [...plugins, transformPlugin] :  [transformPlugin],
     alias: {
-      "elyra/client": CLIENT_MODULE_PATH,
-      "elyra/link": LINK_MODULE_PATH,
+      "furin/client": CLIENT_MODULE_PATH,
+      "furin/link": LINK_MODULE_PATH,
     },
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
@@ -103,8 +103,8 @@ export async function buildClient(
 
   const result = await Bun.build(clientBuildConfig);
   for (const output of result.outputs) {
-    console.log(`[elyra]   ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
+    console.log(`[furin]   ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
   }
 
-  console.log("[elyra] Production client build complete");
+  console.log("[furin] Production client build complete");
 }

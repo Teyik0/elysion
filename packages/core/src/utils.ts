@@ -1,20 +1,20 @@
 import type { RuntimePage, RuntimeRoute } from "./client";
 
-export function isElyraPage(value: unknown): value is RuntimePage {
+export function isFurinPage(value: unknown): value is RuntimePage {
   return (
     typeof value === "object" &&
     value !== null &&
     "__type" in value &&
-    (value as { __type: unknown }).__type === "ELYRA_PAGE"
+    (value as { __type: unknown }).__type === "FURIN_PAGE"
   );
 }
 
-export function isElyraRoute(value: unknown): value is RuntimeRoute {
+export function isFurinRoute(value: unknown): value is RuntimeRoute {
   return (
     typeof value === "object" &&
     value !== null &&
     "__type" in value &&
-    (value as { __type: unknown }).__type === "ELYRA_ROUTE"
+    (value as { __type: unknown }).__type === "FURIN_ROUTE"
   );
 }
 
@@ -55,14 +55,14 @@ export function validateRouteChain(
   if (!hasRoot) {
     const location = pagePath ? `in ${pagePath}` : "";
     throw new Error(
-      `[elyra] Page ${location} must inherit from root route. ` +
+      `[furin] Page ${location} must inherit from root route. ` +
         'Add: import { route } from "./root"; and use route.page() or set parent: route'
     );
   }
 
   for (const route of chain) {
     if (hasCycle(route)) {
-      throw new Error("[elyra] Cycle detected in route chain. A route cannot be its own ancestor.");
+      throw new Error("[furin] Cycle detected in route chain. A route cannot be its own ancestor.");
     }
   }
 }

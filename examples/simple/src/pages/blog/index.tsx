@@ -1,4 +1,4 @@
-import { Link } from "elyra/link";
+import { Link } from "furin/link";
 import { type Post, parseTags, queries } from "../../db";
 import { route } from "./_route";
 

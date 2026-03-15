@@ -33,9 +33,9 @@ describe.serial("CLI/build Bun feature", () => {
     });
 
     expect(result.targets.bun).toBeDefined();
-    expect(existsSync(join(app.path, ".elyra/build/manifest.json"))).toBe(true);
-    expect(existsSync(join(app.path, ".elyra/build/bun/client/index.html"))).toBe(true);
-    expect(existsSync(join(app.path, ".elyra/build/bun/public/.gitkeep"))).toBe(true);
+    expect(existsSync(join(app.path, ".furin/build/manifest.json"))).toBe(true);
+    expect(existsSync(join(app.path, ".furin/build/bun/client/index.html"))).toBe(true);
+    expect(existsSync(join(app.path, ".furin/build/bun/public/.gitkeep"))).toBe(true);
   });
 
   test("CLI build --target bun succeeds and writes expected manifest fields", () => {
@@ -45,8 +45,8 @@ describe.serial("CLI/build Bun feature", () => {
 
     expect(result.exitCode).toBe(0);
 
-    const manifest = readJsonFile<BuildManifest>(join(app.path, ".elyra/build/manifest.json"));
-    const targetManifestPath = join(app.path, ".elyra/build/bun/manifest.json");
+    const manifest = readJsonFile<BuildManifest>(join(app.path, ".furin/build/manifest.json"));
+    const targetManifestPath = join(app.path, ".furin/build/bun/manifest.json");
     expect(existsSync(targetManifestPath)).toBe(true);
     const targetManifest = readJsonFile<TargetBuildManifest>(targetManifestPath);
     const bunTarget = manifest.targets.bun;
@@ -71,7 +71,7 @@ describe.serial("CLI/build Bun feature", () => {
       app.path,
       "src/pages/index.tsx",
       [
-        'import { createRoute } from "elyra/client";',
+        'import { createRoute } from "furin/client";',
         "const route = createRoute({ mode: 'ssg' });",
         "export default route.page({ component: () => <main>No root</main> });",
       ].join("\n")
@@ -80,7 +80,7 @@ describe.serial("CLI/build Bun feature", () => {
       app.path,
       "src/pages/blog/[slug].tsx",
       [
-        'import { createRoute } from "elyra/client";',
+        'import { createRoute } from "furin/client";',
         "const route = createRoute({ mode: 'ssg' });",
         "export default route.page({",
         "  staticParams: () => [{ slug: 'hello-world' }],",
@@ -125,7 +125,7 @@ describe.serial("CLI/build Bun feature", () => {
     const result = runCli(["build", "--target", "bun", "--compile", "server"], { cwd: app.path });
     expect(result.exitCode).toBe(0);
 
-    const targetDir = join(app.path, ".elyra/build/bun");
+    const targetDir = join(app.path, ".furin/build/bun");
     const serverBin = existsSync(join(targetDir, "server"))
       ? join(targetDir, "server")
       : join(targetDir, "server.exe");
@@ -144,7 +144,7 @@ describe.serial("CLI/build Bun feature", () => {
     const result = runCli(["build", "--target", "bun"], { cwd: app.path });
     expect(result.exitCode).toBe(0);
 
-    const targetDir = join(app.path, ".elyra/build/bun");
+    const targetDir = join(app.path, ".furin/build/bun");
 
     // server.js bundle must exist
     expect(existsSync(join(targetDir, "server.js"))).toBe(true);
@@ -152,7 +152,7 @@ describe.serial("CLI/build Bun feature", () => {
     expect(existsSync(join(targetDir, "server.ts"))).toBe(false);
     // serverPath in manifest must point to server.js
     const manifest = readJsonFile<{ targets: { bun?: { serverPath?: string } } }>(
-      join(app.path, ".elyra/build/manifest.json")
+      join(app.path, ".furin/build/manifest.json")
     );
     expect(manifest.targets.bun?.serverPath).toMatch(SERVER_JS_RE);
   });
@@ -163,7 +163,7 @@ describe.serial("CLI/build Bun feature", () => {
     const result = runCli(["build", "--target", "bun"], { cwd: app.path });
     expect(result.exitCode).toBe(0);
 
-    const serverJs = readFileSync(join(app.path, ".elyra/build/bun/server.js"), "utf8");
+    const serverJs = readFileSync(join(app.path, ".furin/build/bun/server.js"), "utf8");
 
     // Bundle must contain baked route patterns
     expect(serverJs).toContain('"/"');

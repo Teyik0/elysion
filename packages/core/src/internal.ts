@@ -1,6 +1,6 @@
 // ── Compile-time context for compiled binaries ──────────────────────────────
 // The generated compile entry calls `__setCompileContext()` before importing
-// server.ts. At runtime, `router.ts` and `elyra.ts` use `getCompileContext()`
+// server.ts. At runtime, `router.ts` and `furin.ts` use `getCompileContext()`
 // to resolve modules and assets from the binary instead of the filesystem.
 
 export interface EmbeddedAppData {

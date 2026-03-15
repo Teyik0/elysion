@@ -282,7 +282,7 @@ export function deadCodeElimination(s: MagicString): MagicString {
   const code = s.toString();
   const { program, errors } = parseSync("dce.js", code);
   if (errors.length > 0) {
-    console.error("[elyra] DCE: failed to parse transformed output:", errors[0]?.message);
+    console.error("[furin] DCE: failed to parse transformed output:", errors[0]?.message);
     return s;
   }
 

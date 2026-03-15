@@ -11,7 +11,7 @@ import {
   type InferProps,
   type RouteContext,
 } from "../src/client";
-import { collectRouteChainFromRoute, isElyraPage, isElyraRoute } from "../src/utils";
+import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../src/utils";
 
 describe("RouteContext types (for loaders)", () => {
   test("exposes full Elysia context properties", () => {
@@ -334,45 +334,45 @@ describe("InferProps", () => {
   });
 });
 
-describe("isElyraRoute", () => {
+describe("isFurinRoute", () => {
   test("returns true for a createRoute() result", () => {
     const route = createRoute({ mode: "ssg" });
-    expect(isElyraRoute(route)).toBe(true);
+    expect(isFurinRoute(route)).toBe(true);
   });
 
   test("returns false for a page object", () => {
     const route = createRoute();
     const page = route.page({ component: () => null });
-    expect(isElyraRoute(page)).toBe(false);
+    expect(isFurinRoute(page)).toBe(false);
   });
 
   test("returns false for arbitrary objects", () => {
-    expect(isElyraRoute(null)).toBe(false);
-    expect(isElyraRoute(undefined)).toBe(false);
-    expect(isElyraRoute(42)).toBe(false);
-    expect(isElyraRoute("hello")).toBe(false);
-    expect(isElyraRoute({ __type: "OTHER" })).toBe(false);
-    expect(isElyraRoute({})).toBe(false);
+    expect(isFurinRoute(null)).toBe(false);
+    expect(isFurinRoute(undefined)).toBe(false);
+    expect(isFurinRoute(42)).toBe(false);
+    expect(isFurinRoute("hello")).toBe(false);
+    expect(isFurinRoute({ __type: "OTHER" })).toBe(false);
+    expect(isFurinRoute({})).toBe(false);
   });
 });
 
-describe("isElyraPage", () => {
+describe("isFurinPage", () => {
   test("returns true for a route.page() result", () => {
     const route = createRoute();
     const page = route.page({ component: () => null });
-    expect(isElyraPage(page)).toBe(true);
+    expect(isFurinPage(page)).toBe(true);
   });
 
   test("returns false for a route object", () => {
     const route = createRoute({ mode: "ssr" });
-    expect(isElyraPage(route)).toBe(false);
+    expect(isFurinPage(route)).toBe(false);
   });
 
   test("returns false for arbitrary objects", () => {
-    expect(isElyraPage(null)).toBe(false);
-    expect(isElyraPage(undefined)).toBe(false);
-    expect(isElyraPage({ __type: "ELYRA_ROUTE" })).toBe(false);
-    expect(isElyraPage({})).toBe(false);
+    expect(isFurinPage(null)).toBe(false);
+    expect(isFurinPage(undefined)).toBe(false);
+    expect(isFurinPage({ __type: "FURIN_ROUTE" })).toBe(false);
+    expect(isFurinPage({})).toBe(false);
   });
 });
 
@@ -383,7 +383,7 @@ describe("collectRouteChainFromRoute", () => {
     const chain = collectRouteChainFromRoute(page._route);
 
     expect(chain).toHaveLength(1);
-    expect(chain[0]?.__type).toBe("ELYRA_ROUTE");
+    expect(chain[0]?.__type).toBe("FURIN_ROUTE");
   });
 
   test("nested route — chain is [parent, child] top-down", () => {

@@ -2,17 +2,17 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { TypeCompiler } from "elysia/type-system";
-import { configSchema, type ElyraConfig } from "../config.ts";
+import { configSchema, type FurinConfig } from "../config.ts";
 
 const compiledConfigSchema = TypeCompiler.Compile(configSchema);
 
 const DEFAULT_CONFIG_FILENAMES = [
-  "elyra.config.ts",
-  "elyra.config.js",
-  "elyra.config.mjs",
+  "furin.config.ts",
+  "furin.config.js",
+  "furin.config.mjs",
 ] as const;
 
-interface ResolvedCliConfig extends ElyraConfig {
+interface ResolvedCliConfig extends FurinConfig {
   configPath: string | null;
   pagesDir: string;
   plugins?: Bun.BunPlugin[];
@@ -39,21 +39,21 @@ export async function loadCliConfig(
   }
 
   const imported = await import(pathToFileURL(configPath).href);
-  const rawConfig: ElyraConfig = imported.default ?? imported;
+  const rawConfig: FurinConfig = imported.default ?? imported;
 
   // Extract plugins before TypeBox validation: functions cannot be JSON-schema validated
   const { plugins, ...configToValidate } = rawConfig;
 
   if (plugins !== undefined && !Array.isArray(plugins)) {
     throw new Error(
-      `[elyra] Invalid config at ${configPath}: "plugins" must be an array of BunPlugin objects`
+      `[furin] Invalid config at ${configPath}: "plugins" must be an array of BunPlugin objects`
     );
   }
 
   if (!compiledConfigSchema.Check(configToValidate)) {
     const [firstError] = compiledConfigSchema.Errors(configToValidate);
     throw new Error(
-      `[elyra] Invalid config at ${configPath}: ${firstError?.message ?? "unknown error"} (path: ${firstError?.path ?? "/"})`
+      `[furin] Invalid config at ${configPath}: ${firstError?.message ?? "unknown error"} (path: ${firstError?.path ?? "/"})`
     );
   }
 

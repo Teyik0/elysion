@@ -20,7 +20,7 @@ function resolveClientDirFromArgv(): string {
 }
 
 function resolveClientDirFromEnv(): string | null {
-  const envClientDir = process.env.ELYRA_CLIENT_DIR;
+  const envClientDir = process.env.FURIN_CLIENT_DIR;
   if (!envClientDir) {
     return null;
   }
@@ -98,7 +98,7 @@ function resolveClientDirFromPath(candidate: string): string | null {
 }
 
 function resolveFallbackClientDir(): string {
-  const defaultClientDir = resolve(process.cwd(), ".elyra/build/bun/client");
+  const defaultClientDir = resolve(process.cwd(), ".furin/build/bun/client");
   if (existsSync(join(defaultClientDir, "index.html"))) {
     return defaultClientDir;
   }
@@ -112,7 +112,7 @@ async function setupProdTemplate(
 ): Promise<void> {
   if (embedded) {
     if (!embedded.template) {
-      throw new Error("[elyra] Embedded app is missing its HTML template (index.html).");
+      throw new Error("[furin] Embedded app is missing its HTML template (index.html).");
     }
     const html = await Bun.file(embedded.template).text();
     setProductionTemplateContent(html);
@@ -121,7 +121,7 @@ async function setupProdTemplate(
 
   const templatePath = join(clientDir, "index.html");
   if (!existsSync(templatePath)) {
-    throw new Error("[elyra] No pre-built assets found. Run `bun run build` first.");
+    throw new Error("[furin] No pre-built assets found. Run `bun run build` first.");
   }
   setProductionTemplatePath(templatePath);
 }
@@ -165,7 +165,7 @@ async function buildDiskInstance(
 }
 
 /**
- * Main Elyra plugin.
+ * Main Furin plugin.
  *
  * Returns a standalone Elysia instance (async function) so that routes are
  * properly registered in Elysia's router for SPA navigation to work.
@@ -174,11 +174,11 @@ async function buildDiskInstance(
  *
  * ```ts
  * new Elysia()
- *   .use(await elyra({ ... }))
+ *   .use(await furin({ ... }))
  *   .listen(3000)
  * ```
  */
-export async function elyra({ pagesDir }: { pagesDir?: string }) {
+export async function furin({ pagesDir }: { pagesDir?: string }) {
   const cwd = process.cwd();
   const ctx = getCompileContext();
   const resolvedPagesDir = ctx?.rootPath
@@ -186,14 +186,14 @@ export async function elyra({ pagesDir }: { pagesDir?: string }) {
     : resolve(cwd, pagesDir ?? "src/pages");
 
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
-  const instanceName = `elyra-${resolvedPagesDir.replaceAll("\\", "/")}`;
+  const instanceName = `furin-${resolvedPagesDir.replaceAll("\\", "/")}`;
 
   // ── Dev: Bun native HMR ────────────────────────────────────────────────
   if (IS_DEV) {
-    const elyraDir = resolve(cwd, ".elyra");
+    const furinDir = resolve(cwd, ".furin");
     const { root, routes } = await scanPages(resolvedPagesDir);
     console.info(
-      `[elyra] Configuration: ${routes.length} page(s) — ${IS_DEV ? "dev (Bun HMR)" : "production"}`
+      `[furin] Configuration: ${routes.length} page(s) — ${IS_DEV ? "dev (Bun HMR)" : "production"}`
     );
     for (const route of routes) {
       const hasLayout = route.routeChain.some((r) => r.layout);
@@ -203,10 +203,10 @@ export async function elyra({ pagesDir }: { pagesDir?: string }) {
     }
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { writeDevFiles } = await import("./build/hydrate.ts");
-    writeDevFiles(routes, { outDir: elyraDir, rootLayout: root.path });
+    writeDevFiles(routes, { outDir: furinDir, rootLayout: root.path });
 
     let instance = new Elysia({ name: instanceName, seed: resolvedPagesDir })
-      .use(await staticPlugin({ assets: elyraDir, prefix: "/_bun_hmr_entry" }))
+      .use(await staticPlugin({ assets: furinDir, prefix: "/_bun_hmr_entry" }))
       .use(await staticPlugin());
 
     for (const route of routes) {
@@ -218,7 +218,7 @@ export async function elyra({ pagesDir }: { pagesDir?: string }) {
 
   // ── Production ──────────────────────────────────────────────────────────
   if (!ctx) {
-    throw new Error("[elyra] No pre-built assets found. Run `bun run build` first.");
+    throw new Error("[furin] No pre-built assets found. Run `bun run build` first.");
   }
   const { root, routes } = loadProdRoutes(ctx);
 
@@ -241,9 +241,9 @@ export async function elyra({ pagesDir }: { pagesDir?: string }) {
   if (ssgTargets.length > 0) {
     instance = instance.onStart(async ({ server }) => {
       const origin = server?.url?.origin ?? "http://localhost:3000";
-      console.log(`[elyra] Warming SSG cache for ${ssgTargets.length} route(s)…`);
+      console.log(`[furin] Warming SSG cache for ${ssgTargets.length} route(s)…`);
       await warmSSGCache(ssgTargets, root, origin);
-      console.log("[elyra] SSG warm-up complete.");
+      console.log("[furin] SSG warm-up complete.");
     });
   }
 

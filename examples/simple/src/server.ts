@@ -1,5 +1,5 @@
-import { elyra } from "elyra";
 import Elysia from "elysia";
+import { furin } from "furin";
 import { api } from "./api/index.ts";
 
 const formattedDate = () =>
@@ -26,11 +26,11 @@ const app = new Elysia()
   })
   .use(api)
   .use(
-    await elyra({
+    await furin({
       pagesDir: "./src/pages",
     })
   )
   .listen(3000);
 
-console.log(`\nElyra Blog + Dashboard running at http://localhost:${app.server?.port}`);
+console.log(`\nFurin Blog + Dashboard running at http://localhost:${app.server?.port}`);
 console.log("Initial cold start: ", performance.now().toFixed(2), "ms");
