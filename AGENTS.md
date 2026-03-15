@@ -30,7 +30,7 @@ The user can then use this plugin in this project as such:
 # in bunfig.toml
 [serve.static]
 plugins = ["bun-plugin-tailwind", "elyra/strip-plugin"]
-env = "ELYSION_PUBLIC_*"
+env = "ELYRA_PUBLIC_*"
 ```
 
 And for the production build
@@ -42,10 +42,6 @@ import { defineConfig } from "elyra/config";
 
 export default defineConfig({
   plugins: [tailwind],
-  client: {
-    minify: true,
-    sourcemap: false,
-  },
 });
 ```
 

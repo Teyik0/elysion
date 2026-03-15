@@ -10,10 +10,6 @@ import { setProductionTemplateContent, setProductionTemplatePath } from "./rende
 import { createRoutePlugin, loadProdRoutes, scanPages } from "./router.ts";
 import { IS_DEV } from "./runtime-env.ts";
 
-export interface ElysionProps {
-  pagesDir?: string;
-}
-
 function resolveClientDirFromArgv(): string {
   return (
     resolveClientDirFromEnv() ??
@@ -182,7 +178,7 @@ async function buildDiskInstance(
  *   .listen(3000)
  * ```
  */
-export async function elyra({ pagesDir }: ElysionProps) {
+export async function elyra({ pagesDir }: { pagesDir?: string }) {
   const cwd = process.cwd();
   const ctx = getCompileContext();
   const resolvedPagesDir = ctx?.rootPath

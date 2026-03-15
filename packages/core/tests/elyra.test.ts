@@ -107,6 +107,10 @@ describe.serial("elyra()", () => {
 
     const templatePath = join(app.path, "fake-template.html");
     writeFileSync(templatePath, "<html><head></head><body><!--ssr-outlet--></body></html>");
+    const clientAssetPath = join(app.path, "client.js");
+    const publicAssetPath = join(app.path, "logo.png");
+    writeFileSync(clientAssetPath, "console.log('client');");
+    writeFileSync(publicAssetPath, "logo");
 
     const rootPath = join(app.path, "src/pages/root.tsx");
     const indexPath = join(app.path, "src/pages/index.tsx");
@@ -131,12 +135,24 @@ describe.serial("elyra()", () => {
       ],
       embedded: {
         template: templatePath,
-        assets: {},
+        assets: {
+          "/_client/app.js": clientAssetPath,
+          "/public/logo.png": publicAssetPath,
+        },
       },
     });
 
     const instance = await elyra({ pagesDir: join(app.path, "src/pages") });
     expect(instance).toBeInstanceOf(Elysia);
+    const okClient = await instance.handle(new Request("http://elyra/_client/app.js"));
+    const okPublic = await instance.handle(new Request("http://elyra/public/logo.png"));
+    const missClient = await instance.handle(new Request("http://elyra/_client/missing.js"));
+    const missPublic = await instance.handle(new Request("http://elyra/public/missing.png"));
+
+    expect(okClient.status).toBe(200);
+    expect(okPublic.status).toBe(200);
+    expect(missClient.status).toBe(404);
+    expect(missPublic.status).toBe(404);
   }, 10_000);
 
   test("throws a clear error when no root.tsx is present", () => {

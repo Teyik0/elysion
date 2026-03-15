@@ -69,9 +69,10 @@ if (command === "build") {
 
   const config = await loadCliConfig(process.cwd(), values.config);
 
-  const serverEntry = resolve(config.rootDir, "src/server.ts");
-  if (!existsSync(serverEntry)) {
-    throw new Error("[elyra] Entrypoint server.ts not found");
+  const resolvedServerEntry = resolve(config.rootDir, config.serverEntry ?? "src/server.ts");
+  if (!existsSync(resolvedServerEntry)) {
+    const expected = config.serverEntry ?? "src/server.ts";
+    throw new Error(`[elyra] Entrypoint ${expected} not found`);
   }
 
   log(`Building Elyra for ${target}…`);
@@ -81,7 +82,7 @@ if (command === "build") {
     compile: resolveCompileMode(compileFlag, config.bun?.compile),
     rootDir: config.rootDir,
     pagesDir: values.pagesDir ?? config.pagesDir,
-    serverEntry: config.serverEntry ?? serverEntry ?? undefined,
+    serverEntry: resolvedServerEntry,
     plugins: config.plugins,
   });
 
