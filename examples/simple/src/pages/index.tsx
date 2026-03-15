@@ -23,19 +23,13 @@ export default route.page({
   component: ({ codeHtml }) => (
     <div>
       {/* Hero */}
-      <section
-        className="relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden"
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59,130,246,0.12), transparent)",
-        }}
-      >
-        {/* Grid background */}
+      <section className="relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(59,130,246,0.22),transparent)] dark:bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(59,130,246,0.12),transparent)]">
+        {/* Grid overlay — uses currentColor so it flips with the theme */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.025]"
+          className="pointer-events-none absolute inset-0 opacity-[0.04] dark:opacity-[0.03]"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)",
+              "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
             backgroundSize: "64px 64px",
           }}
         />
@@ -43,20 +37,23 @@ export default route.page({
         <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-16 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8">
           {/* Left: headline */}
           <div className="flex flex-col justify-center">
-            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 font-medium text-blue-400 text-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 font-medium text-blue-500 text-xs dark:text-blue-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 dark:bg-blue-400" />
               Open Source · v0.1
             </div>
 
-            <h1 className="mb-6 font-bold text-5xl text-white leading-[1.1] sm:text-6xl lg:text-[3.75rem]">
+            <h1 className="mb-6 font-bold text-3xl text-foreground leading-[1.1] sm:text-6xl lg:text-[3.75rem]">
               Furin.{" "}
-              <span className="text-slate-400">
-                The Fast, Minimal, and Modern React Framework for Bun.
+              <span className="text-muted-foreground">
+                The Fast, Minimal, and Modern React Meta Framework for Bun.
               </span>
             </h1>
 
-            <p className="mb-10 max-w-lg text-lg text-slate-400 leading-relaxed">
+            <p className="max-w-lg text-lg text-muted-foreground leading-relaxed">
               Rethinking web development speed and simplicity with Bun.
+            </p>
+            <p className="mb-10 max-w-lg text-lg text-muted-foreground leading-relaxed">
+              One unique process, frontend and backend with bun native HMR.
             </p>
 
             <div className="flex flex-wrap gap-4">
@@ -67,7 +64,7 @@ export default route.page({
                 Get Started
               </a>
               <a
-                className="rounded-full border border-slate-700 px-8 py-3 font-medium text-slate-300 text-sm transition-all hover:border-slate-500 hover:text-white"
+                className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-all hover:border-foreground/40 hover:text-foreground"
                 href="https://github.com/teyik0/furin"
                 rel="noopener noreferrer"
                 target="_blank"
@@ -77,19 +74,17 @@ export default route.page({
             </div>
           </div>
 
-          {/* Right: code window */}
+          {/* Right: code window — intentionally always dark */}
           <div className="flex items-center justify-center">
-            <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl shadow-black/60">
-              {/* Window chrome */}
+            <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl shadow-black/40">
               <div className="flex items-center gap-2 border-slate-700/50 border-b bg-[#161b22] px-4 py-3">
                 <span className="h-3 w-3 rounded-full bg-red-500/80" />
                 <span className="h-3 w-3 rounded-full bg-yellow-500/80" />
                 <span className="h-3 w-3 rounded-full bg-green-500/80" />
                 <span className="ml-2 font-mono text-slate-400 text-xs">server.ts</span>
               </div>
-              {/* Shiki-rendered code */}
               <div
-                className="[&>pre]:!bg-[#0d1117] [&>pre]:overflow-auto [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
+                className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
                 // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted shiki output
                 dangerouslySetInnerHTML={{ __html: codeHtml }}
               />
@@ -99,10 +94,12 @@ export default route.page({
       </section>
 
       {/* Features */}
-      <section className="border-white/5 border-t py-24">
+      <section className="border-border border-t py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-4 text-center font-bold text-3xl text-white">Everything you need</h2>
-          <p className="mb-12 text-center text-slate-400">
+          <h2 className="mb-4 text-center font-bold text-3xl text-foreground">
+            Everything you need
+          </h2>
+          <p className="mb-12 text-center text-muted-foreground">
             A complete React meta-framework — batteries included.
           </p>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -151,10 +148,10 @@ export default route.page({
       </section>
 
       {/* CTA */}
-      <section className="border-white/5 border-t py-24">
+      <section className="border-border border-t py-24">
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6 lg:px-8">
-          <h2 className="mb-4 font-bold text-3xl text-white">Ready to build?</h2>
-          <p className="mb-10 text-lg text-slate-400">
+          <h2 className="mb-4 font-bold text-3xl text-foreground">Ready to build?</h2>
+          <p className="mb-10 text-lg text-muted-foreground">
             Explore the live demo or dive into the documentation.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
@@ -165,7 +162,7 @@ export default route.page({
               Explore Examples
             </a>
             <a
-              className="rounded-full border border-slate-700 px-8 py-3 font-medium text-slate-300 text-sm transition-all hover:border-slate-500 hover:text-white"
+              className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-all hover:border-foreground/40 hover:text-foreground"
               href="/about"
             >
               Read the Docs
@@ -187,12 +184,12 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/5 bg-white/3 p-8 transition-all hover:border-white/10 hover:bg-white/5">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400">
+    <div className="rounded-xl border border-border bg-card p-8 transition-all hover:border-foreground/20 hover:shadow-sm">
+      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
         {icon}
       </div>
-      <h3 className="mb-3 font-semibold text-lg text-white">{title}</h3>
-      <p className="text-slate-400 leading-relaxed">{description}</p>
+      <h3 className="mb-3 font-semibold text-foreground text-lg">{title}</h3>
+      <p className="text-muted-foreground leading-relaxed">{description}</p>
     </div>
   );
 }

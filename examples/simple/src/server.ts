@@ -1,6 +1,9 @@
 import { furin } from "@teyik0/furin";
 import { Elysia } from "elysia";
 import { api } from "./api/index.ts";
+import mdxPlugin from "./lib/bun-mdx-plugin.ts";
+
+Bun.plugin(mdxPlugin);
 
 const formattedDate = () =>
   new Date().toLocaleString("en-US", {
