@@ -8,7 +8,7 @@
     "start": "NODE_ENV=production bun src/server.ts",
     "test:e2e": "bun run ./tests/hmr.ts",
     "build": "bun run ../../packages/core/src/cli/index.ts build --target bun",
-    "build:split": "bun run ../../packages/core/src/cli/index.ts build --target bun --compile split",
+    "build:compiled": "bun run ../../packages/core/src/cli/index.ts build --target bun --compile server",
     "build:embed": "bun run ../../packages/core/src/cli/index.ts build --target bun --compile embed"
   },
   "dependencies": {

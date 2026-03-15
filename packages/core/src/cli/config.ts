@@ -1,33 +1,8 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { t } from "elysia";
 import { TypeCompiler } from "elysia/type-system";
-import { BUILD_TARGETS, type BuildTarget, type ElyraConfig } from "../config";
-
-const buildTargetSchema = t.Union(BUILD_TARGETS.map((v) => t.Literal(v)));
-const compileTargetSchema = t.Union([t.Literal("split"), t.Literal("embed")]);
-
-const configSchema = t.Object({
-  rootDir: t.Optional(t.String()),
-  pagesDir: t.Optional(t.String()),
-  outDir: t.Optional(t.String()),
-  serverEntry: t.Optional(t.String()),
-  targets: t.Optional(t.Array(buildTargetSchema)),
-  client: t.Optional(
-    t.Object({
-      minify: t.Optional(t.Boolean()),
-      sourcemap: t.Optional(t.Boolean()),
-    })
-  ),
-  bun: t.Optional(
-    t.Object({
-      compile: t.Optional(compileTargetSchema),
-    })
-  ),
-  // plugins is intentionally omitted: TypeBox cannot validate Bun.BunPlugin[]
-  // (functions are not JSON-serializable). We extract it before validation.
-});
+import { configSchema, type ElyraConfig } from "../config.ts";
 
 const compiledConfigSchema = TypeCompiler.Compile(configSchema);
 
@@ -42,23 +17,6 @@ interface ResolvedCliConfig extends ElyraConfig {
   pagesDir: string;
   plugins?: Bun.BunPlugin[];
   rootDir: string;
-}
-
-export function resolveServerEntrypoint(rootDir: string, target?: BuildTarget): string | null {
-  const candidates = [
-    target ? `src/server.${target}.ts` : undefined,
-    "src/server.ts",
-    "src/app.ts",
-  ].filter((value): value is string => !!value);
-
-  for (const candidate of candidates) {
-    const path = resolve(rootDir, candidate);
-    if (existsSync(path)) {
-      return path;
-    }
-  }
-
-  return null;
 }
 
 export async function loadCliConfig(

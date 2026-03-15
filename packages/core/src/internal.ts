@@ -8,10 +8,17 @@ export interface EmbeddedAppData {
   template: string;
 }
 
+export interface CompileContextRoute {
+  mode: "ssr" | "ssg" | "isr";
+  path: string;
+  pattern: string;
+}
+
 export interface CompileContext {
   embedded?: EmbeddedAppData;
   modules: Record<string, unknown>;
-  pagePaths: string[];
+  rootPath: string;
+  routes: CompileContextRoute[];
 }
 
 let _compileCtx: CompileContext | null = null;
@@ -22,4 +29,8 @@ export function __setCompileContext(ctx: CompileContext): void {
 
 export function getCompileContext(): CompileContext | null {
   return _compileCtx;
+}
+
+export function __resetCompileContext(): void {
+  _compileCtx = null;
 }

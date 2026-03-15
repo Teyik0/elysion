@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { buildApp } from "../build";
-import { BUILD_TARGETS, type BuildTarget } from "../config";
-import { loadCliConfig, resolveServerEntrypoint } from "./config";
+import { buildApp } from "../build/index.ts";
+import { BUILD_TARGETS, type BuildTarget } from "../config.ts";
+import { loadCliConfig } from "./config.ts";
 
 const argv = process.argv.slice(2);
 const command = argv[0];
@@ -16,14 +18,17 @@ function bail(msg: string): never {
 }
 
 function resolveCompileMode(
-  flag: string | undefined,
-  configCompile: "split" | "embed" | undefined
-): "split" | "embed" | undefined {
-  if (flag === "split" || flag === "embed") {
-    return flag;
+  flag: string | boolean | undefined,
+  configCompile: "server" | "embed" | undefined
+): "server" | "embed" | undefined {
+  if (flag === "embed") {
+    return "embed";
   }
-  if (flag !== undefined) {
-    bail(`Invalid compile mode "${flag}". Valid: split, embed`);
+  if (flag === true || flag === "server") {
+    return "server";
+  }
+  if (flag !== undefined && flag !== false) {
+    bail(`Invalid compile mode "${flag}". Valid: --compile server or --compile embed`);
   }
   return configCompile;
 }
@@ -33,21 +38,28 @@ if (command === "build") {
     args: argv.slice(1),
     options: {
       target: { type: "string" },
-      outDir: { type: "string" },
       pagesDir: { type: "string" },
       config: { type: "string" },
-      compile: { type: "string" },
     },
     strict: false,
   });
 
   const values = rawValues as {
     target?: string;
-    outDir?: string;
     pagesDir?: string;
     config?: string;
-    compile?: string;
   };
+
+  // --compile has an optional value: absent → undefined, present alone → true, present with "embed" → "embed"
+  const buildArgv = argv.slice(1);
+  const compileIdx = buildArgv.indexOf("--compile");
+  let compileFlag: string | boolean | undefined;
+  if (compileIdx < 0) {
+    compileFlag = undefined;
+  } else {
+    const next = buildArgv[compileIdx + 1];
+    compileFlag = next && !next.startsWith("-") ? next : true;
+  }
 
   const target = values.target ?? "bun";
 
@@ -56,27 +68,26 @@ if (command === "build") {
   }
 
   const config = await loadCliConfig(process.cwd(), values.config);
-  const serverEntry = resolveServerEntrypoint(
-    config.rootDir,
-    target === "all" ? undefined : (target as BuildTarget)
-  );
+
+  const resolvedServerEntry = resolve(config.rootDir, config.serverEntry ?? "src/server.ts");
+  if (!existsSync(resolvedServerEntry)) {
+    const expected = config.serverEntry ?? "src/server.ts";
+    throw new Error(`[elyra] Entrypoint ${expected} not found`);
+  }
 
   log(`Building Elyra for ${target}…`);
 
   const result = await buildApp({
     target: target as BuildTarget | "all",
-    compile: resolveCompileMode(values.compile, config.bun?.compile),
+    compile: resolveCompileMode(compileFlag, config.bun?.compile),
     rootDir: config.rootDir,
     pagesDir: values.pagesDir ?? config.pagesDir,
-    outDir: values.outDir ?? config.outDir,
-    minify: config.client?.minify,
-    sourcemap: config.client?.sourcemap,
-    serverEntry: config.serverEntry ?? serverEntry ?? undefined,
+    serverEntry: resolvedServerEntry,
     plugins: config.plugins,
   });
 
   const built = Object.keys(result.targets).join(", ") || "none";
-  log(`Done: ${built} → ${values.outDir ?? config.outDir ?? ".elyra/build"}`);
+  log(`Done: ${built} → .elyra/build`);
 } else if (!command || command === "help") {
   console.log(
     `Elyra CLI
@@ -85,10 +96,9 @@ USAGE  elyra build [options]
 
 OPTIONS
   --target    ${BUILD_TARGETS.join(" | ")} | all  (default: bun)
-  --outDir    Output directory                     (default: .elyra/build)
   --pagesDir  Pages directory
   --config    Config file path
-  --compile   split | embed  Compile to binary (bun only, default: split)
+  --compile   server | embed  Compile to binary: "server" keeps client on disk, "embed" is self-contained
 `
   );
 } else {

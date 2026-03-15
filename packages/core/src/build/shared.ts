@@ -1,10 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { BuildTarget } from "../config";
 import type { ResolvedRoute } from "../router";
 import type { BuildRouteManifestEntry, TargetBuildManifest } from "./types";
-
-export const DEFAULT_BUILD_ROOT = ".elyra/build";
 
 export const CLIENT_MODULE_PATH = resolve(import.meta.dir, "../client.ts").replace(/\\/g, "/");
 export const LINK_MODULE_PATH = resolve(import.meta.dir, "../link.tsx").replace(/\\/g, "/");
@@ -19,12 +17,27 @@ export function toPosixPath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-export function writeJsonFile(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+export function collectFilesRecursive(dir: string): string[] {
+  const files: string[] = [];
+  const entries = readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const absolutePath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectFilesRecursive(absolutePath));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files.sort();
 }
 
-export function resolveBuildRoot(rootDir: string, outDir?: string): string {
-  return resolve(rootDir, outDir ?? DEFAULT_BUILD_ROOT);
+export function copyDirRecursive(sourceDir: string, targetDir: string): void {
+  rmSync(targetDir, { force: true, recursive: true });
+  cpSync(sourceDir, targetDir, { recursive: true });
 }
 
 export function toBuildRouteManifestEntry(
@@ -49,16 +62,19 @@ export function buildTargetManifest(
 ): TargetBuildManifest {
   const targetDir = join(buildRoot, target);
   const manifestPath = join(targetDir, "manifest.json");
+
   return {
-    target,
     generatedAt: new Date().toISOString(),
     targetDir: toPosixPath(relative(rootDir, targetDir)),
     clientDir: toPosixPath(relative(rootDir, join(targetDir, "client"))),
     templatePath: toPosixPath(relative(rootDir, join(targetDir, "client", "index.html"))),
-    routeTypesPath: toPosixPath(relative(rootDir, join(targetDir, "routes.d.ts"))),
     manifestPath: toPosixPath(relative(rootDir, manifestPath)),
     serverPath: null,
     serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry)) : null,
   };
 }
 
+export function writeTargetManifest(targetDir: string, targetManifest: TargetBuildManifest): void {
+  const manifestPath = join(targetDir, "manifest.json");
+  writeFileSync(manifestPath, `${JSON.stringify(targetManifest, null, 2)}\n`);
+}

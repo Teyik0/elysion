@@ -1,6 +1,6 @@
 import { elyra } from "elyra";
 import Elysia from "elysia";
-import { api } from "./api";
+import { api } from "./api/index.ts";
 
 const formattedDate = () =>
   new Date().toLocaleString("en-US", {
