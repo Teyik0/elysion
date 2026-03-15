@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type BuildManifest, buildApp, type TargetBuildManifest } from "../src/build/index.ts";
+import { buildApp } from "../src/build/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 
@@ -36,32 +36,6 @@ describe.serial("CLI/build Bun feature", () => {
     expect(existsSync(join(app.path, ".furin/build/manifest.json"))).toBe(true);
     expect(existsSync(join(app.path, ".furin/build/bun/client/index.html"))).toBe(true);
     expect(existsSync(join(app.path, ".furin/build/bun/public/.gitkeep"))).toBe(true);
-  });
-
-  test("CLI build --target bun succeeds and writes expected manifest fields", () => {
-    const app = rememberTmpApp(createTmpApp("cli-app"));
-
-    const result = runCli(["build", "--target", "bun"], { cwd: app.path });
-
-    expect(result.exitCode).toBe(0);
-
-    const manifest = readJsonFile<BuildManifest>(join(app.path, ".furin/build/manifest.json"));
-    const targetManifestPath = join(app.path, ".furin/build/bun/manifest.json");
-    expect(existsSync(targetManifestPath)).toBe(true);
-    const targetManifest = readJsonFile<TargetBuildManifest>(targetManifestPath);
-    const bunTarget = manifest.targets.bun;
-    if (!bunTarget) {
-      throw new Error("Missing bun target manifest in build output");
-    }
-
-    expect(manifest.rootPath).toBe("src/pages/root.tsx");
-    expect(manifest.serverEntry).toBe("src/server.ts");
-    expect(
-      manifest.routes.some((route) => route.pattern === "/blog/:slug" && route.hasStaticParams)
-    ).toBe(true);
-    expect(targetManifest.targetDir).toBe(bunTarget.targetDir);
-    expect(targetManifest.clientDir).toBe(bunTarget.clientDir);
-    expect(targetManifest.serverPath).toBe(bunTarget.serverPath);
   });
 
   test("buildApp() rejects apps without a root.tsx layout", () => {

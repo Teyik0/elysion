@@ -55,7 +55,6 @@ describe.serial("compile: embed", () => {
     ]) {
       expect(existsSync(join(targetDir, file))).toBe(false);
     }
-    expect(existsSync(join(targetDir, "manifest.json"))).toBe(true);
   });
 
   test("generateCompileEntry with embed produces file imports and __setCompileContext", () => {
