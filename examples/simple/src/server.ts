@@ -35,5 +35,5 @@ const app = new Elysia()
   )
   .listen(3000);
 
-console.log(`\nFurin Blog + Dashboard running at http://localhost:${app.server?.port}`);
+console.log(`\nFurin Docs running at http://localhost:${app.server?.port}`);
 console.log("Initial cold start: ", performance.now().toFixed(2), "ms");

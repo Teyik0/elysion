@@ -1,4 +1,7 @@
 import { createRoute } from "@teyik0/furin/client";
+import { Link, type RouteManifest } from "@teyik0/furin/link";
+import { client } from "@/client";
+import { CommentsSection } from "@/components/comments-section";
 import { route as rootRoute } from "../root";
 
 const NAV = [
@@ -30,7 +33,12 @@ const NAV = [
 
 export const route = createRoute({
   parent: rootRoute,
-  layout: ({ children }) => (
+  loader: async ({ request }) => {
+    const slug = new URL(request.url).pathname;
+    const { data } = await client.api.comments.get({ query: { slug } });
+    return { slug, pageComments: data ?? [] };
+  },
+  layout: ({ children, slug, pageComments }) => (
     <div className="mx-auto flex max-w-7xl gap-12 px-4 py-12 sm:px-6 lg:px-8">
       {/* Sidebar */}
       <aside className="hidden w-56 shrink-0 lg:block">
@@ -43,12 +51,12 @@ export const route = createRoute({
               <ul className="space-y-1">
                 {section.items.map((item) => (
                   <li key={item.href}>
-                    <a
+                    <Link
                       className="block rounded-md px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
-                      href={item.href}
+                      to={item.href as keyof RouteManifest}
                     >
                       {item.label}
-                    </a>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -58,7 +66,10 @@ export const route = createRoute({
       </aside>
 
       {/* Content */}
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {children}
+        <CommentsSection initialComments={pageComments} slug={slug} />
+      </div>
     </div>
   ),
 });

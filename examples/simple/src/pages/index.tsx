@@ -1,26 +1,66 @@
+import { Link } from "@teyik0/furin/link";
+import { useState } from "react";
 import { codeToHtml } from "shiki";
 import { route } from "./root";
 
-const CODE = `import { Elysia } from "elysia"
+const FILES = {
+  "server.ts": `import { Elysia } from "elysia"
 import { furin } from "@teyik0/furin"
 
 const app = new Elysia()
-  .use(await furin({ pagesDir: "./src/pages" }))
-  .listen(3000)
-`;
+  .use(await furin({ pagesDir: "./pages" }))
+  .listen(3000)`,
+  "pages/root.tsx": `import { createRoute } from "@teyik0/furin/client"
+import { Link } from "@teyik0/furin/link"
+import "./styles/globals.css"
+
+function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/blog">Blog</Link>
+      </nav>
+      <main>{children}</main>
+    </>
+  )
+}
+
+export const route = createRoute({
+  layout: ({ children }) => <RootLayout>{children}</RootLayout>,
+})`,
+  "pages/index.tsx": `import { route } from "./root"
+
+export default route.page({
+  loader: async () => ({
+    message: "Hello from Furin!",
+  }),
+  component: ({ message }) => (
+    <h1>{message}</h1>
+  ),
+})`,
+} as const;
+
+type FileName = keyof typeof FILES;
 
 export default route.page({
   head: () => ({
     meta: [{ title: "Furin — The Fast, Minimal React Framework for Bun" }],
     links: [{ rel: "canonical", href: "/" }],
   }),
-  loader: async () => ({
-    codeHtml: await codeToHtml(CODE, {
-      lang: "typescript",
-      theme: "github-dark",
-    }),
-  }),
-  component: ({ codeHtml }) => (
+  loader: async () => {
+    const entries = Object.entries(FILES) as [FileName, string][];
+    const codeHtmlMap = Object.fromEntries(
+      await Promise.all(
+        entries.map(async ([name, code]) => [
+          name,
+          await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
+        ])
+      )
+    ) as Record<FileName, string>;
+    return { codeHtmlMap };
+  },
+  component: ({ codeHtmlMap }) => (
     <div>
       {/* Hero */}
       <section className="relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(59,130,246,0.22),transparent)] dark:bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(59,130,246,0.12),transparent)]">
@@ -57,12 +97,12 @@ export default route.page({
             </p>
 
             <div className="flex flex-wrap gap-4">
-              <a
+              <Link
                 className="rounded-full bg-blue-600 px-8 py-3 font-medium text-sm text-white transition-all hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
-                href="/dashboard"
+                to="/docs"
               >
                 Get Started
-              </a>
+              </Link>
               <a
                 className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-all hover:border-foreground/40 hover:text-foreground"
                 href="https://github.com/teyik0/furin"
@@ -74,21 +114,9 @@ export default route.page({
             </div>
           </div>
 
-          {/* Right: code window — intentionally always dark */}
+          {/* Right: tabbed code window — intentionally always dark */}
           <div className="flex items-center justify-center">
-            <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl shadow-black/40">
-              <div className="flex items-center gap-2 border-slate-700/50 border-b bg-[#161b22] px-4 py-3">
-                <span className="h-3 w-3 rounded-full bg-red-500/80" />
-                <span className="h-3 w-3 rounded-full bg-yellow-500/80" />
-                <span className="h-3 w-3 rounded-full bg-green-500/80" />
-                <span className="ml-2 font-mono text-slate-400 text-xs">server.ts</span>
-              </div>
-              <div
-                className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
-                // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted shiki output
-                dangerouslySetInnerHTML={{ __html: codeHtml }}
-              />
-            </div>
+            <HeroCodeWindow codeHtmlMap={codeHtmlMap} />
           </div>
         </div>
       </section>
@@ -173,6 +201,45 @@ export default route.page({
     </div>
   ),
 });
+
+const TAB_NAMES: FileName[] = ["server.ts", "pages/root.tsx", "pages/index.tsx"];
+
+function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string> }) {
+  const [active, setActive] = useState<FileName>("server.ts");
+
+  return (
+    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl shadow-black/40">
+      {/* Title bar with dots + tabs */}
+      <div className="flex items-center gap-2 border-slate-700/50 border-b bg-[#161b22] px-4 py-3">
+        <span className="h-3 w-3 rounded-full bg-red-500/80" />
+        <span className="h-3 w-3 rounded-full bg-yellow-500/80" />
+        <span className="h-3 w-3 rounded-full bg-green-500/80" />
+        <div className="ml-2 flex">
+          {TAB_NAMES.map((name) => (
+            <button
+              className={`border-0 px-3 py-1 font-mono text-xs transition-colors ${
+                active === name
+                  ? "bg-[#0d1117] text-slate-200"
+                  : "text-slate-500 hover:text-slate-300"
+              } ${name === TAB_NAMES[0] ? "rounded-l-md" : ""} ${name === TAB_NAMES.at(-1) ? "rounded-r-md" : ""}`}
+              key={name}
+              onClick={() => setActive(name)}
+              type="button"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Code content */}
+      <div
+        className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted shiki output
+        dangerouslySetInnerHTML={{ __html: codeHtmlMap[active] }}
+      />
+    </div>
+  );
+}
 
 function FeatureCard({
   icon,

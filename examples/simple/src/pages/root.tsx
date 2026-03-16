@@ -2,10 +2,45 @@ import { createRoute } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { authClient } from "@/lib/auth-client";
 import "../styles/globals.css";
 
-export const route = createRoute({
-  layout: ({ children }) => (
+function NavbarAuth() {
+  const { data: session } = authClient.useSession();
+
+  if (session?.user) {
+    return (
+      <div className="flex items-center gap-3">
+        <img
+          alt={session.user.name ?? "User"}
+          className="h-8 w-8 rounded-full"
+          height={32}
+          src={session.user.image ?? undefined}
+          width={32}
+        />
+        <button
+          className="text-muted-foreground text-sm transition-colors hover:text-foreground"
+          onClick={() => authClient.signOut()}
+          type="button"
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <a
+      className="rounded-full bg-blue-600 px-5 py-2 font-medium text-sm text-white transition-all hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
+      href="/login"
+    >
+      Sign in
+    </a>
+  );
+}
+
+function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
     <ThemeProvider>
       <header className="fixed top-0 z-50 w-full border-white/5 border-b bg-background/80 backdrop-blur-md">
         <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -23,18 +58,6 @@ export const route = createRoute({
             </a>
             <a
               className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-              href="/blog"
-            >
-              Examples
-            </a>
-            <a
-              className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-              href="/blog"
-            >
-              Guides
-            </a>
-            <a
-              className="text-muted-foreground text-sm transition-colors hover:text-foreground"
               href="https://github.com/teyik0/furin"
               rel="noopener noreferrer"
               target="_blank"
@@ -45,12 +68,7 @@ export const route = createRoute({
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <a
-              className="rounded-full bg-blue-600 px-5 py-2 font-medium text-sm text-white transition-all hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
-              href="/docs"
-            >
-              Get Started
-            </a>
+            <NavbarAuth />
           </div>
         </nav>
       </header>
@@ -93,5 +111,9 @@ export const route = createRoute({
         </div>
       </footer>
     </ThemeProvider>
-  ),
+  );
+}
+
+export const route = createRoute({
+  layout: ({ children }) => <RootLayout>{children}</RootLayout>,
 });
