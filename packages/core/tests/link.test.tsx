@@ -11,7 +11,14 @@ import type {
   RouterContextValue,
   RouterProviderProps,
 } from "../src/link";
-import { applyRevalidateHeader, buildHref, buildPageElement, Link, shouldRefetch } from "../src/link";
+import {
+  applyRevalidateHeader,
+  buildHref,
+  buildPageElement,
+  invalidatePrefetchCache,
+  Link,
+  shouldRefetch,
+} from "../src/link";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -361,36 +368,20 @@ describe("applyRevalidateHeader", () => {
 // ── invalidatePrefetch logic ───────────────────────────────────────────────────
 
 describe("invalidatePrefetch — page type", () => {
-  function makeCache(keys: string[]): Map<string, unknown> {
-    return new Map(keys.map((k) => [k, {}]));
-  }
-
-  function runInvalidate(cache: Map<string, unknown>, path: string, type: "page" | "layout" = "page") {
-    if (type === "page") {
-      cache.delete(path);
-      return;
-    }
-    const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
-    for (const key of cache.keys()) {
-      try {
-        const pathname = new URL(key, "http://x").pathname;
-        if (pathname === path || pathname.startsWith(prefix)) cache.delete(key);
-      } catch {
-        if (key === path || key.startsWith(prefix)) cache.delete(key);
-      }
-    }
+  function makeCache(keys: string[]): Map<string, CacheEntry> {
+    return new Map(keys.map((k) => [k, { createdAt: 0, promise: Promise.resolve(null) }]));
   }
 
   test("removes exact key from cache", () => {
     const cache = makeCache(["/blog/post-1", "/blog/post-2"]);
-    runInvalidate(cache, "/blog/post-1", "page");
+    invalidatePrefetchCache(cache, "/blog/post-1", "page");
     expect(cache.has("/blog/post-1")).toBe(false);
     expect(cache.has("/blog/post-2")).toBe(true);
   });
 
   test("does not remove other keys", () => {
     const cache = makeCache(["/a", "/b", "/c"]);
-    runInvalidate(cache, "/b", "page");
+    invalidatePrefetchCache(cache, "/b", "page");
     expect(cache.has("/a")).toBe(true);
     expect(cache.has("/c")).toBe(true);
     expect(cache.size).toBe(2);
@@ -398,31 +389,19 @@ describe("invalidatePrefetch — page type", () => {
 });
 
 describe("invalidatePrefetch — layout type", () => {
-  function makeCache(keys: string[]): Map<string, unknown> {
-    return new Map(keys.map((k) => [k, {}]));
-  }
-
-  function runInvalidateLayout(cache: Map<string, unknown>, path: string) {
-    const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
-    for (const key of cache.keys()) {
-      try {
-        const pathname = new URL(key, "http://x").pathname;
-        if (pathname === path || pathname.startsWith(prefix)) cache.delete(key);
-      } catch {
-        if (key === path || key.startsWith(prefix)) cache.delete(key);
-      }
-    }
+  function makeCache(keys: string[]): Map<string, CacheEntry> {
+    return new Map(keys.map((k) => [k, { createdAt: 0, promise: Promise.resolve(null) }]));
   }
 
   test("removes the path itself", () => {
     const cache = makeCache(["/blog", "/blog/post-1"]);
-    runInvalidateLayout(cache, "/blog");
+    invalidatePrefetchCache(cache, "/blog", "layout");
     expect(cache.has("/blog")).toBe(false);
   });
 
   test("removes all nested paths under the prefix", () => {
     const cache = makeCache(["/blog/post-1", "/blog/post-2", "/about"]);
-    runInvalidateLayout(cache, "/blog");
+    invalidatePrefetchCache(cache, "/blog", "layout");
     expect(cache.has("/blog/post-1")).toBe(false);
     expect(cache.has("/blog/post-2")).toBe(false);
     expect(cache.has("/about")).toBe(true);
@@ -430,7 +409,7 @@ describe("invalidatePrefetch — layout type", () => {
 
   test("does not remove unrelated paths", () => {
     const cache = makeCache(["/blog/post-1", "/blogging", "/other"]);
-    runInvalidateLayout(cache, "/blog");
+    invalidatePrefetchCache(cache, "/blog", "layout");
     // /blogging does NOT start with /blog/ — should survive
     expect(cache.has("/blogging")).toBe(true);
     expect(cache.has("/other")).toBe(true);

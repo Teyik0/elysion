@@ -4,9 +4,14 @@ export interface ISRCacheEntry {
   revalidate: number;
 }
 
+export interface SsgCacheEntry {
+  cachedAt: number;
+  html: string;
+}
+
 export const isrCache = new Map<string, ISRCacheEntry>();
 
-export const ssgCache = new Map<string, string>();
+export const ssgCache = new Map<string, SsgCacheEntry>();
 
 // ── Build ID ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +28,11 @@ export function getBuildId(): string {
 }
 
 // Queue of invalidated paths to send to the client via response header.
+//
+// Safety note: this Set is module-level and shared across all requests. A theoretical race
+// exists if two requests interleave between `revalidatePath()` and `consumePendingInvalidations()`.
+// In practice the window is zero: Bun is single-threaded and Elysia fires `onAfterHandle`
+// synchronously in the same micro-task queue as the handler return, with no `await` in between.
 const pendingInvalidations = new Set<string>();
 
 /**

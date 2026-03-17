@@ -228,6 +228,40 @@ export function shouldRefetch(entry: CacheEntry, staleTime: number): boolean {
   return Date.now() - entry.createdAt > staleTime;
 }
 
+/**
+ * Evicts entries from a prefetch cache Map.
+ *
+ * - `type: 'page'` (default): removes the exact href entry.
+ * - `type: 'layout'`: removes the path and all nested entries (prefix match).
+ *
+ * @internal Exported for unit testing only. RouterProvider delegates to this function.
+ */
+export function invalidatePrefetchCache(
+  cache: Map<string, CacheEntry>,
+  path: string,
+  type: "page" | "layout" = "page"
+): void {
+  if (type === "page") {
+    cache.delete(path);
+    return;
+  }
+  // layout: prefix match — evict path itself + all nested hrefs
+  const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
+  for (const key of cache.keys()) {
+    try {
+      const pathname = new URL(key, "http://x").pathname;
+      if (pathname === path || pathname.startsWith(prefix)) {
+        cache.delete(key);
+      }
+    } catch {
+      // Relative or malformed href — fall back to plain string comparison
+      if (key === path || key.startsWith(prefix)) {
+        cache.delete(key);
+      }
+    }
+  }
+}
+
 /** @internal Exported for unit testing only. */
 export function buildPageElement(
   match: LoadedClientRoute,
@@ -284,25 +318,7 @@ export function RouterProvider({
   const prefetchCache = useRef(new Map<string, CacheEntry>());
 
   const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
-    if (type === "page") {
-      prefetchCache.current.delete(path);
-      return;
-    }
-    // layout: prefix match — evict path itself + all nested hrefs
-    const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
-    for (const key of prefetchCache.current.keys()) {
-      try {
-        const pathname = new URL(key, "http://x").pathname;
-        if (pathname === path || pathname.startsWith(prefix)) {
-          prefetchCache.current.delete(key);
-        }
-      } catch {
-        // Relative or malformed href — fall back to plain string comparison
-        if (key === path || key.startsWith(prefix)) {
-          prefetchCache.current.delete(key);
-        }
-      }
-    }
+    invalidatePrefetchCache(prefetchCache.current, path, type);
   }, []);
 
   const fetchPageState = useCallback(
@@ -318,13 +334,13 @@ export function RouterProvider({
         // The browser module cache makes match.load() near-instant for already-loaded pages.
         const [res, loadedMod] = await Promise.all([fetch(href), match.load()]);
 
-        // If the server is running a different build (e.g. rolling deploy), fall back
-        // to a full navigation so the browser loads the new HTML + assets from scratch.
+        // Detect a stale-deploy mismatch: if the server is running a different build return null
+        // so that navigate() falls back to a full-page navigation (only on click, never on
+        // prefetch hover — which would redirect the user without interaction).
         const serverBuildId = res.headers.get("x-furin-build-id");
         const clientBuildId =
           document.querySelector('meta[name="furin-build-id"]')?.getAttribute("content") ?? null;
         if (serverBuildId && clientBuildId && serverBuildId !== clientBuildId) {
-          window.location.href = href;
           return null;
         }
 

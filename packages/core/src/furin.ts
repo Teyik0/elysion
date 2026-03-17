@@ -221,7 +221,9 @@ export async function furin({ pagesDir }: { pagesDir?: string }) {
       instance = instance.use(createRoutePlugin(route, root));
     }
 
-    instance = instance.onAfterHandle(({ set }) => {
+    // { as: 'global' } ensures sibling API/webhook routes that call revalidatePath()
+    // also emit X-Furin-Revalidate on their own responses, not on the next page request.
+    instance = instance.onAfterHandle({ as: "global" }, ({ set }) => {
       const paths = consumePendingInvalidations();
       if (paths.length > 0) {
         set.headers["x-furin-revalidate"] = paths.join(",");
@@ -249,8 +251,9 @@ export async function furin({ pagesDir }: { pagesDir?: string }) {
     ? buildEmbedInstance(instanceName, resolvedPagesDir, embedded)
     : await buildDiskInstance(instanceName, resolvedPagesDir, clientDir, publicDir);
 
+  const prodBuildId = ctx.buildId ?? "";
   for (const route of routes) {
-    instance = instance.use(createRoutePlugin(route, root));
+    instance = instance.use(createRoutePlugin(route, root, prodBuildId));
   }
 
   // Pre-render SSG routes with staticParams before the first request arrives.
@@ -264,7 +267,7 @@ export async function furin({ pagesDir }: { pagesDir?: string }) {
     });
   }
 
-  instance = instance.onAfterHandle(({ set }) => {
+  instance = instance.onAfterHandle({ as: "global" }, ({ set }) => {
     const paths = consumePendingInvalidations();
     if (paths.length > 0) {
       set.headers["x-furin-revalidate"] = paths.join(",");

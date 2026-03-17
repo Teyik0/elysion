@@ -39,6 +39,12 @@ export async function buildBunTarget(
   // Generate a deterministic build ID from the produced index.html.
   // The index.html contains content-hashed chunk filenames, so any JS/CSS
   // change causes a new build ID — without any CDN purge needed.
+  //
+  // Known limitation: purely server-side changes (no client JS/CSS affected) produce the
+  // same index.html → same buildId. In that case the SPA build-mismatch detection in
+  // link.tsx will not trigger a full-page reload.  SSR pages are always fresh (no ETag),
+  // and SSG/ISR ETags include a per-entry cachedAt timestamp, so content changes from
+  // revalidatePath() are still surfaced correctly.
   const clientIndexPath = join(targetDir, "client/index.html");
   const clientIndexContent = readFileSync(clientIndexPath, "utf8");
   const hasher = new Bun.CryptoHasher("sha1");

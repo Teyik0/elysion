@@ -6,7 +6,6 @@ import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
 import { handleISR, prerenderSSG, renderSSR } from "./render/index.ts";
-import { getBuildId } from "./render/cache.ts";
 import {
   collectRouteChainFromRoute,
   isFurinPage,
@@ -29,7 +28,7 @@ export interface RootLayout {
   route: RuntimeRoute;
 }
 
-export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyElysia {
+export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildId = ""): AnyElysia {
   const { pattern, mode, routeChain } = route;
 
   const plugins: AnyElysia[] = [];
@@ -49,8 +48,12 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyEl
     new Elysia().get(pattern, async (ctx) => {
       switch (mode) {
         case "ssg": {
-          const buildId = getBuildId();
-          const etag = buildId ? `"${buildId}"` : null;
+          const origin = new URL(ctx.request.url).origin;
+          // prerenderSSG returns the cached entry (O(1) Map lookup) or renders fresh.
+          // We call it before the ETag check so that revalidatePath() + re-render produces
+          // a new cachedAt, which changes the ETag and prevents stale 304 responses.
+          const { html, cachedAt } = await prerenderSSG(route, ctx.params, root, origin);
+          const etag = buildId ? `"${buildId}:${cachedAt}"` : null;
           if (etag && ctx.request.headers.get("if-none-match") === etag) {
             ctx.set.status = 304;
             return;
@@ -58,12 +61,11 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyEl
           ctx.set.headers["content-type"] = "text/html; charset=utf-8";
           ctx.set.headers["cache-control"] = "public, max-age=0, must-revalidate";
           if (etag) ctx.set.headers["etag"] = etag;
-          const origin = new URL(ctx.request.url).origin;
-          return await prerenderSSG(route, ctx.params, root, origin);
+          return html;
         }
 
         case "isr":
-          return handleISR(route, ctx, root);
+          return handleISR(route, ctx, root, buildId);
 
         default:
           return renderSSR(route, ctx, root);

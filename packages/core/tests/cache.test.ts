@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { consumePendingInvalidations, isrCache, revalidatePath, ssgCache } from "../src/render/cache";
 
-// ── applyRevalidateHeader (inline — same logic as in link.tsx, tested without React dep) ────────
+// ── applyRevalidateHeader ─────────────────────────────────────────────────────
+// Mirrors the exported `applyRevalidateHeader` from link.tsx.
+// A local copy is used here because link.tsx has a top-level React import that
+// requires React to be installed as a non-peer dep, which it is not in this package.
+// If the header format ever changes, update both this copy and link.tsx together.
 
-/**
- * Local copy of the parsing logic from link.tsx's applyRevalidateHeader.
- * Kept in sync with the source; tested here to avoid the React import.
- */
 function applyRevalidateHeader(
   headers: Headers,
   invalidate: (path: string, type?: "page" | "layout") => void
@@ -64,9 +64,9 @@ function seedCaches() {
   isrCache.set("/blog/post-1", { html: "<html>post-1</html>", generatedAt: Date.now(), revalidate: 60 });
   isrCache.set("/blog/post-2", { html: "<html>post-2</html>", generatedAt: Date.now(), revalidate: 60 });
   isrCache.set("/about", { html: "<html>about</html>", generatedAt: Date.now(), revalidate: 60 });
-  ssgCache.set("/blog/post-1", "<html>ssg-post-1</html>");
-  ssgCache.set("/blog/post-2", "<html>ssg-post-2</html>");
-  ssgCache.set("/about", "<html>ssg-about</html>");
+  ssgCache.set("/blog/post-1", { html: "<html>ssg-post-1</html>", cachedAt: Date.now() });
+  ssgCache.set("/blog/post-2", { html: "<html>ssg-post-2</html>", cachedAt: Date.now() });
+  ssgCache.set("/about", { html: "<html>ssg-about</html>", cachedAt: Date.now() });
 }
 
 function clearAll() {
@@ -92,7 +92,7 @@ describe("revalidatePath", () => {
 
   test("deletes an SSG cache entry and returns true", () => {
     clearAll();
-    ssgCache.set("/my-page", "<html/>");
+    ssgCache.set("/my-page", { html: "<html/>", cachedAt: Date.now() });
     expect(revalidatePath("/my-page")).toBe(true);
     expect(ssgCache.has("/my-page")).toBe(false);
   });

@@ -1,7 +1,7 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { RootLayout } from "../router.ts";
 import { assembleHTML, resolvePath, splitTemplate, streamToString } from "./assemble.ts";
-import { getBuildId, isrCache, ssgCache } from "./cache.ts";
+import { isrCache, ssgCache } from "./cache.ts";
 import { buildElement } from "./element.tsx";
 import { runLoaders } from "./loaders.ts";
 import { buildHeadInjection, safeJson } from "./shell.ts";
@@ -119,21 +119,22 @@ export async function prerenderSSG(
   params: Record<string, string>,
   root: RootLayout,
   origin = "http://localhost:3000"
-): Promise<string> {
+): Promise<{ html: string; cachedAt: number }> {
   const resolvedPath = resolvePath(route.pattern, params);
 
   const cached = ssgCache.get(resolvedPath);
   if (cached && !IS_DEV) {
-    return cached;
+    return { html: cached.html, cachedAt: cached.cachedAt };
   }
 
   const result = await renderForPath(route, params, root, origin);
+  const entry = { html: result.html, cachedAt: Date.now() };
 
   if (!IS_DEV) {
-    ssgCache.set(resolvedPath, result.html);
+    ssgCache.set(resolvedPath, entry);
   }
 
-  return result.html;
+  return entry;
 }
 
 export async function renderSSR(
@@ -194,27 +195,32 @@ export async function renderSSR(
   }
 }
 
-export async function handleISR(route: ResolvedRoute, ctx: Context, root: RootLayout) {
+export async function handleISR(
+  route: ResolvedRoute,
+  ctx: Context,
+  root: RootLayout,
+  buildId = ""
+) {
   const revalidate = route.page._route.revalidate ?? 60;
   const params = ctx.params ?? {};
   const cacheKey = resolvePath(route.pattern, params);
 
   const cached = isrCache.get(cacheKey);
 
-  const buildId = getBuildId();
-
   if (cached && !IS_DEV) {
     const age = Date.now() - cached.generatedAt;
     const isFresh = age < revalidate * 1000;
-    const etag = buildId ? `"${buildId}:${cached.generatedAt}"` : null;
 
+    // Kick off background refresh for stale entries *before* the ETag check so that
+    // conditional requests (304) do not permanently suppress cache refreshes.
+    if (!isFresh) {
+      revalidateInBackground(route, params, cacheKey, revalidate, root, ctx);
+    }
+
+    const etag = buildId ? `"${buildId}:${cached.generatedAt}"` : null;
     if (etag && ctx.request.headers.get("if-none-match") === etag) {
       ctx.set.status = 304;
       return;
-    }
-
-    if (!isFresh) {
-      revalidateInBackground(route, params, cacheKey, revalidate, root, ctx);
     }
 
     ctx.set.headers["content-type"] = "text/html; charset=utf-8";
