@@ -14,7 +14,12 @@ import {
   streamToString,
   warmSSGCache,
 } from "../src/render";
-import { consumePendingInvalidations, isrCache, revalidatePath, ssgCache } from "../src/render/cache";
+import {
+  consumePendingInvalidations,
+  isrCache,
+  revalidatePath,
+  ssgCache,
+} from "../src/render/cache";
 import type { ResolvedRoute } from "../src/router";
 import { scanPages } from "../src/router";
 import { __setDevMode, IS_DEV } from "../src/runtime-env";
@@ -384,7 +389,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, root);
+      const { html } = await prerenderSSG(indexRoute, {}, root);
       expect(html).toContain("<html");
     });
 
@@ -615,7 +620,7 @@ describe("render.tsx", () => {
       } as ResolvedRoute;
       await warmSSGCache([routeWithParams], root, "http://localhost:3000");
       expect(ssgCache.has("/")).toBe(true);
-      expect(ssgCache.get("/")).toContain("<html");
+      expect(ssgCache.get("/")?.html).toContain("<html");
     });
 
     test("calls staticParams() exactly once and pre-renders every returned param set", async () => {
@@ -669,7 +674,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, root);
+      const { html } = await prerenderSSG(indexRoute, {}, root);
       expect(html).toContain("<html");
     });
   });
@@ -722,12 +727,20 @@ describe("render.tsx", () => {
 
 describe("revalidatePath", () => {
   function seedCaches() {
-    isrCache.set("/blog/post-1", { html: "<html>post-1</html>", generatedAt: Date.now(), revalidate: 60 });
-    isrCache.set("/blog/post-2", { html: "<html>post-2</html>", generatedAt: Date.now(), revalidate: 60 });
+    isrCache.set("/blog/post-1", {
+      html: "<html>post-1</html>",
+      generatedAt: Date.now(),
+      revalidate: 60,
+    });
+    isrCache.set("/blog/post-2", {
+      html: "<html>post-2</html>",
+      generatedAt: Date.now(),
+      revalidate: 60,
+    });
     isrCache.set("/about", { html: "<html>about</html>", generatedAt: Date.now(), revalidate: 60 });
-    ssgCache.set("/blog/post-1", "<html>ssg-post-1</html>");
-    ssgCache.set("/blog/post-2", "<html>ssg-post-2</html>");
-    ssgCache.set("/about", "<html>ssg-about</html>");
+    ssgCache.set("/blog/post-1", { html: "<html>ssg-post-1</html>", cachedAt: Date.now() });
+    ssgCache.set("/blog/post-2", { html: "<html>ssg-post-2</html>", cachedAt: Date.now() });
+    ssgCache.set("/about", { html: "<html>ssg-about</html>", cachedAt: Date.now() });
   }
 
   function clearCaches() {
@@ -750,7 +763,7 @@ describe("revalidatePath", () => {
 
   test("deletes an SSG cache entry and returns true", () => {
     clearCaches();
-    ssgCache.set("/my-page", "<html/>");
+    ssgCache.set("/my-page", { html: "<html/>", cachedAt: Date.now() });
     expect(revalidatePath("/my-page")).toBe(true);
     expect(ssgCache.has("/my-page")).toBe(false);
   });

@@ -41,7 +41,9 @@ const pendingInvalidations = new Set<string>();
  * @internal
  */
 export function consumePendingInvalidations(): string[] {
-  if (pendingInvalidations.size === 0) return [];
+  if (pendingInvalidations.size === 0) {
+    return [];
+  }
   const paths = [...pendingInvalidations];
   pendingInvalidations.clear();
   return paths;
@@ -70,7 +72,14 @@ export function revalidatePath(path: string, type: "page" | "layout" = "page"): 
   }
 
   // layout: prefix match — invalidate path itself + all nested children
-  const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
+  let prefix: string;
+  if (path === "/") {
+    prefix = "/";
+  } else if (path.endsWith("/")) {
+    prefix = path;
+  } else {
+    prefix = `${path}/`;
+  }
   let deleted = false;
 
   for (const key of isrCache.keys()) {

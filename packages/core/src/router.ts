@@ -60,7 +60,9 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildI
           }
           ctx.set.headers["content-type"] = "text/html; charset=utf-8";
           ctx.set.headers["cache-control"] = "public, max-age=0, must-revalidate";
-          if (etag) ctx.set.headers["etag"] = etag;
+          if (etag) {
+            ctx.set.headers.etag = etag;
+          }
           return html;
         }
 

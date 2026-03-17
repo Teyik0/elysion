@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { consumePendingInvalidations, isrCache, revalidatePath, ssgCache } from "../src/render/cache";
+import {
+  consumePendingInvalidations,
+  getBuildId,
+  isrCache,
+  revalidatePath,
+  setBuildId,
+  ssgCache,
+} from "../src/render/cache";
 
 // ── applyRevalidateHeader ─────────────────────────────────────────────────────
 // Mirrors the exported `applyRevalidateHeader` from link.tsx.
@@ -12,7 +19,9 @@ function applyRevalidateHeader(
   invalidate: (path: string, type?: "page" | "layout") => void
 ): void {
   const header = headers.get("x-furin-revalidate");
-  if (!header) return;
+  if (!header) {
+    return;
+  }
   for (const entry of header.split(",")) {
     if (entry.endsWith(":layout")) {
       invalidate(entry.slice(0, -7), "layout");
@@ -24,45 +33,62 @@ function applyRevalidateHeader(
 
 function makeHeaders(value?: string): Headers {
   const h = new Headers();
-  if (value !== undefined) h.set("x-furin-revalidate", value);
+  if (value !== undefined) {
+    h.set("x-furin-revalidate", value);
+  }
   return h;
 }
 
 describe("applyRevalidateHeader", () => {
   test("does nothing when header is absent", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders(), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([]);
   });
 
   test("calls invalidate for a single page path", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog/post-1"), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([["/blog/post-1", "page"]]);
   });
 
   test("calls invalidate with 'layout' type when entry ends with :layout", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog:layout"), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([["/blog", "layout"]]);
   });
 
   test("handles multiple comma-separated entries", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/a,/b,/c"), (p, t) => calls.push([p, t]));
-    expect(calls).toEqual([["/a", "page"], ["/b", "page"], ["/c", "page"]]);
+    expect(calls).toEqual([
+      ["/a", "page"],
+      ["/b", "page"],
+      ["/c", "page"],
+    ]);
   });
 
   test("handles mixed page and layout entries", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog/post-1,/blog:layout"), (p, t) => calls.push([p, t]));
-    expect(calls).toEqual([["/blog/post-1", "page"], ["/blog", "layout"]]);
+    expect(calls).toEqual([
+      ["/blog/post-1", "page"],
+      ["/blog", "layout"],
+    ]);
   });
 });
 
 function seedCaches() {
-  isrCache.set("/blog/post-1", { html: "<html>post-1</html>", generatedAt: Date.now(), revalidate: 60 });
-  isrCache.set("/blog/post-2", { html: "<html>post-2</html>", generatedAt: Date.now(), revalidate: 60 });
+  isrCache.set("/blog/post-1", {
+    html: "<html>post-1</html>",
+    generatedAt: Date.now(),
+    revalidate: 60,
+  });
+  isrCache.set("/blog/post-2", {
+    html: "<html>post-2</html>",
+    generatedAt: Date.now(),
+    revalidate: 60,
+  });
   isrCache.set("/about", { html: "<html>about</html>", generatedAt: Date.now(), revalidate: 60 });
   ssgCache.set("/blog/post-1", { html: "<html>ssg-post-1</html>", cachedAt: Date.now() });
   ssgCache.set("/blog/post-2", { html: "<html>ssg-post-2</html>", cachedAt: Date.now() });
@@ -189,5 +215,20 @@ describe("consumePendingInvalidations", () => {
     expect(result).toBe(false);
     const pending = consumePendingInvalidations();
     expect(pending).toContain("/ssr-page");
+  });
+});
+
+// ── setBuildId / getBuildId ────────────────────────────────────────────────────
+
+describe("setBuildId / getBuildId", () => {
+  test("getBuildId returns empty string by default", () => {
+    setBuildId("");
+    expect(getBuildId()).toBe("");
+  });
+
+  test("setBuildId / getBuildId round-trip", () => {
+    setBuildId("abc123");
+    expect(getBuildId()).toBe("abc123");
+    setBuildId(""); // reset
   });
 });

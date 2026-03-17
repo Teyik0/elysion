@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { Elysia } from "elysia";
+import { ssgCache } from "../../src/render/cache";
+import { setProductionTemplateContent } from "../../src/render/template";
 import { createRoutePlugin, scanPages } from "../../src/router";
 import { __setDevMode, IS_DEV } from "../../src/runtime-env";
 
@@ -79,6 +82,60 @@ describe("createRoutePlugin", () => {
       expect(typeof plugin.use).toBe("function");
     } finally {
       __setDevMode(originalDevMode);
+    }
+  });
+
+  test("SSG handler serves cached HTML and returns 200", async () => {
+    const { route, root } = await getRoute("/ssg-page");
+    // Pre-seed cache and disable dev mode so the cached entry is served without a live server.
+    __setDevMode(false);
+    setProductionTemplateContent(
+      "<html><head><!--ssr-head--></head><body><!--ssr-outlet--></body></html>"
+    );
+    ssgCache.set("/ssg-page", { html: "<html>cached-ssg</html>", cachedAt: 111 });
+    try {
+      const app = new Elysia().use(createRoutePlugin(route, root));
+      const res = await app.handle(new Request("http://localhost/ssg-page"));
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("<html>cached-ssg</html>");
+    } finally {
+      __setDevMode(true);
+      ssgCache.clear();
+    }
+  });
+
+  test("SSG handler returns ETag when buildId is provided", async () => {
+    const { route, root } = await getRoute("/ssg-page");
+    __setDevMode(false);
+    setProductionTemplateContent("<html><!--ssr-head--><body><!--ssr-outlet--></body></html>");
+    ssgCache.set("/ssg-page", { html: "<html>cached</html>", cachedAt: 999 });
+    try {
+      const app = new Elysia().use(createRoutePlugin(route, root, "build-xyz"));
+      const res = await app.handle(new Request("http://localhost/ssg-page"));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("etag")).toBe('"build-xyz:999"');
+    } finally {
+      __setDevMode(true);
+      ssgCache.clear();
+    }
+  });
+
+  test("SSG handler returns 304 when If-None-Match matches ETag", async () => {
+    const { route, root } = await getRoute("/ssg-page");
+    __setDevMode(false);
+    setProductionTemplateContent("<html><!--ssr-head--><body><!--ssr-outlet--></body></html>");
+    ssgCache.set("/ssg-page", { html: "<html>cached</html>", cachedAt: 555 });
+    try {
+      const app = new Elysia().use(createRoutePlugin(route, root, "build-abc"));
+      const res = await app.handle(
+        new Request("http://localhost/ssg-page", {
+          headers: { "if-none-match": '"build-abc:555"' },
+        })
+      );
+      expect(res.status).toBe(304);
+    } finally {
+      __setDevMode(true);
+      ssgCache.clear();
     }
   });
 });

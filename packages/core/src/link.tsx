@@ -97,13 +97,9 @@ export function buildHref(
 
 // ── Fetch interceptor ──────────────────────────────────────────────────────────
 
-// Module-level reference to the active RouterProvider's invalidatePrefetch.
-// Set on mount, cleared on unmount.
-let _globalInvalidateFn: ((path: string, type?: "page" | "layout") => void) | null = null;
-
 // Keep a reference to the real fetch before any patching.
 const _originalFetch: typeof fetch =
-  typeof window !== "undefined" ? window.fetch.bind(window) : fetch;
+  typeof window === "undefined" ? fetch : window.fetch.bind(window);
 
 /**
  * Reads the `X-Furin-Revalidate` response header and calls the provided
@@ -119,7 +115,9 @@ export function applyRevalidateHeader(
   invalidate: (path: string, type?: "page" | "layout") => void
 ): void {
   const header = headers.get("x-furin-revalidate");
-  if (!header) return;
+  if (!header) {
+    return;
+  }
   for (const entry of header.split(",")) {
     if (entry.endsWith(":layout")) {
       invalidate(entry.slice(0, -7), "layout");
@@ -246,7 +244,14 @@ export function invalidatePrefetchCache(
     return;
   }
   // layout: prefix match — evict path itself + all nested hrefs
-  const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
+  let prefix: string;
+  if (path === "/") {
+    prefix = "/";
+  } else if (path.endsWith("/")) {
+    prefix = path;
+  } else {
+    prefix = `${path}/`;
+  }
   for (const key of cache.keys()) {
     try {
       const pathname = new URL(key, "http://x").pathname;
@@ -436,14 +441,12 @@ export function RouterProvider({
   // This means a single server-side revalidatePath() call is enough — the client
   // cache is kept in sync automatically without any manual invalidatePrefetch() call.
   useEffect(() => {
-    _globalInvalidateFn = invalidatePrefetch;
-    window.fetch = (...args: Parameters<typeof fetch>) =>
+    window.fetch = ((...args: Parameters<typeof fetch>) =>
       _originalFetch(...args).then((res) => {
         applyRevalidateHeader(res.headers, invalidatePrefetch);
         return res;
-      });
+      })) as typeof fetch;
     return () => {
-      _globalInvalidateFn = null;
       window.fetch = _originalFetch;
     };
   }, [invalidatePrefetch]);

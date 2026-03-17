@@ -15,7 +15,7 @@ export interface CompileContextRoute {
 }
 
 export interface CompileContext {
-  buildId: string;
+  buildId?: string;
   embedded?: EmbeddedAppData;
   modules: Record<string, unknown>;
   rootPath: string;

@@ -124,7 +124,7 @@ export async function prerenderSSG(
 
   const cached = ssgCache.get(resolvedPath);
   if (cached && !IS_DEV) {
-    return { html: cached.html, cachedAt: cached.cachedAt };
+    return cached;
   }
 
   const result = await renderForPath(route, params, root, origin);
@@ -227,7 +227,9 @@ export async function handleISR(
     ctx.set.headers["cache-control"] = isFresh
       ? `public, s-maxage=${revalidate}, stale-while-revalidate=${revalidate}`
       : "public, s-maxage=0, must-revalidate";
-    if (etag) ctx.set.headers["etag"] = etag;
+    if (etag) {
+      ctx.set.headers.etag = etag;
+    }
 
     return cached.html;
   }
@@ -244,7 +246,9 @@ export async function handleISR(
     ctx.set.headers["content-type"] = "text/html; charset=utf-8";
     ctx.set.headers["cache-control"] =
       `public, s-maxage=${revalidate}, stale-while-revalidate=${revalidate}`;
-    if (etag) ctx.set.headers["etag"] = etag;
+    if (etag) {
+      ctx.set.headers.etag = etag;
+    }
     return result.html;
   } catch (err) {
     return catchRedirect(err);

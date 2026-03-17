@@ -330,38 +330,47 @@ describe("prefetch cache LRU eviction", () => {
 describe("applyRevalidateHeader", () => {
   function makeHeaders(value?: string): Headers {
     const h = new Headers();
-    if (value !== undefined) h.set("x-furin-revalidate", value);
+    if (value !== undefined) {
+      h.set("x-furin-revalidate", value);
+    }
     return h;
   }
 
   test("does nothing when header is absent", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders(), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([]);
   });
 
   test("calls invalidate for a single page path", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog/post-1"), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([["/blog/post-1", "page"]]);
   });
 
   test("calls invalidate with 'layout' type when entry ends with :layout", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog:layout"), (p, t) => calls.push([p, t]));
     expect(calls).toEqual([["/blog", "layout"]]);
   });
 
   test("handles multiple comma-separated entries", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/a,/b,/c"), (p, t) => calls.push([p, t]));
-    expect(calls).toEqual([["/a", "page"], ["/b", "page"], ["/c", "page"]]);
+    expect(calls).toEqual([
+      ["/a", "page"],
+      ["/b", "page"],
+      ["/c", "page"],
+    ]);
   });
 
   test("handles mixed page and layout entries", () => {
-    const calls: Array<[string, string?]> = [];
+    const calls: [string, string?][] = [];
     applyRevalidateHeader(makeHeaders("/blog/post-1,/blog:layout"), (p, t) => calls.push([p, t]));
-    expect(calls).toEqual([["/blog/post-1", "page"], ["/blog", "layout"]]);
+    expect(calls).toEqual([
+      ["/blog/post-1", "page"],
+      ["/blog", "layout"],
+    ]);
   });
 });
 
@@ -418,7 +427,7 @@ describe("invalidatePrefetch — layout type", () => {
 
   test("handles root '/' — removes all cached paths", () => {
     const cache = makeCache(["/", "/about", "/blog/post-1"]);
-    runInvalidateLayout(cache, "/");
+    invalidatePrefetchCache(cache, "/", "layout");
     expect(cache.size).toBe(0);
   });
 });
