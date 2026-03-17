@@ -101,6 +101,16 @@ export interface RouterContextValue {
   defaultPreload: PreloadStrategy;
   defaultPreloadDelay: number;
   defaultPreloadStaleTime: number;
+  /**
+   * Evict one or more entries from the client-side prefetch cache.
+   *
+   * - `type: 'page'` (default): removes the exact href entry.
+   * - `type: 'layout'`: removes the path and all nested entries (prefix match).
+   *
+   * Useful after a client-side mutation when you need to force a fresh fetch
+   * on the next navigation before the default `staleTime` expires.
+   */
+  invalidatePrefetch: (path: string, type?: "page" | "layout") => void;
   isNavigating: boolean;
   navigate: (href: string, opts?: { replace?: boolean }) => Promise<void>;
   prefetch: (href: string, opts?: { staleTime?: number }) => void;
@@ -120,6 +130,9 @@ export function useRouter(): RouterContextValue {
         return Promise.resolve();
       },
       prefetch: () => {
+        /* noop fallback */
+      },
+      invalidatePrefetch: () => {
         /* noop fallback */
       },
       isNavigating: false,
@@ -236,6 +249,28 @@ export function RouterProvider({
   const [isNavigating, setIsNavigating] = useState(false);
   const prefetchCache = useRef(new Map<string, CacheEntry>());
 
+  const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
+    if (type === "page") {
+      prefetchCache.current.delete(path);
+      return;
+    }
+    // layout: prefix match — evict path itself + all nested hrefs
+    const prefix = path === "/" ? "/" : path.endsWith("/") ? path : `${path}/`;
+    for (const key of prefetchCache.current.keys()) {
+      try {
+        const pathname = new URL(key, "http://x").pathname;
+        if (pathname === path || pathname.startsWith(prefix)) {
+          prefetchCache.current.delete(key);
+        }
+      } catch {
+        // Relative or malformed href — fall back to plain string comparison
+        if (key === path || key.startsWith(prefix)) {
+          prefetchCache.current.delete(key);
+        }
+      }
+    }
+  }, []);
+
   const fetchPageState = useCallback(
     async (href: string): Promise<RouterState | null> => {
       try {
@@ -248,6 +283,18 @@ export function RouterProvider({
         // Parallelize HTML data fetch + JS chunk load for this route.
         // The browser module cache makes match.load() near-instant for already-loaded pages.
         const [res, loadedMod] = await Promise.all([fetch(href), match.load()]);
+
+        // Auto-evict prefetch entries invalidated server-side via revalidatePath().
+        const revalidateHeader = res.headers.get("x-furin-revalidate");
+        if (revalidateHeader) {
+          for (const entry of revalidateHeader.split(",")) {
+            if (entry.endsWith(":layout")) {
+              invalidatePrefetch(entry.slice(0, -7), "layout");
+            } else {
+              invalidatePrefetch(entry, "page");
+            }
+          }
+        }
 
         const html = await res.text();
         const doc = new DOMParser().parseFromString(html, "text/html");
@@ -266,7 +313,7 @@ export function RouterProvider({
         return null;
       }
     },
-    [routes]
+    [routes, invalidatePrefetch]
   );
 
   const prefetch = useCallback(
@@ -348,6 +395,7 @@ export function RouterProvider({
       value: {
         navigate,
         prefetch,
+        invalidatePrefetch,
         isNavigating,
         defaultPreload,
         defaultPreloadDelay,

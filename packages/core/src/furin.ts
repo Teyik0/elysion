@@ -5,6 +5,7 @@ import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
 import type { EmbeddedAppData } from "./internal.ts";
 import { getCompileContext } from "./internal.ts";
+import { consumePendingInvalidations } from "./render/cache.ts";
 import { warmSSGCache } from "./render/index.ts";
 import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
 import { createRoutePlugin, loadProdRoutes, scanPages } from "./router.ts";
@@ -213,6 +214,13 @@ export async function furin({ pagesDir }: { pagesDir?: string }) {
       instance = instance.use(createRoutePlugin(route, root));
     }
 
+    instance = instance.onAfterHandle(({ set }) => {
+      const paths = consumePendingInvalidations();
+      if (paths.length > 0) {
+        set.headers["x-furin-revalidate"] = paths.join(",");
+      }
+    });
+
     return instance;
   }
 
@@ -247,5 +255,43 @@ export async function furin({ pagesDir }: { pagesDir?: string }) {
     });
   }
 
+  instance = instance.onAfterHandle(({ set }) => {
+    const paths = consumePendingInvalidations();
+    if (paths.length > 0) {
+      set.headers["x-furin-revalidate"] = paths.join(",");
+    }
+  });
+
   return instance;
+}
+
+import type { RouteManifest } from "./link.tsx";
+import { revalidatePath as _revalidatePath } from "./render/cache.ts";
+
+/**
+ * Programmatically invalidate the cache for a given path.
+ *
+ * - `type: 'page'` (default): invalidates the exact URL only.
+ * - `type: 'layout'`: invalidates the path and all nested paths (prefix match).
+ *
+ * Works for ISR and SSG routes. SSR routes are always fresh (no server-side cache),
+ * but calling this still queues a client-side prefetch invalidation via
+ * the `X-Furin-Revalidate` response header.
+ *
+ * @returns `true` if at least one server-side cache entry was removed.
+ *
+ * @example
+ * ```ts
+ * // In an API route or webhook handler:
+ * import { revalidatePath } from "@teyik0/furin";
+ *
+ * revalidatePath("/blog/my-post");               // invalidate a single page
+ * revalidatePath("/blog", "layout");             // invalidate /blog + all children
+ * ```
+ */
+export function revalidatePath(
+  path: keyof RouteManifest extends never ? string : keyof RouteManifest | (string & {}),
+  type?: "page" | "layout"
+): boolean {
+  return _revalidatePath(path, type);
 }
