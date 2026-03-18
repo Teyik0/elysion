@@ -88,6 +88,9 @@ export async function buildClient(
     splitting: true,
     minify: true,
     sourcemap: "linked",
+    // Include [name] in chunk naming so that CSS chunks from different source
+    // files with identical content don't collide on the same output path.
+    naming: { chunk: "./chunk-[name]-[hash].[ext]" },
     // Absolute public path so SSR template asset URLs resolve on any route
     publicPath: "/_client/",
     // User plugins run before the internal transform so they pre-process files first
