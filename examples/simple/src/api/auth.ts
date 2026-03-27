@@ -30,7 +30,7 @@ export const auth = betterAuth({
   },
 });
 
-export const authPlugin = new Elysia({ name: "better-auth" }).mount(auth.handler).macro({
+export const authPlugin = new Elysia({ name: "better-auth-macro" }).mount(auth.handler).macro({
   auth: {
     async resolve({ status, request: { headers } }) {
       const session = await auth.api.getSession({ headers });

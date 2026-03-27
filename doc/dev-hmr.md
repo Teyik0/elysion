@@ -2,7 +2,7 @@
 
 ## How it works
 
-```
+```text
 FILE EDIT (pages/index.tsx)
          │
          ├──► Bun [serve.static] dev bundler          ──► WebSocket ──► Browser React Fast Refresh (~20ms)
@@ -12,7 +12,7 @@ FILE EDIT (pages/index.tsx)
                                                       the server module graph (virtual namespace)
 ```
 
-```
+```text
 SERVER MODULE GRAPH                    CLIENT BUNDLE
 (tracked by --hot)                     (tracked by dev bundler)
 ─────────────────────────────          ──────────────────────────────
@@ -27,7 +27,7 @@ server.ts                              .furin/_hydrate.tsx
 
 ## Request flow
 
-```
+```text
 GET /
  │
  ├─ import(`pages/index.tsx?furin-server&t=<now>`)

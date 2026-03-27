@@ -92,6 +92,15 @@ export function CommentsSection({ initialComments, slug }: CommentsSectionProps)
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  useEffect(() => {
+    setComments(initialComments);
+    setError(null);
+    setSubmitting(false);
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+    }
+  }, [initialComments]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const content = textareaRef.current?.value.trim();
@@ -102,22 +111,26 @@ export function CommentsSection({ initialComments, slug }: CommentsSectionProps)
     setSubmitting(true);
     setError(null);
 
-    const { data: newComment, error: postError } = await client.api.comments.post({
-      slug,
-      content,
-    });
+    try {
+      const { data: newComment, error: postError } = await client.api.comments.post({
+        slug,
+        content,
+      });
 
-    if (postError || !newComment) {
-      setError("Failed to post comment.");
+      if (postError || !newComment) {
+        setError("Failed to post comment.");
+        return;
+      }
+
+      setComments((prev) => [...prev, newComment as Comment]);
+      if (textareaRef.current) {
+        textareaRef.current.value = "";
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to post comment.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    setComments((prev) => [...prev, newComment as Comment]);
-    if (textareaRef.current) {
-      textareaRef.current.value = "";
-    }
-    setSubmitting(false);
   }
 
   return (

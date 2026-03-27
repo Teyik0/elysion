@@ -42,7 +42,14 @@ const rehypeShiki = () => async (tree: HastNode) => {
     const text = fileMatch ? rawText.slice(fileMatch[0].length) : rawText;
 
     tasks.push(async () => {
-      const html = await codeToHtml(text, { lang, theme: "github-dark" });
+      let html: string;
+      try {
+        html = await codeToHtml(text, { lang, theme: "github-dark" });
+      } catch {
+        // Unsupported language or Shiki error — render as plain text
+        const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        html = `<pre><code>${escaped}</code></pre>`;
+      }
       const fragment = fromHtml(html, { fragment: true });
       const shikiPre = fragment.children.find(
         (n: HastNode) => n.type === "element" && n.tagName === "pre"

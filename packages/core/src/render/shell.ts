@@ -132,7 +132,7 @@ export function generateIndexHtml(): string {
  * Called after Bun.build() completes so we can inject the correct entry chunk
  * and CSS paths derived from result.outputs.
  */
-export function generateProdIndexHtml(entryChunk: string | null, cssChunks: string[]): string {
+export function generateProdIndexHtml(entryChunk: string | undefined, cssChunks: string[]): string {
   const cssLinks = cssChunks
     .map((c) => `    <link rel="stylesheet" crossorigin href="${c}">`)
     .join("\n");

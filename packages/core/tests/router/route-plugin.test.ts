@@ -9,12 +9,16 @@ mock.module("evlog/elysia", () => ({
 
 import { Elysia } from "elysia";
 import { createRoutePlugin, scanPages } from "../../src/router";
-import { __setDevMode } from "../../src/runtime-env";
+import { __setDevMode, IS_DEV } from "../../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(true));
+let originalDevMode: boolean;
+beforeAll(() => {
+  originalDevMode = IS_DEV;
+  __setDevMode(false);
+});
+afterAll(() => __setDevMode(originalDevMode));
 
 describe("createRoutePlugin", () => {
   test("SSG route returns HTML with cache headers", async () => {
@@ -38,7 +42,7 @@ describe("createRoutePlugin", () => {
     const result = await scanPages(FIXTURES_DIR);
     const ssrRoute = result.routes.find((r) => r.mode === "ssr");
     if (!ssrRoute) {
-      return; // skip if no SSR routes in fixtures
+      throw new Error("No SSR route in fixtures — add an SSR fixture to ensure this test runs");
     }
 
     const app = new Elysia().use(createRoutePlugin(ssrRoute, result.root));

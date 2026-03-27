@@ -147,8 +147,10 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyEl
 
   // In dev mode, routeChain is empty (pages not imported at startup), skip guards.
   if (!IS_DEV) {
-    const allParams = routeChain.find((r) => r.params)?.params;
-    const allQuery = routeChain.find((r) => r.query)?.query;
+    // TODO: merge schemas from all routeChain entries (requires TypeBox t.Object/t.Composite)
+    // For now, prefer the leaf route's schema (last in chain) over ancestor routes.
+    const allParams = [...routeChain].reverse().find((r) => r.params)?.params;
+    const allQuery = [...routeChain].reverse().find((r) => r.query)?.query;
     if (allParams || allQuery) {
       plugins.push(
         new Elysia().guard({

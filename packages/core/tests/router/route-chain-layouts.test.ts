@@ -4,15 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "../../src/client.ts";
 import { resolveMode, scanPages } from "../../src/router.ts";
-import { __setDevMode } from "../../src/runtime-env.ts";
+import { __setDevMode, IS_DEV } from "../../src/runtime-env.ts";
 import { collectRouteChainFromRoute } from "../../src/utils.ts";
 import { expectDefined } from "../helpers/utils.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 
 // These tests verify production scan behaviour (pages imported at startup).
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(true));
+let originalDevMode: boolean;
+beforeAll(() => {
+  originalDevMode = IS_DEV;
+  __setDevMode(false);
+});
+afterAll(() => __setDevMode(originalDevMode));
 
 describe("route chain contains layouts", () => {
   test("page._route contains the page's layout", async () => {

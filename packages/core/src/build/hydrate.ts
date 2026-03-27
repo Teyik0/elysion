@@ -64,11 +64,18 @@ const _match = routes.find((r) => r.regex.test(pathname));
     } as any);
 
     if (import.meta.hot) {
-      // Retain React root across hot reloads so Fast Refresh applies in-place.
-      const hotRoot = (import.meta.hot.data.root ??= rootEl.innerHTML.trim()
-        ? hydrateRoot(rootEl, app)
-        : createRoot(rootEl));
-      hotRoot.render(app);
+      if (import.meta.hot.data.root) {
+        // HMR re-render — update in place without remounting
+        import.meta.hot.data.root.render(app);
+      } else if (rootEl.innerHTML.trim()) {
+        // First load with SSR content — hydrateRoot renders on construction
+        import.meta.hot.data.root = hydrateRoot(rootEl, app);
+      } else {
+        // First load without SSR content — createRoot requires explicit .render()
+        const freshRoot = createRoot(rootEl);
+        freshRoot.render(app);
+        import.meta.hot.data.root = freshRoot;
+      }
     } else if (rootEl.innerHTML.trim()) {
       hydrateRoot(rootEl, app);
     } else {

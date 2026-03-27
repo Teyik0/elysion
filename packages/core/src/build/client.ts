@@ -117,7 +117,7 @@ export async function buildClient(
   const cssOutputs = result.outputs.filter(
     (o) => o.path.endsWith(".css") && !o.path.endsWith(".css.map")
   );
-  const entryChunk = entryOutput ? `/_client/${basename(entryOutput.path)}` : null;
+  const entryChunk = entryOutput ? `/_client/${basename(entryOutput.path)}` : undefined;
   const cssChunks = cssOutputs.map((o) => `/_client/${basename(o.path)}`);
 
   writeFileSync(join(clientDir, "index.html"), generateProdIndexHtml(entryChunk, cssChunks));

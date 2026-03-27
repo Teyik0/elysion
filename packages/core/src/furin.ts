@@ -166,12 +166,19 @@ export async function furin({
         ],
       })
     )
-    .post("/_furin/ingest", ({ body, log }) => {
+    .post("/_furin/ingest", ({ body, log, status }) => {
+      if (!Array.isArray(body)) {
+        return status("Bad Request");
+      }
       const batch = body as DrainContext[];
       for (const entry of batch) {
+        if (!entry || typeof entry !== "object" || !("event" in entry)) {
+          log.set({ msg: "[furin] ingest: skipping malformed entry", entry });
+          continue;
+        }
         log.set({ ...entry.event, service: "furin:browser" });
       }
-      return new Response(null, { status: 204 });
+      return status("No Content");
     });
 
   const cwd = process.cwd();
@@ -229,6 +236,13 @@ export async function furin({
       await (async () => {
         if (embedded) {
           return new Elysia()
+            .get("/favicon.ico", ({ status }) => {
+              const asset = embedded.assets["/public/favicon.ico"];
+              if (!asset) {
+                return status("Not Found");
+              }
+              return Bun.file(asset);
+            })
             .get("/_client/*", ({ params, status }) => {
               const asset = embedded.assets[`/_client/${params["*"]}`];
               if (!asset) {

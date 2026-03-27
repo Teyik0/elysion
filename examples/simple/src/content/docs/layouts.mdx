@@ -72,6 +72,7 @@ Each `_route.tsx` declares its `parent`:
 
 ```tsx
 // src/pages/docs/advanced/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
 import { route as docsRoute } from "../_route"
 
 export const route = createRoute({
@@ -88,6 +89,9 @@ Layouts can have their own loader. The data is passed as props to the layout com
 
 ```tsx
 // src/pages/dashboard/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
 export const route = createRoute({
   parent: rootRoute,
   loader: async ({ request }) => {
