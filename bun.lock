@@ -16,7 +16,7 @@
         "ultracite": "7.3.2",
       },
     },
-    "examples/simple": {
+    "apps/docs": {
       "name": "@teyik0/example-simple",
       "version": "0.1.0",
       "dependencies": {
@@ -621,7 +621,7 @@
 
     "@tailwindcss/typography": ["@tailwindcss/typography@0.5.19", "", { "dependencies": { "postcss-selector-parser": "6.0.10" }, "peerDependencies": { "tailwindcss": ">=3.0.0 || insiders || >=4.0.0-alpha.20 || >=4.0.0-beta.1" } }, "sha512-w31dd8HOx3k9vPtcQh5QHP9GwKcgbMp87j58qi6xgiBnFFtKEAgCWnDw4qUT8aHwkCp8bKvb/KGKWWHedP0AAg=="],
 
-    "@teyik0/example-simple": ["@teyik0/example-simple@workspace:examples/simple"],
+    "@teyik0/example-simple": ["@teyik0/example-simple@workspace:apps/docs"],
 
     "@teyik0/furin": ["@teyik0/furin@workspace:packages/core"],
 
