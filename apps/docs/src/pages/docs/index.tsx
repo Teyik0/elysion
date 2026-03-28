@@ -38,6 +38,12 @@ export default route.page({
             href: "/docs/deployment",
             badge: null,
           },
+          {
+            title: "Dev Mode HMR",
+            desc: "How Furin keeps SSR fresh while page edits stay on the fast refresh path.",
+            href: "/docs/dev-hmr",
+            badge: "Internal",
+          },
         ].map((card) => (
           <Link
             className="group rounded-xl border border-border bg-card p-6 transition-all hover:border-foreground/20 hover:shadow-sm"

@@ -77,11 +77,6 @@ export default route.page({
         <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-16 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8">
           {/* Left: headline */}
           <div className="flex flex-col justify-center">
-            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 font-medium text-blue-500 text-xs dark:text-blue-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 dark:bg-blue-400" />
-              Open Source · v0.1
-            </div>
-
             <h1 className="mb-6 font-bold text-3xl text-foreground leading-[1.1] sm:text-6xl lg:text-[3.75rem]">
               Furin.{" "}
               <span className="text-muted-foreground">

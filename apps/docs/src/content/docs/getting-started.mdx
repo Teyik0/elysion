@@ -7,8 +7,19 @@ Furin is a React meta-framework built on top of [Elysia](https://elysiajs.com) a
 ```bash
 bun create furin@latest my-app
 cd my-app
-bun install
 ```
+
+For the shadcn starter:
+
+```bash
+bun create furin@latest my-app --template shadcn
+cd my-app
+```
+
+## Templates
+
+- `minimal` (default) — Tailwind + `/api/hello` + SSR loader calling that API route
+- `shadcn` — Tailwind + shadcn/ui setup (`button`, `card`, `input`) + `/api/hello` + SSR loader
 
 ## Project Structure
 

@@ -106,7 +106,10 @@ Prefix public variables with `FURIN_PUBLIC_` to expose them to the client bundle
 ```bash
 # .env
 FURIN_PUBLIC_API_URL=https://api.example.com
-DATABASE_URL=postgres://...  # server-only, never sent to the client
+FURIN_PUBLIC_GISCUS_REPO=teyik0/furin
+FURIN_PUBLIC_GISCUS_REPO_ID=...
+FURIN_PUBLIC_GISCUS_CATEGORY=General
+FURIN_PUBLIC_GISCUS_CATEGORY_ID=...
 ```
 
 Access in your code:
@@ -114,9 +117,6 @@ Access in your code:
 ```ts
 // Available anywhere
 const apiUrl = process.env.FURIN_PUBLIC_API_URL
-
-// Server-only (loader, API routes)
-const db = postgres(process.env.DATABASE_URL)
 ```
 
 Configure in `bunfig.toml`:
@@ -125,3 +125,31 @@ Configure in `bunfig.toml`:
 [serve.static]
 env = "FURIN_PUBLIC_*"
 ```
+
+## Giscus Comments For Docs
+
+The docs app can use [Giscus](https://giscus.app/) so comments live in GitHub Discussions instead of a database.
+
+Configure these public variables:
+
+```bash
+FURIN_PUBLIC_GISCUS_REPO=teyik0/furin
+FURIN_PUBLIC_GISCUS_REPO_ID=...
+FURIN_PUBLIC_GISCUS_CATEGORY=General
+FURIN_PUBLIC_GISCUS_CATEGORY_ID=...
+FURIN_PUBLIC_GISCUS_MAPPING=pathname
+FURIN_PUBLIC_GISCUS_STRICT=0
+FURIN_PUBLIC_GISCUS_REACTIONS_ENABLED=0
+FURIN_PUBLIC_GISCUS_EMIT_METADATA=0
+FURIN_PUBLIC_GISCUS_INPUT_POSITION=bottom
+FURIN_PUBLIC_GISCUS_LANG=en
+```
+
+Setup steps:
+
+1. Enable GitHub Discussions on the target repository.
+2. Create or choose the discussion category you want Giscus to use.
+3. Generate the `repoId` and `categoryId` from [giscus.app](https://giscus.app/).
+4. Add the values above to the docs environment.
+
+With this setup, the docs do not need a comments database or auth backend.
