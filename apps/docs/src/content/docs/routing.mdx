@@ -1,27 +1,31 @@
 # File-Based Routing
 
-Furin automatically generates routes from your `src/pages/` directory. Each file becomes a route.
+Furin scans `src/pages` and turns files into routes. Pages live in `.tsx` files, while `_route.tsx` files define layouts and route-level config for a directory.
 
-## Basic Routes
+## Basic Pages
 
-```
-src/pages/index.tsx        → /
-src/pages/about.tsx        → /about
-src/pages/blog/index.tsx   → /blog
-```
-
-## Dynamic Routes
-
-Wrap a segment in brackets for dynamic parameters:
-
-```
-src/pages/blog/[slug].tsx  → /blog/:slug
-src/pages/[...all].tsx     → /* (catch-all)
+```text
+src/pages/index.tsx       -> /
+src/pages/about.tsx       -> /about
+src/pages/blog/index.tsx  -> /blog
 ```
 
-Access params in your loader:
+## Dynamic Segments
+
+Use square brackets for params:
+
+```text
+src/pages/blog/[slug].tsx   -> /blog/:slug
+src/pages/docs/[...path].tsx -> /docs/*
+```
+
+If you want typed params, declare them on `createRoute()`:
 
 ```tsx
+// src/pages/blog/[slug].tsx
+import { t } from "elysia"
+import { route } from "./_route"
+
 export default route.page({
   loader: async ({ params }) => {
     const post = await db.getPost(params.slug)
@@ -31,47 +35,86 @@ export default route.page({
 })
 ```
 
-## Layouts
+```tsx
+// src/pages/blog/_route.tsx
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
 
-Files named `_route.tsx` define layouts for their directory:
-
+export const route = createRoute({
+  parent: rootRoute,
+  params: t.Object({
+    slug: t.String(),
+  }),
+})
 ```
-src/pages/blog/_route.tsx   ← layout for all /blog/* routes
-src/pages/blog/index.tsx    ← uses the blog layout
-src/pages/blog/[slug].tsx   ← uses the blog layout
+
+## Layout Files
+
+Files named `_route.tsx` define route-level config and layouts for their directory:
+
+```text
+src/pages/blog/_route.tsx
+src/pages/blog/index.tsx
+src/pages/blog/[slug].tsx
 ```
-
-### Nesting Layouts
-
-Layouts can be nested by specifying a `parent`:
 
 ```tsx
 // src/pages/blog/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
 import { route as rootRoute } from "../root"
 
 export const route = createRoute({
   parent: rootRoute,
   layout: ({ children }) => (
-    <div className="flex">
-      <Sidebar />
+    <div className="mx-auto flex max-w-5xl gap-8 px-4 py-10">
+      <aside>Sidebar</aside>
       <main>{children}</main>
     </div>
   ),
 })
 ```
 
-## Type-Safe Navigation
+## Catch-All Routes
 
-Furin generates a `RouteManifest` type so navigation is fully typed:
+Catch-all segments are written with `[...name]`. Furin turns them into `*` in the generated runtime pattern.
+
+```text
+src/pages/docs/[...path].tsx -> /docs/*
+```
+
+If you declare a schema for that route, the runtime param key is `"*"`:
+
+```tsx
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
+export const route = createRoute({
+  parent: rootRoute,
+  params: t.Object({
+    "*": t.String(),
+  }),
+})
+```
+
+## Typed Navigation
+
+Furin generates `furin-env.d.ts` so `<Link />` can type the `to` pathname and per-route `search` object.
 
 ```tsx
 import { Link } from "@teyik0/furin/link"
 
-// TypeScript knows /blog accepts a `page` search param
-<Link to="/blog" search={{ page: 2 }} />
+<Link to="/docs/rendering">Rendering</Link>
 ```
 
-Add `furin-env.d.ts` to your `tsconfig.json` includes:
+When a route declares a `query` schema, `search` is typed from that schema.
+
+```tsx
+<Link to="/search" search={{ page: 2 }} />
+```
+
+Make sure `furin-env.d.ts` is included in your app `tsconfig.json`:
 
 ```json
 {

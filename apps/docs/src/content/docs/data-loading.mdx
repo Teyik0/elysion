@@ -1,68 +1,85 @@
 # Data Loading
 
-Furin uses **loaders** to fetch data on the server before rendering. Loaders are fully type-safe — the return value is automatically inferred as component props.
+Furin loaders run on the server before rendering. Route loaders live on `createRoute()`, and page loaders live on `route.page()`.
 
-## Basic Loader
+## Route Loader
 
-```tsx
-// src/pages/blog/[slug].tsx
-export default route.page({
-  loader: async ({ params }) => {
-    const post = await db.getPost(params.slug)
-    return { post }
-  },
-  component: ({ post }) => (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.body}</p>
-    </article>
-  ),
-})
-```
-
-The `params` object is fully typed based on your file name. `[slug].tsx` gives you `params.slug: string`.
-
-## Loader Context
-
-Loaders receive a context object with:
-
-| Property | Type | Description |
-|---|---|---|
-| `params` | `Record<string, string>` | URL path parameters |
-| `query` | `Record<string, string>` | Validated query string values |
-| `request` | `Request` | The raw Bun `Request` object |
+Use `createRoute()` when the data should feed a layout or be shared with child pages.
 
 ```tsx
-// src/pages/blog/index.tsx
-export default route.page({
-  loader: async ({ query, request }) => {
-    const page = Number(query.page ?? 1)
-    const posts = await db.getPosts({ page })
-    return { posts, page }
+// src/pages/dashboard/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
+export const route = createRoute({
+  parent: rootRoute,
+  loader: async ({ request }) => {
+    const user = await getSession(request)
+    return { user }
   },
-  component: ({ posts, page }) => (
+  layout: ({ children, user }) => (
     <div>
-      {posts.map(p => <PostCard key={p.id} post={p} />)}
+      <DashboardNav user={user} />
+      {children}
     </div>
   ),
 })
 ```
 
-## Query Schema Validation
+## Page Loader
 
-Declare a `query` schema to get automatic validation and type inference:
+Use `route.page()` when the data is specific to one page.
 
 ```tsx
-// src/pages/blog/index.tsx
-import { t } from "elysia"
+// src/pages/dashboard/index.tsx
+import { route } from "./_route"
 
 export default route.page({
+  loader: async ({ user }) => {
+    const stats = await getDashboardStats(user.id)
+    return { stats }
+  },
+  component: ({ stats, user }) => <Dashboard user={user} stats={stats} />,
+})
+```
+
+## Loader Context
+
+Loaders receive a context object with:
+
+| Property | Description |
+| --- | --- |
+| `request` | the incoming `Request` |
+| `params` | validated params from `createRoute({ params })` |
+| `query` | validated query values from `createRoute({ query })` |
+| parent data | accumulated data returned by ancestor route loaders |
+| `set`, `headers`, `cookie`, `redirect` | server helpers exposed by the route context |
+
+## Typed Query Schemas
+
+`query` belongs to `createRoute()`, not `route.page()`.
+
+```tsx
+// src/pages/search/_route.tsx
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
+export const route = createRoute({
+  parent: rootRoute,
   query: t.Object({
     page: t.Optional(t.Number({ default: 1 })),
-    tag:  t.Optional(t.String()),
+    tag: t.Optional(t.String()),
   }),
+})
+```
+
+```tsx
+// src/pages/search/index.tsx
+import { route } from "./_route"
+
+export default route.page({
   loader: async ({ query }) => {
-    // query.page is number, query.tag is string | undefined
     const posts = await db.getPosts(query)
     return { posts }
   },
@@ -70,18 +87,56 @@ export default route.page({
 })
 ```
 
-## Returning Responses
+## Typed Params
 
-Return a `Response` directly to redirect or send a custom status:
+Params are also declared on `createRoute()`.
 
 ```tsx
-// src/pages/dashboard.tsx
-export default route.page({
-  loader: async ({ request }) => {
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
+export const route = createRoute({
+  parent: rootRoute,
+  params: t.Object({
+    slug: t.String(),
+  }),
+})
+```
+
+## Parallel Loaders With `deps`
+
+The optional second argument lets a loader await a specific ancestor route when it truly depends on that data.
+
+```tsx
+// src/pages/dashboard/posts/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
+import { route as dashboardRoute } from "../_route"
+
+export const route = createRoute({
+  parent: dashboardRoute,
+  loader: async (_ctx, deps) => {
+    const { user } = await deps(dashboardRoute)
+    return {
+      posts: await getPostsForUser(user.id),
+    }
+  },
+})
+```
+
+## Redirects And Status
+
+You can return a redirect from a loader.
+
+```tsx
+export const route = createRoute({
+  loader: async ({ request, redirect }) => {
     const user = await getSession(request)
-    if (!user) return Response.redirect("/login", 302)
+    if (!user) {
+      return redirect("/login", 302)
+    }
+
     return { user }
   },
-  component: ({ user }) => <Dashboard user={user} />,
 })
 ```

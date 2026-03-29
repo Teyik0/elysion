@@ -1,50 +1,62 @@
 # Rendering Modes
 
-Furin supports three rendering modes per page. You pick the right one based on how dynamic your content is.
+Furin configures rendering mode at the route level with `createRoute()`. The page itself still comes from `route.page()`.
 
-## SSR — Server-Side Rendering
+## SSR
 
-The default. The page is rendered on every request using fresh data.
+SSR is the default mode when you omit `mode`.
 
 ```tsx
-// src/pages/dashboard.tsx
-export default route.page({
-  // mode defaults to "ssr"
+// src/pages/dashboard/_route.tsx
+import { createRoute } from "@teyik0/furin/client"
+import { route as rootRoute } from "../root"
+
+export const route = createRoute({
+  parent: rootRoute,
   loader: async ({ request }) => {
     const user = await getSession(request)
     return { user }
   },
-  component: ({ user }) => <Dashboard user={user} />,
 })
 ```
 
-Use SSR for pages that depend on session state, real-time data, or personalization.
+Use SSR for session-dependent pages, personalized data, and anything that must render fresh on every request.
 
-## SSG — Static Site Generation
+## SSG
 
-The page is rendered once at build time and served as a static HTML file.
+Set `mode: "ssg"` on `createRoute()` to pre-render the page.
 
 ```tsx
 // src/pages/about.tsx
-export default route.page({
+import { createRoute } from "@teyik0/furin/client"
+
+const route = createRoute({
   mode: "ssg",
-  loader: async () => {
-    const team = await cms.getTeam()
-    return { team }
-  },
-  component: ({ team }) => <AboutPage team={team} />,
+})
+
+export default route.page({
+  component: () => <div>This page is pre-rendered</div>,
 })
 ```
 
-For pages with dynamic segments, export a `staticParams` function to tell Furin which paths to pre-render:
+For dynamic SSG routes, declare `staticParams()` on `route.page()`:
 
 ```tsx
 // src/pages/blog/[slug].tsx
-export default route.page({
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+
+const route = createRoute({
   mode: "ssg",
+  params: t.Object({
+    slug: t.String(),
+  }),
+})
+
+export default route.page({
   staticParams: async () => {
     const slugs = await db.getAllSlugs()
-    return slugs.map(slug => ({ slug }))
+    return slugs.map((slug) => ({ slug }))
   },
   loader: async ({ params }) => {
     const post = await db.getPost(params.slug)
@@ -54,15 +66,24 @@ export default route.page({
 })
 ```
 
-## ISR — Incremental Static Regeneration
+## ISR
 
-Combines the speed of SSG with the freshness of SSR. Pages are statically served and regenerated in the background after a set interval.
+ISR also belongs on `createRoute()`. Pair `mode: "isr"` with `revalidate`.
 
 ```tsx
 // src/pages/products/[id].tsx
-export default route.page({
+import { t } from "elysia"
+import { createRoute } from "@teyik0/furin/client"
+
+const route = createRoute({
   mode: "isr",
-  revalidate: 60, // regenerate every 60 seconds
+  revalidate: 60,
+  params: t.Object({
+    id: t.String(),
+  }),
+})
+
+export default route.page({
   loader: async ({ params }) => {
     const product = await db.getProduct(params.id)
     return { product }
@@ -73,18 +94,17 @@ export default route.page({
 
 ## Comparison
 
-| Mode | When to use | Build time | Request time |
-|---|---|---|---|
-| `ssr` | User-specific, real-time | — | Rendered each time |
-| `ssg` | Rarely changes | Pre-rendered | Static file served |
-| `isr` | Changes periodically | Pre-rendered | Static + background refresh |
+| Mode | Configured on | Best for |
+| --- | --- | --- |
+| `ssr` | `createRoute()` or default | request-time, personalized data |
+| `ssg` | `createRoute({ mode: "ssg" })` | content that changes rarely |
+| `isr` | `createRoute({ mode: "isr", revalidate })` | pages that can be cached then refreshed periodically |
 
-## Head Management
+## Head Metadata
 
-All modes support `head()` for per-page meta tags:
+Page-level `head()` still lives on `route.page()`.
 
 ```tsx
-// src/pages/blog/[slug].tsx
 export default route.page({
   loader: async ({ params }) => {
     const post = await db.getPost(params.slug)

@@ -22,6 +22,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // shadcn best practice: apply theme class on <html> so Radix portals
+  // (dropdowns, dialogs, tooltips…) inherit the correct color scheme
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("light", "dark");
+    root.classList.add(theme);
+  }, [theme]);
+
   const toggleTheme = () => {
     setTheme((t) => {
       const next = t === "dark" ? "light" : "dark";
@@ -32,7 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      <div className={`${theme} min-h-screen bg-background text-foreground`}>{children}</div>
+      <div className="min-h-screen bg-background text-foreground">{children}</div>
     </ThemeContext.Provider>
   );
 }

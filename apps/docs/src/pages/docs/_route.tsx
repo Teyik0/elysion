@@ -1,77 +1,63 @@
 import { createRoute } from "@teyik0/furin/client";
-import { Link, type RouteManifest } from "@teyik0/furin/link";
+import { Link } from "@teyik0/furin/link";
+import { DocsMobileNav } from "@/components/docs-mobile-nav";
+import { DocsToc } from "@/components/docs-toc";
 import { GiscusComments } from "@/components/giscus-comments";
+import { DOCS_NAV } from "@/lib/docs";
+import { cn } from "@/lib/utils";
 import { route as rootRoute } from "../root";
-
-const NAV = [
-  {
-    title: "Getting Started",
-    items: [
-      { label: "Introduction", href: "/docs" },
-      { label: "Getting Started", href: "/docs/getting-started" },
-    ],
-  },
-  {
-    title: "Core Concepts",
-    items: [
-      { label: "File-Based Routing", href: "/docs/routing" },
-      { label: "Data Loading", href: "/docs/data-loading" },
-      { label: "Rendering Modes", href: "/docs/rendering" },
-      { label: "Nested Layouts", href: "/docs/layouts" },
-    ],
-  },
-  {
-    title: "Advanced",
-    items: [
-      { label: "API Routes", href: "/docs/api-routes" },
-      { label: "Plugins", href: "/docs/plugins" },
-      { label: "Deployment", href: "/docs/deployment" },
-    ],
-  },
-  {
-    title: "Internal",
-    items: [{ label: "Dev Mode HMR", href: "/docs/dev-hmr" }],
-  },
-];
 
 export const route = createRoute({
   parent: rootRoute,
   loader: ({ request }) => {
-    const slug = new URL(request.url).pathname;
-    return { slug };
+    const pathname = new URL(request.url).pathname;
+    return { pathname };
   },
-  layout: ({ children, slug }) => (
-    <div className="mx-auto flex max-w-7xl gap-12 px-4 py-12 sm:px-6 lg:px-8">
-      {/* Sidebar */}
-      <aside className="hidden w-56 shrink-0 lg:block">
-        <nav className="sticky top-24 space-y-6">
-          {NAV.map((section) => (
-            <div key={section.title}>
-              <p className="mb-2 font-semibold text-foreground text-xs uppercase tracking-wider">
-                {section.title}
-              </p>
-              <ul className="space-y-1">
-                {section.items.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      className="block rounded-md px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
-                      to={item.href as keyof RouteManifest}
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
-      </aside>
+  layout: ({ children, pathname }) => {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-6 lg:hidden">
+          <DocsMobileNav pathname={pathname} />
+        </div>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        {children}
-        <GiscusComments key={slug} />
+        <div className="grid gap-10 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_15rem]">
+          <aside className="hidden lg:block">
+            <nav className="sticky top-24 space-y-6">
+              {DOCS_NAV.map((section) => (
+                <div key={section.title}>
+                  <p className="mb-2 font-semibold text-foreground text-xs uppercase tracking-[0.24em]">
+                    {section.title}
+                  </p>
+                  <ul className="space-y-1">
+                    {section.items.map((item) => (
+                      <li key={item.href}>
+                        <Link
+                          className={cn(
+                            "block rounded-lg px-3 py-2 text-sm transition-colors",
+                            pathname === item.href
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          )}
+                          to={item.href}
+                        >
+                          {item.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </nav>
+          </aside>
+
+          <div className="min-w-0">
+            {children}
+            <GiscusComments key={pathname} />
+          </div>
+
+          <DocsToc key={pathname} />
+        </div>
       </div>
-    </div>
-  ),
+    );
+  },
 });

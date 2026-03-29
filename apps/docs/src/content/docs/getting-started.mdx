@@ -1,8 +1,8 @@
 # Getting Started
 
-Furin is a React meta-framework built on top of [Elysia](https://elysiajs.com) and [Bun](https://bun.sh). It provides file-based routing, multiple rendering modes (SSR, SSG, ISR), and full TypeScript inference — all in a single process.
+Furin is a React meta-framework built on Elysia and Bun. It gives you file-based routing, SSR, SSG, ISR, nested layouts, and typed route data without a separate frontend toolchain.
 
-## Installation
+## Install A Starter
 
 ```bash
 bun create furin@latest my-app
@@ -16,25 +16,27 @@ bun create furin@latest my-app --template shadcn
 cd my-app
 ```
 
-## Templates
+## Available Templates
 
-- `minimal` (default) — Tailwind + `/api/hello` + SSR loader calling that API route
-- `shadcn` — Tailwind + shadcn/ui setup (`button`, `card`, `input`) + `/api/hello` + SSR loader
+- `minimal` is the default starter with Tailwind, `/api/hello`, and an SSR page loader
+- `shadcn` adds Tailwind plus shadcn-style `button`, `card`, and `input` primitives
 
-## Project Structure
+## Project Shape
 
-```
+```text
 my-app/
 ├── src/
-│   ├── pages/          # File-based routes
-│   │   ├── root.tsx    # Root layout
-│   │   └── index.tsx   # Home page (/)
-│   └── server.ts       # Elysia server entry
-├── furin.config.ts     # Build configuration
-└── bunfig.toml         # Bun configuration
+│   ├── pages/
+│   │   ├── root.tsx
+│   │   └── index.tsx
+│   ├── api/
+│   └── server.ts
+├── furin.config.ts
+├── bunfig.toml
+└── package.json
 ```
 
-## Your First Server
+## First Server
 
 ```ts
 // src/server.ts
@@ -48,20 +50,9 @@ const app = new Elysia()
 export type App = typeof app
 ```
 
-## Your First Page
-
-```tsx
-// src/pages/index.tsx
-import { route } from "./root"
-
-export default route.page({
-  component: () => <h1>Hello Furin!</h1>,
-})
-```
-
 ## Root Layout
 
-Every app needs a root layout that wraps all pages:
+Every app needs `src/pages/root.tsx`. It is the top-level layout and should render the document shell.
 
 ```tsx
 // src/pages/root.tsx
@@ -70,9 +61,24 @@ import { createRoute } from "@teyik0/furin/client"
 export const route = createRoute({
   layout: ({ children }) => (
     <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta content="width=device-width, initial-scale=1" name="viewport" />
+      </head>
       <body>{children}</body>
     </html>
   ),
+})
+```
+
+## First Page
+
+```tsx
+// src/pages/index.tsx
+import { route } from "./root"
+
+export default route.page({
+  component: () => <h1>Hello Furin</h1>,
 })
 ```
 
@@ -82,10 +88,11 @@ export const route = createRoute({
 bun run dev
 ```
 
-Your app runs at `http://localhost:3000` with hot module replacement enabled.
+The docs app and starters run Bun directly in development, so backend and frontend stay in the same process.
 
-## Next Steps
+## What To Learn Next
 
-- [File-Based Routing](/docs/routing) — Learn how pages and layouts work
-- [Data Loading](/docs/data-loading) — SSR, SSG, and ISR with loaders
-- [Deployment](/docs/deployment) — Build and deploy your app
+- [File-Based Routing](/docs/routing) for page and layout conventions
+- [Data Loading](/docs/data-loading) for server loaders and typed schemas
+- [Rendering Modes](/docs/rendering) for SSR, SSG, ISR, and `staticParams`
+- [Deployment](/docs/deployment) for the current Bun-only production build flow

@@ -1,10 +1,8 @@
 # API Routes
 
-Furin runs on [Elysia](https://elysiajs.com), so your API lives in the same process as your frontend. No separate server, no proxy.
+Furin pages and Elysia API routes run in the same server process. There is no separate frontend dev server and no proxy layer required.
 
-## Defining API Routes
-
-Create a regular Elysia group and `.use()` it in your server:
+## Define An API Plugin
 
 ```ts
 // src/api/index.ts
@@ -12,24 +10,28 @@ import { Elysia, t } from "elysia"
 
 export const api = new Elysia({ prefix: "/api" })
   .get("/posts", async () => {
-    const posts = await db.getAllPosts()
-    return posts
+    return db.getAllPosts()
   })
-  .post("/posts", async ({ body }) => {
-    const post = await db.createPost(body)
-    return post
-  }, {
-    body: t.Object({
-      title: t.String(),
-      content: t.String(),
-    }),
-  })
+  .post(
+    "/posts",
+    async ({ body }) => {
+      return db.createPost(body)
+    },
+    {
+      body: t.Object({
+        title: t.String(),
+        content: t.String(),
+      }),
+    }
+  )
 ```
+
+## Mount It Before Furin
 
 ```ts
 // src/server.ts
-import { furin } from "@teyik0/furin"
 import { Elysia } from "elysia"
+import { furin } from "@teyik0/furin"
 import { api } from "./api/index.ts"
 
 const app = new Elysia()
@@ -40,9 +42,11 @@ const app = new Elysia()
 export type App = typeof app
 ```
 
-## End-to-End Type Safety
+Elysia instance order matters. Mount API plugins in the order you want them applied.
 
-Export `typeof app` and use it on the client with [Eden Treaty](https://elysiajs.com/eden/treaty/overview.html):
+## Typed Client Access
+
+If you export `typeof app`, you can use Eden Treaty on the client side for end-to-end typing.
 
 ```ts
 // src/client.ts
@@ -55,6 +59,7 @@ export const api = treaty<App>("localhost:3000")
 ```tsx
 // src/pages/blog/index.tsx
 import { api } from "@/client"
+import { route } from "./_route"
 
 export default route.page({
   loader: async () => {
@@ -65,40 +70,26 @@ export default route.page({
 })
 ```
 
-Your API response types flow through automatically — no code generation, no manual typing.
+## Middleware And Guards
 
-## Middleware
-
-Use Elysia's lifecycle hooks for authentication, logging, and more:
+Use normal Elysia plugins, guards, and lifecycle hooks for auth, logging, rate limiting, or anything else:
 
 ```ts
-// src/api/index.ts
 import { Elysia } from "elysia"
 import { jwt } from "@elysiajs/jwt"
 
 export const api = new Elysia({ prefix: "/api" })
   .use(jwt({ name: "jwt", secret: process.env.JWT_SECRET! }))
   .guard(
-    { beforeHandle: async ({ jwt, cookie, set }) => {
+    {
+      beforeHandle: async ({ cookie, jwt, set }) => {
         const user = await jwt.verify(cookie.auth.value)
-        if (!user) { set.status = 401; return "Unauthorized" }
-      }
+        if (!user) {
+          set.status = 401
+          return "Unauthorized"
+        }
+      },
     },
-    (app) => app
-      .get("/me", ({ cookie, jwt }) => jwt.verify(cookie.auth.value))
+    (app) => app.get("/me", ({ cookie, jwt }) => jwt.verify(cookie.auth.value))
   )
-```
-
-## WebSockets
-
-Elysia's WebSocket support works as expected:
-
-```ts
-// src/api/index.ts
-export const api = new Elysia({ prefix: "/api" })
-  .ws("/chat", {
-    message(ws, message) {
-      ws.publish("chat", message)
-    },
-  })
 ```

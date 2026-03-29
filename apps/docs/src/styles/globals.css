@@ -114,11 +114,27 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   * {
     @apply border-border outline-ring/50;
   }
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  .doc-content :is(h2, h3) {
+    scroll-margin-top: 6rem;
+  }
+
+  .doc-content h2 {
+    @apply mt-10 border-border border-t pt-8;
+  }
+
+  .doc-content h3 {
+    @apply mt-8;
   }
 }

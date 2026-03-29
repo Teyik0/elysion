@@ -1,8 +1,8 @@
 # Plugins
 
-Furin's build system is Bun's bundler under the hood. You can pass any Bun plugin to process assets at build time and at runtime.
+Furin passes Bun plugins through its build pipeline. That lets you preprocess assets both in the production build and in development.
 
-## Adding Plugins
+## Production Build Plugins
 
 Declare plugins in `furin.config.ts`:
 
@@ -17,64 +17,36 @@ export default defineConfig({
 })
 ```
 
-Plugins run before Furin's internal client transform, so they can process any file type your pages import.
+Those plugins are forwarded into the Bun build calls used for client and server output.
 
-## Dev Server Plugins
+## Development Plugins
 
-For development (hot reload), plugins also need to be declared in `bunfig.toml`:
+For Bun dev mode, register the same plugin stack in `bunfig.toml` and call `Bun.plugin()` for SSR/runtime needs.
 
 ```toml
-# bunfig.toml
 [serve.static]
-plugins = ["bun-plugin-tailwind"]
+plugins = ["bun-plugin-tailwind", "furin/strip-plugin"]
 env = "FURIN_PUBLIC_*"
 ```
 
-And registered at runtime via `Bun.plugin()` in your server entry for SSR:
-
 ```ts
 // src/server.ts
-import { furin } from "@teyik0/furin"
 import { Elysia } from "elysia"
-import myPlugin from "./lib/my-plugin.ts"
+import { furin } from "@teyik0/furin"
+import mdxPlugin from "./lib/bun-mdx-plugin.ts"
 
-Bun.plugin(myPlugin)
+Bun.plugin(mdxPlugin)
 
 const app = new Elysia()
   .use(await furin({ pagesDir: "./src/pages" }))
   .listen(3000)
 ```
 
-## Writing a Plugin
-
-A Furin/Bun plugin is a standard `Bun.BunPlugin`:
-
-```ts
-// src/lib/my-plugin.ts
-const myPlugin: Bun.BunPlugin = {
-  name: "my-plugin",
-  setup(build) {
-    build.onLoad({ filter: /\.txt$/ }, async (args) => {
-      const text = await Bun.file(args.path).text()
-      return {
-        contents: `export default ${JSON.stringify(text)}`,
-        loader: "js",
-      }
-    })
-  },
-}
-
-export default myPlugin
-```
-
-## MDX Support
-
-MDX is not included by default but is easy to add:
+## Example: MDX
 
 ```ts
 // src/lib/bun-mdx-plugin.ts
 import { compile } from "@mdx-js/mdx"
-import remarkGfm from "remark-gfm"
 
 const MDX_FILTER = /\.mdx$/
 
@@ -85,9 +57,12 @@ const mdxPlugin: Bun.BunPlugin = {
       const source = await Bun.file(args.path).text()
       const compiled = await compile(source, {
         outputFormat: "program",
-        remarkPlugins: [remarkGfm],
       })
-      return { contents: String(compiled), loader: "js" }
+
+      return {
+        contents: String(compiled),
+        loader: "js",
+      }
     })
   },
 }
@@ -95,12 +70,12 @@ const mdxPlugin: Bun.BunPlugin = {
 export default mdxPlugin
 ```
 
-Add it to both `furin.config.ts` and `bunfig.toml`, and call `Bun.plugin(mdxPlugin)` in `server.ts`.
+If your plugin is needed in both build and dev, wire it in all three places:
 
-## Available Plugins
+- `furin.config.ts`
+- `bunfig.toml`
+- `Bun.plugin()` in `src/server.ts`
 
-| Plugin | Purpose |
-|---|---|
-| `bun-plugin-tailwind` | Tailwind CSS v4 |
-| `@mdx-js/mdx` (custom) | MDX files |
-| `bun-plugin-yaml` | Import YAML files |
+## What Is Actually Exported Today
+
+`@teyik0/furin/config` currently exports `defineConfig()` and the config types. The build target support implemented in this branch is Bun; other targets are not yet wired in the core build step even if the config type mentions them.

@@ -1,155 +1,97 @@
 # Deployment
 
-Furin separates the build step from the runtime. Run `bun run build` once, then deploy the output anywhere.
+Furin currently ships a Bun production build path. The config type includes other targets, but in this branch only the Bun target is implemented end-to-end.
 
-## Build
+## Build Command
+
+Use the Furin CLI through your package script or directly:
 
 <CodeTabs>
-<CodeTab title="Terminal">
-```bash
-bun run build
+<CodeTab title="package.json">
+```json
+{
+  "scripts": {
+    "build": "bunx furin build --target bun"
+  }
+}
 ```
 </CodeTab>
-<CodeTab title="furin.config.ts">
-```ts
-// furin.config.ts
-import { defineConfig, bunAdapter } from "@teyik0/furin/config"
-import tailwind from "bun-plugin-tailwind"
-
-export default defineConfig({
-  plugins: [tailwind],
-  adapter: bunAdapter(),
-})
+<CodeTab title="Terminal">
+```bash
+bunx furin build --target bun
 ```
 </CodeTab>
 </CodeTabs>
 
-This runs `furin/build-cli`, which reads `furin.config.ts` and produces:
+The docs app itself uses a workspace-local script, but the output shape is the same.
 
-- `.furin/client/` — bundled client assets (JS, CSS)
-- `.furin/server/` — server bundle (SSG output if applicable)
+## Output Layout
 
-## Bun (Default)
+The Bun build writes to `.furin/build/bun`:
 
-The default adapter. Serves the app directly with Bun's HTTP server.
-
-```ts
-// furin.config.ts
-import { defineConfig, bunAdapter } from "@teyik0/furin/config"
-import tailwind from "bun-plugin-tailwind"
-
-export default defineConfig({
-  plugins: [tailwind],
-  adapter: bunAdapter(),
-})
+```text
+.furin/build/bun/
+├── client/
+│   └── index.html
+├── public/
+├── server.js
+└── manifest.json
 ```
 
-Start the production server:
+## Compiled Binaries
+
+If you pass `--compile server`, Furin writes a server binary and keeps the built client assets on disk.
 
 ```bash
-bun run build
-bun run start
+bunx furin build --target bun --compile server
 ```
 
-### Binary Compile
-
-Package your app as a standalone executable:
+If you pass `--compile embed`, Furin writes a self-contained server binary and removes the built client directory from the target output because the assets are embedded.
 
 ```bash
-bun build --compile --target bun src/server.ts --outfile my-app
-./my-app
+bunx furin build --target bun --compile embed
 ```
 
-## Vercel
+## Production Runtime
 
-The Vercel adapter generates `.vercel/output/` using the [Build Output API v3](https://vercel.com/docs/build-output-api/v3):
+For disk-based builds:
 
-```ts
-// furin.config.ts
-import { defineConfig, vercelAdapter } from "@teyik0/furin/config"
+- `server.js` reads client assets from `client/` next to the server bundle
+- `public/` is copied into `.furin/build/bun/public`
+- `FURIN_CLIENT_DIR` can override the client asset directory at runtime
 
-export default defineConfig({
-  adapter: vercelAdapter(),
-})
-```
+Example:
 
 ```bash
-bun run build
-# Deploy with Vercel CLI
-vercel deploy --prebuilt
+FURIN_CLIENT_DIR=/absolute/path/to/client bun ./.furin/build/bun/server.js
 ```
 
-ISR pages use `Cache-Control` headers automatically.
+## Planned Targets
 
-## Cloudflare Workers
+The config surface already names `node`, `vercel`, and `cloudflare`, but the current core build path throws for those targets. Treat them as planned, not available, until their builders land in `packages/core/src/build/index.ts`.
 
-The Cloudflare adapter generates a `wrangler.toml` and a worker bundle:
+## Public Environment Variables
 
-```ts
-// furin.config.ts
-import { defineConfig, cloudflareAdapter } from "@teyik0/furin/config"
-
-export default defineConfig({
-  adapter: cloudflareAdapter(),
-})
-```
-
-```bash
-bun run build
-wrangler deploy
-```
-
-## Environment Variables
-
-Prefix public variables with `FURIN_PUBLIC_` to expose them to the client bundle:
-
-```bash
-# .env
-FURIN_PUBLIC_API_URL=https://api.example.com
-FURIN_PUBLIC_GISCUS_REPO=teyik0/furin
-FURIN_PUBLIC_GISCUS_REPO_ID=...
-FURIN_PUBLIC_GISCUS_CATEGORY=General
-FURIN_PUBLIC_GISCUS_CATEGORY_ID=...
-```
-
-Access in your code:
-
-```ts
-// Available anywhere
-const apiUrl = process.env.FURIN_PUBLIC_API_URL
-```
-
-Configure in `bunfig.toml`:
+Prefix client-visible variables with `FURIN_PUBLIC_` and expose them through Bun:
 
 ```toml
 [serve.static]
 env = "FURIN_PUBLIC_*"
 ```
 
-## Giscus Comments For Docs
+```bash
+FURIN_PUBLIC_API_URL=https://api.example.com
+```
 
-The docs app can use [Giscus](https://giscus.app/) so comments live in GitHub Discussions instead of a database.
+## Giscus In The Docs App
 
-Configure these public variables:
+The docs app can render Giscus comments from GitHub Discussions by setting these public values:
 
 ```bash
 FURIN_PUBLIC_GISCUS_REPO=teyik0/furin
 FURIN_PUBLIC_GISCUS_REPO_ID=...
 FURIN_PUBLIC_GISCUS_CATEGORY=General
 FURIN_PUBLIC_GISCUS_CATEGORY_ID=...
-FURIN_PUBLIC_GISCUS_MAPPING=pathname
-FURIN_PUBLIC_GISCUS_STRICT=0
-FURIN_PUBLIC_GISCUS_REACTIONS_ENABLED=0
-FURIN_PUBLIC_GISCUS_EMIT_METADATA=0
-FURIN_PUBLIC_GISCUS_INPUT_POSITION=bottom
-FURIN_PUBLIC_GISCUS_LANG=en
 ```
 
-Setup steps:
-
-1. Enable GitHub Discussions on the target repository.
-2. Create or choose the discussion category you want Giscus to use.
-3. Generate the `repoId` and `categoryId` from [giscus.app](https://giscus.app/).
-4. Add the values above to the docs environment.
-
-With this setup, the docs do not need a comments database or auth backend.
+That keeps comments out of your application database.
