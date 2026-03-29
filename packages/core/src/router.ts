@@ -99,19 +99,8 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       continue;
     }
 
-    // In dev mode, don't import page modules at startup so they stay out of
-    // bun --hot's module graph. Page modules are lazily imported on first
-    // request in createRoutePlugin instead. This prevents server re-evaluation
-    // when only client-side page code changes.
     if (IS_DEV) {
-      routes.push({
-        pattern: filePathToPattern(relativePath),
-        path: absolutePath,
-        mode: "ssr",
-        // Populated lazily on first request — see createRoutePlugin
-        page: undefined as unknown as RuntimePage,
-        routeChain: [],
-      });
+      routes.push(await buildDevRoute(absolutePath, relativePath, root));
       continue;
     }
 
@@ -140,25 +129,57 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
   return routes;
 }
 
+async function buildDevRoute(
+  absolutePath: string,
+  relativePath: string,
+  root: RootLayout
+): Promise<ResolvedRoute> {
+  // Import via the virtual namespace (registerDevPagePlugin must be called first)
+  // so page files stay out of --hot's module graph. We still extract the route
+  // chain at startup for type generation, guards, and mode resolution — matching
+  // prod behavior exactly.
+  let page: RuntimePage | undefined;
+  let routeChain: RuntimeRoute[] = [];
+
+  try {
+    const pageMod = (await import(`${absolutePath}?furin-server&t=${Date.now()}`)) as {
+      default: RuntimePage;
+    };
+    if (isFurinPage(pageMod.default)) {
+      page = pageMod.default;
+      routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
+      validateRouteChain(routeChain, root.route, relativePath);
+    }
+  } catch {
+    // Page will be loaded on first request in createRoutePlugin as fallback
+  }
+
+  return {
+    pattern: filePathToPattern(relativePath),
+    path: absolutePath,
+    mode: page ? resolveMode(page, routeChain) : "ssr",
+    // Still lazily re-imported on each request in createRoutePlugin for fresh code
+    page: page ?? (undefined as unknown as RuntimePage),
+    routeChain,
+  };
+}
+
 export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyElysia {
   const { pattern, routeChain } = route;
 
   const plugins: AnyElysia[] = [];
 
-  // In dev mode, routeChain is empty (pages not imported at startup), skip guards.
-  if (!IS_DEV) {
-    // TODO: merge schemas from all routeChain entries (requires TypeBox t.Object/t.Composite)
-    // For now, prefer the leaf route's schema (last in chain) over ancestor routes.
-    const allParams = [...routeChain].reverse().find((r) => r.params)?.params;
-    const allQuery = [...routeChain].reverse().find((r) => r.query)?.query;
-    if (allParams || allQuery) {
-      plugins.push(
-        new Elysia().guard({
-          params: allParams as AnySchema,
-          query: allQuery as AnySchema,
-        })
-      );
-    }
+  // TODO: merge schemas from all routeChain entries (requires TypeBox t.Object/t.Composite)
+  // For now, prefer the leaf route's schema (last in chain) over ancestor routes.
+  const allParams = [...routeChain].reverse().find((r) => r.params)?.params;
+  const allQuery = [...routeChain].reverse().find((r) => r.query)?.query;
+  if (allParams || allQuery) {
+    plugins.push(
+      new Elysia().guard({
+        params: allParams as AnySchema,
+        query: allQuery as AnySchema,
+      })
+    );
   }
 
   plugins.push(
