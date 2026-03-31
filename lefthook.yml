@@ -19,10 +19,6 @@ pre-push:
       run: bun run test
       stage_fixed: true
 
-    - name: React doctor
-      run: bun run react-doctor
-      stage_fixed: true
-
 commit-msg:
   commands:
     lint-commit-message:

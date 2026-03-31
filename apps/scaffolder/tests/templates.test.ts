@@ -4,13 +4,22 @@ import { resolve } from "node:path";
 import rootPackageJson from "../../../package.json";
 import corePackageJson from "../../../packages/core/package.json";
 import docsPackageJson from "../../docs/package.json";
+import rawCatalog from "../src/generated/package-catalog.json";
 import { getPackageCatalog } from "../src/package-catalog.ts";
 
 describe("package catalog", () => {
+  test("uses workspace protocol for furin", () => {
+    expect(rawCatalog["@teyik0/furin"]).toBe("workspace:*");
+  });
+
+  test("resolves workspace protocol to core version", () => {
+    const catalog = getPackageCatalog();
+    expect(catalog["@teyik0/furin"]).toBe(corePackageJson.version);
+  });
+
   test("stays aligned with workspace source versions", () => {
     const catalog = getPackageCatalog();
 
-    expect(catalog["@teyik0/furin"]).toBe(corePackageJson.version);
     expect(catalog.elysia).toBe(rootPackageJson.catalog.elysia);
     expect(catalog.react).toBe(rootPackageJson.catalog.react);
     expect(catalog["react-dom"]).toBe(rootPackageJson.catalog["react-dom"]);
