@@ -11,7 +11,7 @@
     "test:e2e": "bun run ./tests/hmr.ts",
     "generate:llms": "bun run scripts/generate-llms-txt.ts",
     "generate:content": "bun run scripts/generate-docs-content.ts",
-    "build": "bun run generate:llms && bun run ../../packages/core/src/cli/index.ts build --target bun",
+    "build": "bun run generate:content && bun run generate:llms && bun run ../../packages/core/src/cli/index.ts build --target bun",
     "build:compiled": "bun run generate:content && bun run generate:llms && bun run ../../packages/core/src/cli/index.ts build --target bun --compile server",
     "build:embed": "bun run generate:content && bun run generate:llms && bun run ../../packages/core/src/cli/index.ts build --target bun --compile embed"
   },
