@@ -9,7 +9,7 @@ const IMPORT_RE = /^import\s+/;
 const EXPORT_RE = /^export\s+/;
 const CODE_TAB_RE = /<CodeTab\s+title="([^"]+)"\s*>/;
 const CODE_TABS_RE = /^\s*<\/?CodeTabs?\s*\/?>/;
-const JSX_SELF_CLOSING_RE = /^\s*<[A-Z][a-zA-Z]*\s[^>]*\/>\s*$/;
+const JSX_SELF_CLOSING_RE = /^\s*<[A-Z][a-zA-Z]*(\s[^>]*)?\/>\s*$/;
 
 export function stripMdxToMarkdown(content: string): string {
   const lines = content.split("\n");
