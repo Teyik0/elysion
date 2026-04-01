@@ -17,7 +17,7 @@ describe("shell.tsx", () => {
   describe("safeJson", () => {
     test("escapes </script> — prevents script tag breakout", () => {
       expect(safeJson({ x: "</script><script>alert(1)</script>" })).toBe(
-        '{"x":"\\u003c/script>\\u003cscript>alert(1)\\u003c/script>"}'
+        '{"x":"\\u003c/script\\u003e\\u003cscript\\u003ealert(1)\\u003c/script\\u003e"}'
       );
     });
 
@@ -26,8 +26,8 @@ describe("shell.tsx", () => {
       expect(JSON.parse(safeJson(data))).toEqual(data);
     });
 
-    test("< in values is replaced with \\u003c", () => {
-      expect(safeJson({ v: "<b>bold</b>" })).toBe('{"v":"\\u003cb>bold\\u003c/b>"}');
+    test("< and > in values are replaced with unicode escapes", () => {
+      expect(safeJson({ v: "<b>bold</b>" })).toBe('{"v":"\\u003cb\\u003ebold\\u003c/b\\u003e"}');
     });
 
     test("values without < are not modified", () => {

@@ -253,6 +253,25 @@ export function buildPageElement(
   return element;
 }
 
+/** Scrolls to a hash target or the top of the page after SPA navigation. */
+function handleScrollRestoration(href: string): void {
+  const destUrl = new URL(href, window.location.origin);
+  if (destUrl.hash) {
+    const id = decodeURIComponent(destUrl.hash.slice(1));
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "instant", block: "start" });
+    } else {
+      // Element may not be in DOM yet — retry after React commits
+      window.requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: "instant", block: "start" });
+      });
+    }
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
 export function RouterProvider({
   routes,
   root,
@@ -272,6 +291,8 @@ export function RouterProvider({
     typeof window === "undefined" ? "/" : window.location.pathname + window.location.search
   );
   const prefetchCache = useRef(new Map<string, CacheEntry>());
+  /** Monotonic counter to discard stale navigations (race condition guard). */
+  const navVersion = useRef(0);
 
   const fetchPageState = useCallback(
     async (href: string): Promise<RouterState | null> => {
@@ -338,9 +359,14 @@ export function RouterProvider({
   const navigate = useCallback(
     async (href: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
       prefetch(href);
+      const myVersion = ++navVersion.current;
       setIsNavigating(true);
       try {
         const newState = await prefetchCache.current.get(href)?.promise;
+        // Discard if a newer navigation was started while we were waiting
+        if (navVersion.current !== myVersion) {
+          return;
+        }
         if (!newState) {
           log.warn({ action: "navigate_fallback", href, reason: "prefetch_returned_null" });
           window.location.href = href;
@@ -357,32 +383,16 @@ export function RouterProvider({
         } else {
           window.history.pushState(null, "", effectiveHref);
         }
-        setCurrentHref(
-          new URL(effectiveHref, window.location.origin).pathname +
-            new URL(effectiveHref, window.location.origin).search
-        );
-        const shouldReset = opts?.resetScroll ?? true;
-        if (shouldReset) {
-          const destUrl = new URL(href, window.location.origin);
-          if (destUrl.hash) {
-            const id = decodeURIComponent(destUrl.hash.slice(1));
-            const el = document.getElementById(id);
-            if (el) {
-              el.scrollIntoView({ behavior: "instant", block: "start" });
-            } else {
-              // Element may not be in DOM yet — retry after React commits
-              window.requestAnimationFrame(() => {
-                document
-                  .getElementById(id)
-                  ?.scrollIntoView({ behavior: "instant", block: "start" });
-              });
-            }
-          } else {
-            window.scrollTo(0, 0);
-          }
+        const effectiveUrl = new URL(effectiveHref, window.location.origin);
+        setCurrentHref(effectiveUrl.pathname + effectiveUrl.search);
+        if (opts?.resetScroll ?? true) {
+          handleScrollRestoration(href);
         }
       } finally {
-        setIsNavigating(false);
+        // Only clear navigating flag if this is still the latest navigation
+        if (navVersion.current === myVersion) {
+          setIsNavigating(false);
+        }
       }
     },
     [prefetch]
@@ -390,9 +400,21 @@ export function RouterProvider({
 
   const handlePopState = useCallback(async () => {
     const href = window.location.pathname + window.location.search;
+    const myVersion = ++navVersion.current;
     setIsNavigating(true);
     try {
-      const newState = await fetchPageState(href);
+      // Check prefetch cache before fetching fresh
+      const cached = prefetchCache.current.get(href);
+      let newState: RouterState | null;
+      if (cached && !shouldRefetch(cached, defaultPreloadStaleTime)) {
+        newState = await cached.promise;
+      } else {
+        newState = await fetchPageState(href);
+      }
+      // Discard if a newer navigation was started while we were waiting
+      if (navVersion.current !== myVersion) {
+        return;
+      }
       if (!newState) {
         log.warn({ action: "popstate_fallback", href, reason: "fetchPageState_returned_null" });
         window.location.reload();
@@ -407,15 +429,15 @@ export function RouterProvider({
       if (newState.finalHref) {
         window.history.replaceState(null, "", effectiveHref);
       }
-      setCurrentHref(
-        new URL(effectiveHref, window.location.origin).pathname +
-          new URL(effectiveHref, window.location.origin).search
-      );
+      const effectiveUrl = new URL(effectiveHref, window.location.origin);
+      setCurrentHref(effectiveUrl.pathname + effectiveUrl.search);
       // No scrollTo(0, 0) — browser handles scroll restoration
     } finally {
-      setIsNavigating(false);
+      if (navVersion.current === myVersion) {
+        setIsNavigating(false);
+      }
     }
-  }, [fetchPageState]);
+  }, [fetchPageState, defaultPreloadStaleTime]);
 
   // Handle browser back/forward
   useEffect(() => {

@@ -68,12 +68,8 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
           return target as BuildTarget;
         });
 
+  // scanPages throws if root.tsx is missing, so root is always defined here.
   const { root, routes } = await scanPages(pagesDir);
-  if (!root) {
-    throw new Error(
-      "[furin] No root layout found. Create a root.tsx in your pages directory with a layout component."
-    );
-  }
 
   ensureDir(buildRoot);
 

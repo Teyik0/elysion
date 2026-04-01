@@ -5,12 +5,21 @@ import { readFileSync } from "node:fs";
 let _prodTemplatePath: string | null = null;
 let _prodTemplateContent: string | null = null;
 
+/** Dev template cache — avoids a loopback HTTP fetch on every SSR request. */
+let _devTemplateCache: { html: string; ts: number } | null = null;
+const DEV_TEMPLATE_TTL_MS = 1000;
+
 export async function getDevTemplate(origin: string): Promise<string> {
+  if (_devTemplateCache && Date.now() - _devTemplateCache.ts < DEV_TEMPLATE_TTL_MS) {
+    return _devTemplateCache.html;
+  }
   const r = await fetch(`${origin}/_bun_hmr_entry`);
   if (!r.ok) {
     throw new Error(`/_bun_hmr_entry returned ${r.status}`);
   }
-  return r.text();
+  const html = await r.text();
+  _devTemplateCache = { html, ts: Date.now() };
+  return html;
 }
 
 export function setProductionTemplatePath(path: string | null): void {
@@ -36,4 +45,11 @@ export function getProductionTemplate(): string | null {
   } catch {
     return null;
   }
+}
+
+/** @internal test-only — resets all template state */
+export function __resetTemplateState(): void {
+  _prodTemplatePath = null;
+  _prodTemplateContent = null;
+  _devTemplateCache = null;
 }

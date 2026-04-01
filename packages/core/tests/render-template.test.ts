@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  __resetTemplateState,
   getDevTemplate,
   getProductionTemplate,
   setProductionTemplateContent,
@@ -10,7 +11,7 @@ import {
 } from "../src/render/template";
 
 afterEach(() => {
-  setProductionTemplatePath(null);
+  __resetTemplateState();
 });
 
 describe.serial("render/template", () => {
@@ -45,7 +46,7 @@ describe.serial("render/template", () => {
     expect(getProductionTemplate()).toBe("<html>from-memory</html>");
   });
 
-  test("getDevTemplate fetches fresh template on every call (no cache)", async () => {
+  test("getDevTemplate caches within TTL and re-fetches after expiry", async () => {
     let requestCount = 0;
     const server = Bun.serve({
       port: 0,
@@ -63,7 +64,8 @@ describe.serial("render/template", () => {
 
       expect(first).toBe("<html>dev-template</html>");
       expect(second).toBe("<html>dev-template</html>");
-      expect(requestCount).toBe(2);
+      // Second call within 1s TTL should hit the cache
+      expect(requestCount).toBe(1);
     } finally {
       server.stop(true);
     }

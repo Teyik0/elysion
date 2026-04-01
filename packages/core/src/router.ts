@@ -154,12 +154,20 @@ async function buildDevRoute(
     // Page will be loaded on first request in createRoutePlugin as fallback
   }
 
+  // Dev stub: a minimal RuntimePage that passes isFurinPage() but is never
+  // actually rendered — createRoutePlugin always re-imports from disk in dev mode.
+  const devStubPage: RuntimePage = {
+    __type: "FURIN_PAGE",
+    _route: { __type: "FURIN_ROUTE" },
+    component: () => null,
+  };
+
   return {
     pattern: filePathToPattern(relativePath),
     path: absolutePath,
     mode: page ? resolveMode(page, routeChain) : "ssr",
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
-    page: page ?? (undefined as unknown as RuntimePage),
+    page: page ?? devStubPage,
     routeChain,
   };
 }
@@ -207,8 +215,8 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyEl
 
   // TODO: merge schemas from all routeChain entries (requires TypeBox t.Object/t.Composite)
   // For now, prefer the leaf route's schema (last in chain) over ancestor routes.
-  const allParams = [...routeChain].reverse().find((r) => r.params)?.params;
-  const allQuery = [...routeChain].reverse().find((r) => r.query)?.query;
+  const allParams = routeChain.findLast((r) => r.params)?.params;
+  const allQuery = routeChain.findLast((r) => r.query)?.query;
   const hasQuerySchema = !!allQuery;
 
   // Guard and handler MUST live in the same Elysia scope so that validation

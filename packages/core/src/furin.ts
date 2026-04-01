@@ -166,20 +166,36 @@ export async function furin({
         ],
       })
     )
-    .post("/_furin/ingest", ({ body, log, status }) => {
-      if (!Array.isArray(body)) {
-        return status("Bad Request");
-      }
-      const batch = body as DrainContext[];
-      for (const entry of batch) {
-        if (!entry || typeof entry !== "object" || !("event" in entry)) {
-          log.set({ msg: "[furin] ingest: skipping malformed entry", entry });
-          continue;
+    .post(
+      "/_furin/ingest",
+      ({ body, log, status }) => {
+        if (!Array.isArray(body)) {
+          return status("Bad Request");
         }
-        log.set({ ...entry.event, service: "furin:browser" });
-      }
-      return status("No Content");
-    });
+        // Cap batch size to prevent abuse
+        const batch = (body as DrainContext[]).slice(0, 100);
+        for (const entry of batch) {
+          if (!entry || typeof entry !== "object" || !("event" in entry)) {
+            log.set({ msg: "[furin] ingest: skipping malformed entry" });
+            continue;
+          }
+          // Pick only safe, known fields from the event to prevent prototype pollution
+          const event = entry.event as Record<string, unknown> | undefined;
+          if (!event || typeof event !== "object") {
+            continue;
+          }
+          const {
+            __proto__,
+            constructor: _ctor,
+            prototype,
+            ...safeEvent
+          } = event as Record<string, unknown>;
+          log.set({ ...safeEvent, service: "furin:browser" });
+        }
+        return status("No Content");
+      },
+      { parse: "json" }
+    );
 
   const cwd = process.cwd();
   const ctx = getCompileContext();

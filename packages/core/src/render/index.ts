@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import type { RootLayout } from "../router.ts";
 import { assembleHTML, resolvePath, splitTemplate, streamToString } from "./assemble.ts";
-import { isrCache, ssgCache } from "./cache.ts";
+import { isrCache, setISRCache, setSSGCache, ssgCache } from "./cache.ts";
 import { buildElement } from "./element.tsx";
 import { runLoaders } from "./loaders.ts";
 import { buildHeadInjection, safeJson } from "./shell.ts";
@@ -27,14 +28,55 @@ interface RenderResult {
   html: string;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Shared render preparation ────────────────────────────────────────────────
 
-function catchRedirect(err: unknown): Response {
-  if (err instanceof Response) {
-    return err;
-  }
-  throw err;
+interface PreparedRender {
+  componentProps: Record<string, unknown>;
+  element: ReactNode;
+  headData: string;
+  headers: Record<string, string>;
+  template: string;
 }
+
+/**
+ * Shared pipeline steps used by both `renderToHTML` (buffered) and `renderSSR`
+ * (streaming). Runs loaders, builds props, head injection, resolves template,
+ * and creates the React element.
+ *
+ * Returns the redirect Response directly when a loader redirects, so callers
+ * never need try/catch for redirect handling.
+ */
+async function prepareRender(
+  route: ResolvedRoute,
+  ctx: Context,
+  root: RootLayout
+): Promise<PreparedRender | Response> {
+  const loaderResult = await runLoaders(route, ctx, root.route);
+
+  if (loaderResult.type === "redirect") {
+    return loaderResult.response;
+  }
+
+  const { data, headers } = loaderResult;
+  const componentProps = {
+    ...data,
+    params: ctx.params,
+    query: ctx.query,
+    path: ctx.path,
+  };
+
+  const headData = buildHeadInjection(route.page?.head?.(componentProps));
+
+  const template = IS_DEV
+    ? await getDevTemplate(new URL(ctx.request.url).origin)
+    : (getProductionTemplate() ?? generateIndexHtml());
+
+  const element = buildElement(route, componentProps, root.route);
+
+  return { componentProps, element, headData, headers, template };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function renderForPath(
   route: ResolvedRoute,
@@ -66,38 +108,20 @@ export async function renderToHTML(
   ctx: Context,
   root: RootLayout
 ): Promise<RenderResult> {
-  const loaderResult = await runLoaders(route, ctx, root.route);
+  const prepared = await prepareRender(route, ctx, root);
 
-  if (loaderResult.type === "redirect") {
-    throw loaderResult.response;
+  // Redirect — re-throw so callers like prerenderSSG / handleISR can catch it
+  if (prepared instanceof Response) {
+    throw prepared;
   }
 
-  const { data, headers } = loaderResult;
+  const { componentProps, element, headData, headers, template } = prepared;
 
-  const componentProps = {
-    ...data,
-    params: ctx.params,
-    query: ctx.query,
-    path: ctx.path,
-  };
-
-  const headData = buildHeadInjection(route.page?.head?.(componentProps));
-
-  const element = buildElement(route, componentProps, root.route);
   const stream = await renderToReadableStream(element);
   await stream.allReady;
   const reactHtml = await streamToString(stream);
 
-  // Dev: self-fetch /_bun_hmr_entry (once, then cached) to get the Bun-processed
-  // HTML template with content-hashed chunk paths and HMR WebSocket client.
-  // Prod: read .furin/client/index.html from disk.
-  const template = IS_DEV
-    ? await getDevTemplate(new URL(ctx.request.url).origin)
-    : (getProductionTemplate() ?? generateIndexHtml());
-
   return {
-    // Pass componentProps (= { ...data, params, query, path }) so the client
-    // receives the same props that SSR passed to the component.
     html: assembleHTML(template, headData, reactHtml, componentProps),
     headers,
   };
@@ -133,7 +157,7 @@ export async function prerenderSSG(
   const result = await renderForPath(route, params, root, origin);
 
   if (!IS_DEV) {
-    ssgCache.set(resolvedPath, result.html);
+    setSSGCache(resolvedPath, result.html);
   }
 
   return result.html;
@@ -144,63 +168,53 @@ export async function renderSSR(
   ctx: Context,
   root: RootLayout
 ): Promise<Response> {
-  try {
-    const loaderStart = Date.now();
-    const loaderResult = await runLoaders(route, ctx, root.route);
-    if (loaderResult.type === "redirect") {
-      return loaderResult.response;
-    }
+  const loaderStart = Date.now();
+  const prepared = await prepareRender(route, ctx, root);
 
-    useLogger().set({
-      furin: { render: "ssr", route: route.pattern, loader_ms: Date.now() - loaderStart },
-    });
-
-    const { data, headers } = loaderResult;
-    const componentProps = { ...data, params: ctx.params, query: ctx.query, path: ctx.path };
-
-    const headData = buildHeadInjection(route.page.head?.(componentProps));
-    const template = IS_DEV
-      ? await getDevTemplate(new URL(ctx.request.url).origin)
-      : (getProductionTemplate() ?? generateIndexHtml());
-
-    // Phase 2: split template around placeholders
-    const { headPre, bodyPre, bodyPost } = splitTemplate(template);
-    // Include query/params/path so the client component receives the same props as SSR
-    const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(componentProps)}</script>`;
-
-    // Phase 3: start React render without awaiting allReady
-    const element = buildElement(route, componentProps, root.route);
-    const reactStream = await renderToReadableStream(element);
-
-    // Phase 4: pipe head + React stream + tail into a single ReadableStream
-    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-    const writer = writable.getWriter();
-    const enc = new TextEncoder();
-
-    (async () => {
-      await writer.write(enc.encode(headPre + headData + bodyPre));
-      const reader = reactStream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        await writer.write(value);
-      }
-      await writer.write(enc.encode(dataScript + bodyPost));
-      await writer.close();
-    })().catch((err) => writer.abort(err));
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        ...headers,
-      },
-    });
-  } catch (err) {
-    return catchRedirect(err);
+  // Redirect — return directly as a Response
+  if (prepared instanceof Response) {
+    return prepared;
   }
+
+  useLogger().set({
+    furin: { render: "ssr", route: route.pattern, loader_ms: Date.now() - loaderStart },
+  });
+
+  const { componentProps, element, headData, headers, template } = prepared;
+
+  // Split template around placeholders
+  const { headPre, bodyPre, bodyPost } = splitTemplate(template);
+  const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(componentProps)}</script>`;
+
+  // Start React render without awaiting allReady (streaming)
+  const reactStream = await renderToReadableStream(element);
+
+  // Pipe head + React stream + tail into a single ReadableStream
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+
+  (async () => {
+    await writer.write(enc.encode(headPre + headData + bodyPre));
+    const reader = reactStream.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      await writer.write(value);
+    }
+    await writer.write(enc.encode(dataScript + bodyPost));
+    await writer.close();
+  })().catch((err) => writer.abort(err));
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      ...headers,
+    },
+  });
 }
 
 export async function handleISR(route: ResolvedRoute, ctx: Context, root: RootLayout) {
@@ -230,29 +244,38 @@ export async function handleISR(route: ResolvedRoute, ctx: Context, root: RootLa
     return cached.html;
   }
 
-  try {
-    const renderStart = Date.now();
-    const result = await renderToHTML(route, ctx, root);
-    useLogger().set({
-      furin: {
-        render: "isr",
-        route: route.pattern,
-        cache: "miss",
-        render_ms: Date.now() - renderStart,
-      },
-    });
+  const renderStart = Date.now();
+  const prepared = await prepareRender(route, ctx, root);
 
-    if (!IS_DEV) {
-      isrCache.set(cacheKey, { html: result.html, generatedAt: Date.now(), revalidate });
-    }
-
-    ctx.set.headers["content-type"] = "text/html; charset=utf-8";
-    ctx.set.headers["cache-control"] =
-      `public, s-maxage=${revalidate}, stale-while-revalidate=${revalidate}`;
-    return result.html;
-  } catch (err) {
-    return catchRedirect(err);
+  // Redirect — return directly
+  if (prepared instanceof Response) {
+    return prepared;
   }
+
+  const { componentProps, element, headData, template } = prepared;
+
+  const stream = await renderToReadableStream(element);
+  await stream.allReady;
+  const reactHtml = await streamToString(stream);
+  const html = assembleHTML(template, headData, reactHtml, componentProps);
+
+  useLogger().set({
+    furin: {
+      render: "isr",
+      route: route.pattern,
+      cache: "miss",
+      render_ms: Date.now() - renderStart,
+    },
+  });
+
+  if (!IS_DEV) {
+    setISRCache(cacheKey, { html, generatedAt: Date.now(), revalidate });
+  }
+
+  ctx.set.headers["content-type"] = "text/html; charset=utf-8";
+  ctx.set.headers["cache-control"] =
+    `public, s-maxage=${revalidate}, stale-while-revalidate=${revalidate}`;
+  return html;
 }
 
 // ── SSG warm-up ──────────────────────────────────────────────────────────────
@@ -313,6 +336,9 @@ export async function warmSSGCache(
   await Promise.all(workers);
 }
 
+/** Tracks in-flight ISR revalidations to prevent thundering herd. */
+const pendingRevalidations = new Set<string>();
+
 function revalidateInBackground(
   route: ResolvedRoute,
   params: Record<string, string>,
@@ -321,9 +347,14 @@ function revalidateInBackground(
   root: RootLayout,
   originalCtx: LoaderContext
 ) {
+  if (pendingRevalidations.has(cacheKey)) {
+    return; // Already revalidating — skip duplicate work
+  }
+  pendingRevalidations.add(cacheKey);
+
   renderForPath(route, params, root, new URL(originalCtx.request.url).origin)
     .then((result) => {
-      isrCache.set(cacheKey, {
+      setISRCache(cacheKey, {
         html: result.html,
         generatedAt: Date.now(),
         revalidate,
@@ -331,5 +362,8 @@ function revalidateInBackground(
     })
     .catch((err: unknown) => {
       console.error("[furin] ISR background revalidation failed:", err);
+    })
+    .finally(() => {
+      pendingRevalidations.delete(cacheKey);
     });
 }
