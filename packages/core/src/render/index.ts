@@ -35,6 +35,7 @@ interface PreparedRender {
   element: ReactNode;
   headData: string;
   headers: Record<string, string>;
+  loader_ms: number;
   template: string;
 }
 
@@ -51,7 +52,9 @@ async function prepareRender(
   ctx: Context,
   root: RootLayout
 ): Promise<PreparedRender | Response> {
+  const loaderStart = Date.now();
   const loaderResult = await runLoaders(route, ctx, root.route);
+  const loader_ms = Date.now() - loaderStart;
 
   if (loaderResult.type === "redirect") {
     return loaderResult.response;
@@ -73,7 +76,7 @@ async function prepareRender(
 
   const element = buildElement(route, componentProps, root.route);
 
-  return { componentProps, element, headData, headers, template };
+  return { componentProps, element, headData, headers, loader_ms, template };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -168,7 +171,6 @@ export async function renderSSR(
   ctx: Context,
   root: RootLayout
 ): Promise<Response> {
-  const loaderStart = Date.now();
   const prepared = await prepareRender(route, ctx, root);
 
   // Redirect — return directly as a Response
@@ -177,7 +179,7 @@ export async function renderSSR(
   }
 
   useLogger().set({
-    furin: { render: "ssr", route: route.pattern, loader_ms: Date.now() - loaderStart },
+    furin: { render: "ssr", route: route.pattern, loader_ms: prepared.loader_ms },
   });
 
   const { componentProps, element, headData, headers, template } = prepared;
