@@ -28,6 +28,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "elysia": "catalog:",
+        "evlog": "^2.10.0",
         "hast": "^1.0.0",
         "hast-util-from-html": "^2.0.3",
         "hastscript": "^9.0.1",
@@ -61,6 +62,25 @@
         "typescript": "^6.0.2",
       },
     },
+    "examples/task-manager": {
+      "name": "@teyik0/furin-example-task-manager",
+      "version": "0.1.0",
+      "dependencies": {
+        "@teyik0/furin": "workspace:*",
+        "bun-plugin-tailwind": "^0.1.2",
+        "elysia": "catalog:",
+        "evlog": "^2.10.0",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
+        "tailwindcss": "^4.2.2",
+        "typescript": "^6.0.2",
+      },
+    },
     "examples/weather": {
       "name": "@teyik0/furin-example-weather",
       "version": "0.1.0",
@@ -82,7 +102,7 @@
     },
     "packages/core": {
       "name": "@teyik0/furin",
-      "version": "0.1.0-alpha.4",
+      "version": "0.1.0-alpha.5",
       "bin": {
         "furin": "./dist/cli/index.js",
       },
@@ -559,6 +579,8 @@
     "@tailwindcss/typography": ["@tailwindcss/typography@0.5.19", "", { "dependencies": { "postcss-selector-parser": "6.0.10" }, "peerDependencies": { "tailwindcss": ">=3.0.0 || insiders || >=4.0.0-alpha.20 || >=4.0.0-beta.1" } }, "sha512-w31dd8HOx3k9vPtcQh5QHP9GwKcgbMp87j58qi6xgiBnFFtKEAgCWnDw4qUT8aHwkCp8bKvb/KGKWWHedP0AAg=="],
 
     "@teyik0/furin": ["@teyik0/furin@workspace:packages/core"],
+
+    "@teyik0/furin-example-task-manager": ["@teyik0/furin-example-task-manager@workspace:examples/task-manager"],
 
     "@teyik0/furin-example-weather": ["@teyik0/furin-example-weather@workspace:examples/weather"],
 
