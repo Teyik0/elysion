@@ -6,6 +6,7 @@ out
 dist
 .build
 .furin
+.temp*
 *.tgz
 
 # code coverage
