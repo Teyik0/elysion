@@ -15,11 +15,11 @@
   "dependencies": {
     "@elysiajs/eden": "^1.4.0",
     "@teyik0/furin": "workspace:*",
-    "drizzle-orm": "^0.44.0",
+    "drizzle-orm": "^0.45.2",
     "bun-plugin-tailwind": "^0.1.2",
     "clsx": "^2.1.1",
     "elysia": "catalog:",
-    "evlog": "^2.10.0",
+    "evlog": "^2.11.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
     "react": "catalog:",

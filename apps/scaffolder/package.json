@@ -1,6 +1,6 @@
 {
-  "name": "@teyik0/create-furin",
-  "version": "0.1.0",
+  "name": "create-furin",
+  "version": "0.2.0",
   "description": "Official scaffolder for Furin — the React meta-framework on Elysia + Bun",
   "type": "module",
   "bin": {
@@ -15,11 +15,12 @@
     "dev": "bun src/index.ts",
     "test": "bun test",
     "test:types": "tsc --noEmit",
+    "tscheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^1.1.0",
-    "ejs": "^3.1.10",
+    "@clack/prompts": "^1.2.0",
+    "ejs": "^5.0.1",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
