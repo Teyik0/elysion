@@ -238,6 +238,9 @@ export async function furin({
     const { writeDevFiles } = await import("./build/hydrate.ts");
     writeDevFiles(routes, { outDir: furinDir, rootLayout: root.path }, cwd);
 
+    const publicDir = resolve(cwd, "public");
+    const publicExists = existsSync(publicDir);
+
     const devApp = new Elysia({ name: instanceName, seed: resolvedPagesDir })
       .use(loggerPlugin)
       .onAfterHandle({ as: "global" }, ({ set }) => {
@@ -247,9 +250,16 @@ export async function furin({
           set.headers["x-furin-revalidate"] = pending.join(",");
         }
       })
-      .get("/favicon.ico", file(join(resolve(cwd, "public"), "favicon.ico")))
       .use(await staticPlugin({ assets: furinDir, prefix: "/_bun_hmr_entry" }))
-      .use(await staticPlugin())
+      .use(
+        publicExists ? await staticPlugin({ assets: publicDir, prefix: "/public" }) : new Elysia()
+      )
+      .get(
+        "/favicon.ico",
+        publicExists
+          ? file(join(publicDir, "favicon.ico"))
+          : () => new Response(null, { status: 404 })
+      )
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root));
