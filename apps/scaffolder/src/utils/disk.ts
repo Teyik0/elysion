@@ -1,4 +1,21 @@
+import { existsSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+
 const WHITESPACE_RE = /\s+/;
+
+function resolveDiskCheckPath(dir: string): string {
+  let target = isAbsolute(dir) ? dir : resolve(process.cwd(), dir);
+
+  while (!existsSync(target)) {
+    const parent = dirname(target);
+    if (parent === target) {
+      return target;
+    }
+    target = parent;
+  }
+
+  return target;
+}
 
 /**
  * Checks that at least `minBytes` of disk space are available at `dir`.
@@ -6,7 +23,7 @@ const WHITESPACE_RE = /\s+/;
  */
 export function checkDiskSpace(dir: string, minBytes: number): boolean {
   try {
-    const target = dir.startsWith("/") ? dir : process.cwd();
+    const target = resolveDiskCheckPath(dir);
     const result = Bun.spawnSync(["df", "-k", target], {
       stderr: "pipe",
       stdout: "pipe",

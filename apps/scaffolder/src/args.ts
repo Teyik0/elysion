@@ -51,7 +51,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
 
     if (arg === "--template" || arg === "-t") {
-      result.template = parseTemplate(argv[index + 1]);
+      result.template = parseTemplateFlagValue(arg, argv[index + 1]);
       skipNext = true;
       continue;
     }
@@ -84,4 +84,12 @@ function parseTemplate(value: string | undefined): TemplateId {
     return value;
   }
   throw new ScaffolderError(`Invalid template "${value ?? ""}". Valid options: simple, full`);
+}
+
+function parseTemplateFlagValue(flag: "--template" | "-t", value: string | undefined): TemplateId {
+  if (value === undefined) {
+    throw new ScaffolderError(`Missing value for ${flag}`);
+  }
+
+  return parseTemplate(value);
 }

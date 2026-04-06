@@ -32,7 +32,7 @@ bun apps/scaffolder/src/index.ts my-app
 
 ## Options
 
-```
+```text
 Usage:
   bun create furin <dir>
   bun create furin <dir> --template <simple|full>
@@ -64,7 +64,7 @@ bun create furin my-app --no-install
 
 ### `simple` — Tailwind CSS + route API
 
-```
+```text
 my-app/
 ├── package.json
 ├── tsconfig.json
@@ -90,7 +90,7 @@ Dépendances : `@teyik0/furin`, `elysia`, `react`, `react-dom`, `bun-plugin-tail
 
 ### `full` — shadcn/ui + Tailwind CSS + routes API
 
-```
+```text
 my-app/
 ├── package.json
 ├── tsconfig.json           ← path alias @/* → src/*

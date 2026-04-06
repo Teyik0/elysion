@@ -1,4 +1,5 @@
 import { Link } from "@teyik0/furin/link";
+import { useState } from "react";
 import type { Board } from "@/api/modules/boards/service";
 import { getBoards } from "@/api/modules/boards/service";
 import { apiClient } from "@/lib/api";
@@ -129,6 +130,7 @@ export default route.page({
 function BoardCard({ board }: { board: Board }) {
   const gradient = avatarColor(board.id);
   const initial = board.name.charAt(0).toUpperCase();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   return (
     <div className="group relative rounded-2xl border border-white/8 bg-white/3 transition-all duration-200 hover:border-violet-500/30 hover:bg-white/5 hover:shadow-violet-500/5 hover:shadow-xl">
@@ -137,14 +139,21 @@ function BoardCard({ board }: { board: Board }) {
         action={`/api/boards/${board.id}`}
         className="absolute top-3 right-3 z-10 opacity-0 transition-opacity group-hover:opacity-100"
         method="post"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          apiClient.api
-            .boards({ boardId: board.id })
-            .delete()
-            .then(() => {
-              window.location.reload();
-            });
+          try {
+            const { error } = await apiClient.api.boards({ boardId: board.id }).delete();
+            if (error) {
+              throw new Error("Could not delete the board. Please try again.");
+            }
+
+            setErrorMessage(null);
+            window.location.reload();
+          } catch (err: unknown) {
+            const error =
+              err instanceof Error ? err.message : "Could not delete the board. Please try again.";
+            setErrorMessage(error);
+          }
         }}
       >
         <button
@@ -169,6 +178,7 @@ function BoardCard({ board }: { board: Board }) {
             <h2 className="truncate font-semibold text-base text-white transition-colors group-hover:text-violet-200">
               {board.name}
             </h2>
+            {errorMessage ? <p className="mt-1 text-red-300 text-xs">{errorMessage}</p> : null}
             <p className="mt-0.5 text-slate-600 text-xs">
               Created{" "}
               {new Date(board.createdAt).toLocaleDateString("en-US", {

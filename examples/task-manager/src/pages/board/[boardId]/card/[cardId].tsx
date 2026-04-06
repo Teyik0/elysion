@@ -1,5 +1,6 @@
 import { Link, useRouter } from "@teyik0/furin/link";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { getBoard } from "@/api/modules/boards/service";
 import { getCard } from "@/api/modules/cards/service";
 import { apiClient } from "@/lib/api";
@@ -36,6 +37,7 @@ export default route.page({
     meta: [{ title: `${card.title} | ${boardName} | Task Manager` }],
   }),
   component: ({ params, card, boardName, renderedAt }) => {
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const router = useRouter();
 
     return (
@@ -88,13 +90,33 @@ export default route.page({
               onSubmit={async (e) => {
                 e.preventDefault();
                 const data = new FormData(e.currentTarget);
-                await apiClient.api.cards({ id: card.id }).patch({
-                  title: data.get("title") as string,
-                  description: data.get("description") as string,
-                });
-                await router.navigate(`/board/${params.boardId}`);
+                try {
+                  const { error } = await apiClient.api.cards({ id: card.id }).patch({
+                    title: data.get("title") as string,
+                    description: data.get("description") as string,
+                  });
+
+                  if (error) {
+                    throw new Error("Could not save the card. Please try again.");
+                  }
+
+                  setErrorMessage(null);
+                  await router.navigate(`/board/${params.boardId}`);
+                } catch (err: unknown) {
+                  const error =
+                    err instanceof Error
+                      ? err.message
+                      : "Could not delete the card. Please try again.";
+                  setErrorMessage(error);
+                }
               }}
             >
+              {errorMessage ? (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
+                  {errorMessage}
+                </div>
+              ) : null}
+
               <div>
                 <label
                   className="mb-1.5 block font-semibold text-slate-500 text-xs uppercase tracking-wider"
@@ -133,8 +155,21 @@ export default route.page({
                 <button
                   className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-2.5 font-medium text-red-400 text-sm transition-all hover:border-red-500/40 hover:bg-red-500/15 active:scale-[0.98]"
                   onClick={async () => {
-                    await apiClient.api.cards({ id: card.id }).delete();
-                    await router.navigate(`/board/${params.boardId}`);
+                    try {
+                      const { error } = await apiClient.api.cards({ id: card.id }).delete();
+                      if (error) {
+                        throw new Error("Could not delete the card. Please try again.");
+                      }
+
+                      setErrorMessage(null);
+                      await router.navigate(`/board/${params.boardId}`);
+                    } catch (err: unknown) {
+                      const error =
+                        err instanceof Error
+                          ? err.message
+                          : "Could not delete the card. Please try again.";
+                      setErrorMessage(error);
+                    }
                   }}
                   type="button"
                 >

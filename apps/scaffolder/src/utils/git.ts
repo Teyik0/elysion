@@ -1,29 +1,62 @@
 /**
  * Runs a git command synchronously in the given directory.
- * Returns true if the command succeeded, false otherwise.
+ * Returns whether the command succeeded and any captured stderr output.
  */
-function runGit(cwd: string, args: string[]): boolean {
+function runGit(cwd: string, args: string[]): { ok: boolean; stderr: string } {
   const result = Bun.spawnSync(["git", ...args], {
     cwd,
     stderr: "pipe",
     stdout: "pipe",
   });
-  return result.exitCode === 0;
+
+  return {
+    ok: result.exitCode === 0,
+    stderr: new TextDecoder().decode(result.stderr).trim(),
+  };
 }
 
 /**
  * Initializes a new git repository and creates an initial commit.
- * Returns true if all git operations succeeded.
+ * Returns whether the repository was initialized and whether the initial
+ * commit succeeded.
  */
-export function initGitRepo(targetDir: string): boolean {
-  if (!runGit(targetDir, ["init"])) {
-    return false;
+export interface GitInitResult {
+  committed: boolean;
+  initialized: boolean;
+  message?: string;
+}
+
+export function initGitRepo(targetDir: string): GitInitResult {
+  if (!runGit(targetDir, ["init"]).ok) {
+    return { initialized: false, committed: false };
   }
-  if (!runGit(targetDir, ["add", "-A"])) {
-    return false;
+  if (!runGit(targetDir, ["add", "-A"]).ok) {
+    return { initialized: true, committed: false };
   }
-  if (!runGit(targetDir, ["commit", "-m", "chore: initial scaffold", "--allow-empty"])) {
-    return false;
+
+  const commitResult = runGit(targetDir, [
+    "commit",
+    "-m",
+    "chore: initial scaffold",
+    "--allow-empty",
+  ]);
+
+  if (!commitResult.ok) {
+    const missingIdentity =
+      commitResult.stderr.includes("Author identity unknown") ||
+      commitResult.stderr.includes("unable to auto-detect email address");
+
+    return {
+      initialized: true,
+      committed: false,
+      message: missingIdentity
+        ? "Initial commit skipped: configure git user.name and user.email to enable automatic commits."
+        : commitResult.stderr || undefined,
+    };
   }
-  return true;
+
+  return {
+    initialized: true,
+    committed: true,
+  };
 }

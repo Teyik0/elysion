@@ -25,12 +25,49 @@ interface KanbanProps {
   initialCards: KanbanCard[];
 }
 
+function moveCard(
+  cards: KanbanCard[],
+  cardId: string,
+  nextColumn: ColumnType,
+  before: string
+): { nextCards: KanbanCard[]; previousColumn: ColumnType } | null {
+  let nextCards = [...cards];
+  let cardToTransfer = nextCards.find((card) => card.id === cardId);
+  if (!cardToTransfer) {
+    return null;
+  }
+
+  const previousColumn = cardToTransfer.column;
+  cardToTransfer = { ...cardToTransfer, column: nextColumn };
+  nextCards = nextCards.filter((card) => card.id !== cardId);
+
+  if (before === "-1") {
+    nextCards.push(cardToTransfer);
+    return { nextCards, previousColumn };
+  }
+
+  const insertAtIndex = nextCards.findIndex((card) => card.id === before);
+  if (insertAtIndex === -1) {
+    return null;
+  }
+
+  nextCards.splice(insertAtIndex, 0, cardToTransfer);
+  return { nextCards, previousColumn };
+}
+
 export const Kanban = ({ initialCards, boardId }: KanbanProps) => {
   const [cards, setCards] = useState<KanbanCard[]>(initialCards);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   return (
     <>
+      {errorMessage ? (
+        <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
+          {errorMessage}
+        </div>
+      ) : null}
+
       <div className="flex h-full w-full gap-4 overflow-x-auto p-6">
         <Column
           boardId={boardId}
@@ -38,6 +75,7 @@ export const Kanban = ({ initialCards, boardId }: KanbanProps) => {
           column="backlog"
           headingColor="text-neutral-400"
           setCards={setCards}
+          setErrorMessage={setErrorMessage}
           setIsDragging={setIsDragging}
           title="Backlog"
         />
@@ -47,6 +85,7 @@ export const Kanban = ({ initialCards, boardId }: KanbanProps) => {
           column="todo"
           headingColor="text-yellow-300"
           setCards={setCards}
+          setErrorMessage={setErrorMessage}
           setIsDragging={setIsDragging}
           title="TODO"
         />
@@ -56,6 +95,7 @@ export const Kanban = ({ initialCards, boardId }: KanbanProps) => {
           column="doing"
           headingColor="text-blue-300"
           setCards={setCards}
+          setErrorMessage={setErrorMessage}
           setIsDragging={setIsDragging}
           title="In Progress"
         />
@@ -65,13 +105,20 @@ export const Kanban = ({ initialCards, boardId }: KanbanProps) => {
           column="done"
           headingColor="text-emerald-300"
           setCards={setCards}
+          setErrorMessage={setErrorMessage}
           setIsDragging={setIsDragging}
           title="Complete"
         />
       </div>
 
       {/* Floating burn barrel — only visible while dragging */}
-      <BurnBarrel isDragging={isDragging} setCards={setCards} setIsDragging={setIsDragging} />
+      <BurnBarrel
+        cards={cards}
+        isDragging={isDragging}
+        setCards={setCards}
+        setErrorMessage={setErrorMessage}
+        setIsDragging={setIsDragging}
+      />
     </>
   );
 };
@@ -86,6 +133,7 @@ interface ColumnProps {
   column: ColumnType;
   headingColor: string;
   setCards: Dispatch<SetStateAction<KanbanCard[]>>;
+  setErrorMessage: Dispatch<SetStateAction<string | null>>;
   setIsDragging: Dispatch<SetStateAction<boolean>>;
   title: string;
 }
@@ -95,6 +143,7 @@ const Column = ({
   headingColor,
   cards,
   column,
+  setErrorMessage,
   setCards,
   boardId,
   setIsDragging,
@@ -106,7 +155,7 @@ const Column = ({
     setIsDragging(true);
   };
 
-  const handleDragEnd = (e: DragEvent) => {
+  const handleDragEnd = async (e: DragEvent) => {
     const cardId = e.dataTransfer.getData("cardId");
 
     setActive(false);
@@ -115,36 +164,29 @@ const Column = ({
 
     const indicators = getIndicators();
     const { element } = getNearestIndicator(e, indicators);
+    if (!element) {
+      return;
+    }
 
     const before = element.dataset.before ?? "-1";
+    if (before === cardId) {
+      return;
+    }
 
-    if (before !== cardId) {
-      let copy = [...cards];
-      let cardToTransfer = copy.find((c) => c.id === cardId);
-      if (!cardToTransfer) {
-        return;
-      }
+    const movedCard = moveCard(cards, cardId, column, before);
+    if (!movedCard) {
+      return;
+    }
 
-      const prevColumn = cardToTransfer.column;
-      cardToTransfer = { ...cardToTransfer, column };
-      copy = copy.filter((c) => c.id !== cardId);
+    const previousCards = cards;
+    setCards(movedCard.nextCards);
+    setErrorMessage(null);
 
-      const moveToBack = before === "-1";
-      if (moveToBack) {
-        copy.push(cardToTransfer);
-      } else {
-        const insertAtIndex = copy.findIndex((el) => el.id === before);
-        if (insertAtIndex === -1) {
-          return;
-        }
-        copy.splice(insertAtIndex, 0, cardToTransfer);
-      }
-
-      setCards(copy);
-
-      // Sync to server only if column changed
-      if (prevColumn !== column) {
-        apiClient.api.cards({ id: cardId }).patch({ column });
+    if (movedCard.previousColumn !== column) {
+      const { error } = await apiClient.api.cards({ id: cardId }).patch({ column });
+      if (error) {
+        setCards(previousCards);
+        setErrorMessage("Could not move the card. The board has been restored.");
       }
     }
   };
@@ -166,10 +208,21 @@ const Column = ({
     const indicators = getIndicators();
     clearHighlights(indicators);
     const el = getNearestIndicator(e, indicators);
+    if (!el.element) {
+      return;
+    }
     el.element.style.opacity = "1";
   };
 
   const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
+    const lastIndicator = indicators.at(-1);
+    if (!lastIndicator) {
+      return {
+        offset: Number.NEGATIVE_INFINITY,
+        element: null,
+      };
+    }
+
     const DISTANCE_OFFSET = 50;
     return indicators.reduce(
       (closest, child) => {
@@ -182,7 +235,7 @@ const Column = ({
       },
       {
         offset: Number.NEGATIVE_INFINITY,
-        element: indicators.at(-1) as HTMLElement,
+        element: lastIndicator,
       }
     );
   };
@@ -300,12 +353,20 @@ const DropIndicator = ({ beforeId, column }: DropIndicatorProps) => {
 // ---------------------------------------------------------------------------
 
 interface BurnBarrelProps {
+  cards: KanbanCard[];
   isDragging: boolean;
   setCards: Dispatch<SetStateAction<KanbanCard[]>>;
+  setErrorMessage: Dispatch<SetStateAction<string | null>>;
   setIsDragging: Dispatch<SetStateAction<boolean>>;
 }
 
-const BurnBarrel = ({ setCards, isDragging, setIsDragging }: BurnBarrelProps) => {
+const BurnBarrel = ({
+  cards,
+  setCards,
+  isDragging,
+  setErrorMessage,
+  setIsDragging,
+}: BurnBarrelProps) => {
   const [active, setActive] = useState(false);
 
   const handleDragOver = (e: DragEvent) => {
@@ -317,12 +378,23 @@ const BurnBarrel = ({ setCards, isDragging, setIsDragging }: BurnBarrelProps) =>
     setActive(false);
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     const cardId = e.dataTransfer.getData("cardId");
-    setCards((pv) => pv.filter((c) => c.id !== cardId));
     setActive(false);
     setIsDragging(false);
-    apiClient.api.cards({ id: cardId }).delete();
+
+    if (!(cardId && cards.some((card) => card.id === cardId))) {
+      return;
+    }
+
+    const previousCards = cards;
+    setCards((pv) => pv.filter((c) => c.id !== cardId));
+    setErrorMessage(null);
+    const { error } = await apiClient.api.cards({ id: cardId }).delete();
+    if (error) {
+      setCards(previousCards);
+      setErrorMessage("Could not delete the card. It has been restored.");
+    }
   };
 
   return (

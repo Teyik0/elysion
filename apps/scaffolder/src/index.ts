@@ -10,20 +10,26 @@ if (typeof Bun === "undefined") {
   process.exit(1);
 }
 
-const args = parseArgs(process.argv.slice(2));
-
-if (args.help) {
-  printHelp();
-  process.exit(0);
-}
-
-if (args.version) {
-  const { getPackageCatalog } = await import("./package-catalog.ts");
-  console.log(getPackageCatalog()["@teyik0/furin"]);
-  process.exit(0);
-}
-
 try {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (args.version) {
+    const { getPackageCatalog } = await import("./package-catalog.ts");
+    const catalog = getPackageCatalog();
+    const pkg = catalog["@teyik0/furin"];
+    if (pkg === undefined) {
+      cancel("package not found in catalog");
+      process.exit(1);
+    }
+    console.log(pkg);
+    process.exit(0);
+  }
+
   await run(args);
 } catch (error) {
   if (error instanceof ScaffolderError) {

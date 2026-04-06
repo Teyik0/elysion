@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 
 const SCAFFOLDER_ROOT = resolve(import.meta.dir, "..");
@@ -22,32 +22,28 @@ interface ManifestRegistry {
   version: number;
 }
 
-describe("manifest.json integrity", () => {
-  let registry: ManifestRegistry;
+let registry: ManifestRegistry;
 
-  it("parses manifest.json without errors", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    registry = JSON.parse(content) as ManifestRegistry;
+beforeAll(async () => {
+  const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
+  const content = await Bun.file(manifestPath).text();
+  registry = JSON.parse(content) as ManifestRegistry;
+});
+
+describe("manifest.json integrity", () => {
+  it("parses manifest.json without errors", () => {
     expect(registry.version).toBe(2);
     expect(Array.isArray(registry.templates)).toBe(true);
   });
 
-  it("contains exactly 2 templates: simple and full", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    registry = JSON.parse(content) as ManifestRegistry;
+  it("contains exactly 2 templates: simple and full", () => {
     const ids = registry.templates.map((t) => t.id);
     expect(ids).toContain("simple");
     expect(ids).toContain("full");
     expect(ids).toHaveLength(2);
   });
 
-  it("ships a default public/favicon.ico for each template", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    registry = JSON.parse(content) as ManifestRegistry;
-
+  it("ships a default public/favicon.ico for each template", () => {
     for (const template of registry.templates) {
       expect(template.files.some((file) => file.dest === "public/favicon.ico")).toBe(true);
     }
@@ -56,9 +52,6 @@ describe("manifest.json integrity", () => {
 
 describe("template files — all src paths exist on disk", () => {
   it("all simple template files exist", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    const registry = JSON.parse(content) as ManifestRegistry;
     const simpleTemplate = registry.templates.find((t) => t.id === "simple");
     expect(simpleTemplate).toBeDefined();
     if (!simpleTemplate) {
@@ -73,9 +66,6 @@ describe("template files — all src paths exist on disk", () => {
   });
 
   it("all full template files exist", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    const registry = JSON.parse(content) as ManifestRegistry;
     const fullTemplate = registry.templates.find((t) => t.id === "full");
     expect(fullTemplate).toBeDefined();
     if (!fullTemplate) {
@@ -92,10 +82,6 @@ describe("template files — all src paths exist on disk", () => {
 
 describe("EJS files have valid EJS syntax", () => {
   it("no .ejs file contains unclosed tags", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    const registry = JSON.parse(content) as ManifestRegistry;
-
     for (const template of registry.templates) {
       for (const file of template.files) {
         if (file.kind !== "ejs") {
@@ -116,10 +102,6 @@ describe("EJS files have valid EJS syntax", () => {
 
 describe("static files — no EJS-like tokens", () => {
   it("static files do not contain raw {{TOKEN}} strings", async () => {
-    const manifestPath = resolve(TEMPLATES_DIR, "manifest.json");
-    const content = await Bun.file(manifestPath).text();
-    const registry = JSON.parse(content) as ManifestRegistry;
-
     for (const template of registry.templates) {
       for (const file of template.files) {
         if (file.kind !== "static") {

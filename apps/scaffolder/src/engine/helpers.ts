@@ -1,3 +1,5 @@
+import { ScaffolderError } from "../errors.ts";
+
 /**
  * Converts any string to kebab-case.
  * "My Cool App" → "my-cool-app"
@@ -41,7 +43,7 @@ export function toCamelCase(input: string): string {
 export function normalizePackageName(input: string): string {
   const normalized = toKebabCase(input);
   if (!normalized) {
-    throw new Error(`Cannot derive a valid package name from "${input}"`);
+    throw new ScaffolderError(`Cannot derive a valid package name from "${input}"`);
   }
   return normalized;
 }

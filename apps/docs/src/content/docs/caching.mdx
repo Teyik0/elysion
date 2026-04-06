@@ -132,7 +132,7 @@ The client-side router (`RouterProvider`) intercepts **all** `window.fetch` call
 
 ## Stale-deploy detection
 
-Each production build has a **build ID** — a 12-hex-char hash derived from the content-hashed client chunk filenames. It is:
+Each production build has a **build ID** — a 12-hex-char hash derived from the client assets plus server-rendered build inputs. It is:
 
 - Injected into `index.html` as `<meta name="furin-build-id" content="abc123ef0011">`
 - Emitted on every production response as `X-Furin-Build-ID: abc123ef0011`
@@ -141,7 +141,7 @@ When the user navigates with the SPA router:
 
 1. The client fetches the new page HTML
 2. It compares `X-Furin-Build-ID` from the response with the meta tag value loaded at startup
-3. If they differ → the app bundle has changed → the router triggers a **full page reload** instead of an SPA transition
+3. If they differ → the app bundle has changed → the router triggers a **full-page reload** instead of an SPA transition
 
 This prevents users who load the old JS bundle from trying to mount components from a newer server-rendered page.
 

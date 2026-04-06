@@ -88,4 +88,8 @@ describe("parseArgs", () => {
   it("throws on invalid template name", () => {
     expect(() => parseArgs(["--template", "unknown"])).toThrow();
   });
+
+  it("throws a clear error when --template is missing a value", () => {
+    expect(() => parseArgs(["--template"])).toThrow("Missing value for --template");
+  });
 });

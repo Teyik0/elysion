@@ -2,9 +2,12 @@ import { resolve } from "node:path";
 import { cancel, isCancel, text } from "@clack/prompts";
 import { toKebabCase, toPascalCase } from "../../engine/helpers.ts";
 import { ScaffolderError } from "../../errors.ts";
-import { getPackageCatalog } from "../../package-catalog.ts";
 import { checkDiskSpace } from "../../utils/disk.ts";
-import { ensureTargetDirIsSafe } from "../../utils/project-name.ts";
+import {
+  ensureTargetDirIsSafe,
+  getProjectNameValidationError,
+  validateProjectName,
+} from "../../utils/project-name.ts";
 import type { PipelineContext } from "../context.ts";
 
 const MIN_DISK_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -16,15 +19,7 @@ export async function stage1Analysis(ctx: PipelineContext): Promise<void> {
       message: "What is the project name?",
       placeholder: "my-furin-app",
       validate(value) {
-        if (!value?.trim()) {
-          return "Project name is required.";
-        }
-        if (value.includes("/")) {
-          return "Name cannot contain slashes.";
-        }
-        if (value.length > 214) {
-          return "Name is too long (npm limit: 214 chars).";
-        }
+        return getProjectNameValidationError(value);
       },
     });
 
@@ -32,9 +27,10 @@ export async function stage1Analysis(ctx: PipelineContext): Promise<void> {
       cancel("Scaffolding cancelled.");
       process.exit(0);
     }
-
-    ctx.projectName = (name as string).trim();
+    ctx.projectName = name as string;
   }
+
+  ctx.projectName = validateProjectName(ctx.projectName);
 
   // ── Derive variants ────────────────────────────────────────────────────
   ctx.projectNameKebab = toKebabCase(ctx.projectName);
@@ -53,8 +49,4 @@ export async function stage1Analysis(ctx: PipelineContext): Promise<void> {
   if (!ctx.diskSpaceOk) {
     throw new ScaffolderError("Insufficient disk space. Need at least 50 MB.");
   }
-
-  // ── Furin version from catalog ─────────────────────────────────────────
-  const catalog = getPackageCatalog();
-  ctx.furinVersion = catalog["@teyik0/furin"];
 }

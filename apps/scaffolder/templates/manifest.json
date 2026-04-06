@@ -5,7 +5,7 @@
     {
       "id": "simple",
       "label": "Simple",
-      "description": "Tailwind CSS + une route API",
+      "description": "Tailwind CSS + an API route",
       "features": ["tailwind"],
       "dependencies": {
         "@teyik0/furin": "{{FURIN_VERSION}}",
@@ -84,7 +84,7 @@
     {
       "id": "full",
       "label": "Full (shadcn/ui)",
-      "description": "shadcn/ui + Tailwind + routes API",
+      "description": "shadcn/ui + Tailwind + API routes",
       "features": ["tailwind", "shadcn"],
       "dependencies": {
         "@teyik0/furin": "{{FURIN_VERSION}}",

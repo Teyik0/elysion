@@ -28,6 +28,18 @@ export function stage7Refinement(ctx: PipelineContext): void {
   // ── git init ───────────────────────────────────────────────────────────
   const s = spinner();
   s.start("Initializing git repository…");
-  ctx.gitInitRan = initGitRepo(ctx.targetDir);
-  s.stop(ctx.gitInitRan ? "Git repository initialized." : "Skipped git init (git not available).");
+  const gitInit = initGitRepo(ctx.targetDir);
+  ctx.gitInitRan = gitInit.initialized;
+  let gitMessage = "Skipped git init (git not available).";
+  if (gitInit.initialized) {
+    if (gitInit.committed) {
+      gitMessage = "Git repository initialized.";
+    } else if (gitInit.message) {
+      gitMessage = `Git repository initialized (${gitInit.message})`;
+    } else {
+      gitMessage = "Git repository initialized (initial commit skipped).";
+    }
+  }
+
+  s.stop(gitMessage);
 }

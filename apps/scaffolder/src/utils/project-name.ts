@@ -3,6 +3,32 @@ import { basename, resolve } from "node:path";
 import { ScaffolderError } from "../errors.ts";
 
 const IGNORED_DIRECTORY_ENTRIES = new Set([".DS_Store", "Thumbs.db"]);
+const PATH_SEPARATOR_RE = /[\\/]/;
+
+export function getProjectNameValidationError(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    return "Project name is required.";
+  }
+
+  if (PATH_SEPARATOR_RE.test(normalized)) {
+    return "Name cannot contain slashes.";
+  }
+
+  if (normalized.length > 214) {
+    return "Name is too long (npm limit: 214 chars).";
+  }
+}
+
+export function validateProjectName(value: string): string {
+  const error = getProjectNameValidationError(value);
+  if (error) {
+    throw new ScaffolderError(error);
+  }
+
+  return value.trim();
+}
 
 export function resolveTargetDir(input: string): string {
   if (!input.trim()) {

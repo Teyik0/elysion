@@ -1,14 +1,11 @@
+import { getHelloPayload } from "@/api/hello";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { route } from "./root";
 
 export default route.page({
-  loader: async ({ request }) => {
-    const base = new URL(request.url).origin;
-    const res = await fetch(`${base}/api/hello`);
-    return (await res.json()) as { message: string; source: string };
-  },
+  loader: () => getHelloPayload(),
   component: ({ message, source }) => {
     return (
       <div className="w-full space-y-8">
