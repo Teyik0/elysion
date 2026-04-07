@@ -41,4 +41,4 @@ PLAN*.md
 generated**
 
 **/*.db*
-.tmp/**
+**/.tmp/**
