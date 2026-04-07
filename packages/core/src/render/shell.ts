@@ -31,7 +31,11 @@ export function escapeHtml(str: string): string {
 }
 
 export function safeJson(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 export function renderAttrs(obj: Record<string, string | undefined>): string {
@@ -111,12 +115,23 @@ export function buildHeadInjection(headData: HeadOptions | undefined): string {
   return parts.length > 0 ? `\n  ${parts.join("\n  ")}\n` : "";
 }
 
+/**
+ * Inline script that synchronously applies the persisted theme class to <html>
+ * before the first paint, preventing a flash of unstyled content (FOUC).
+ * Reads the `furin-theme` key from localStorage; defaults to "dark" on error.
+ */
+const THEME_INIT_SCRIPT =
+  `<script>try{var __t=localStorage.getItem("furin-theme");` +
+  `document.documentElement.classList.add(__t==="light"?"light":"dark")}` +
+  `catch(e){document.documentElement.classList.add("dark")}</script>`;
+
 export function generateIndexHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    ${THEME_INIT_SCRIPT}
     <!--ssr-head-->
   </head>
   <body>
@@ -131,13 +146,21 @@ export function generateIndexHtml(): string {
  * Generates the production SSR template (index.html) with hashed asset paths.
  * Called after Bun.build() completes so we can inject the correct entry chunk
  * and CSS paths derived from result.outputs.
+ *
+ * @param buildId - Short hash identifying this specific build. Injected as a
+ *   `<meta name="furin-build-id">` tag so the client can detect stale deploys.
  */
-export function generateProdIndexHtml(entryChunk: string | undefined, cssChunks: string[]): string {
+export function generateProdIndexHtml(
+  entryChunk: string,
+  cssChunks: string[],
+  buildId?: string
+): string {
   const cssLinks = cssChunks
     .map((c) => `    <link rel="stylesheet" crossorigin href="${c}">`)
     .join("\n");
-  const scriptTag = entryChunk
-    ? `<script type="module" crossorigin src="${entryChunk}"></script>`
+  const scriptTag = `<script type="module" crossorigin src="${entryChunk}"></script>`;
+  const buildIdMeta = buildId
+    ? `    <meta name="furin-build-id" content="${escapeHtml(buildId)}">\n`
     : "";
 
   return `<!DOCTYPE html>
@@ -145,7 +168,8 @@ export function generateProdIndexHtml(entryChunk: string | undefined, cssChunks:
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-${cssLinks ? `${cssLinks}\n` : ""}    <!--ssr-head-->
+    ${THEME_INIT_SCRIPT}
+${buildIdMeta}${cssLinks ? `${cssLinks}\n` : ""}    <!--ssr-head-->
   </head>
   <body>
     <div id="root"><!--ssr-outlet--></div>

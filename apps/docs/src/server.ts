@@ -3,8 +3,9 @@ import { Elysia } from "elysia";
 import _llmsTxt from "../public/llms.txt" with { type: "file" };
 import _llmsFullTxt from "../public/llms-full.txt" with { type: "file" };
 import mdxPlugin from "./lib/bun-mdx-plugin.ts";
-import { getDocByPath, getDocSourceText } from "./lib/docs";
+import { getDocByPath } from "./lib/docs";
 import { searchDocs } from "./lib/docs-search";
+import { getDocSourceText } from "./lib/docs-server";
 import { stripMdxToMarkdown } from "./lib/strip-mdx";
 
 const globalDocsRuntime = globalThis as typeof globalThis & {

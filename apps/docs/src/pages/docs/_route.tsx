@@ -1,7 +1,7 @@
 "use client";
 
 import { createRoute } from "@teyik0/furin/client";
-import { Link, useRouter } from "@teyik0/furin/link";
+import { Link } from "@teyik0/furin/link";
 import { DocsMobileNav } from "@/components/docs-mobile-nav";
 import { DocsToc } from "@/components/docs-toc";
 import { GiscusComments } from "@/components/giscus-comments";
@@ -11,9 +11,10 @@ import { route as rootRoute } from "../root";
 export const route = createRoute({
   parent: rootRoute,
   mode: "ssg",
-  layout: ({ children }) => {
-    const { currentHref } = useRouter();
-    const pathname = new URL(currentHref, "http://x").pathname;
+  layout: ({ children, path }) => {
+    // `path` is injected by Furin from componentProps (ctx.path server-side,
+    // state.data.path client-side) — always correct on SSR and SPA navigation.
+    const pathname = typeof path === "string" ? path : "/";
 
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

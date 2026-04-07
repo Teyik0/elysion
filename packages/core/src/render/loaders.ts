@@ -23,9 +23,13 @@ export async function runLoaders(
     const deps: LoaderDeps = (routeRef) =>
       loaderMap.get(routeRef as RuntimeRoute) ?? Promise.resolve({});
 
-    const rootData: Record<string, unknown> = rootLayout.loader
-      ? ((await rootLayout.loader({ ...ctx }, deps)) ?? {})
-      : {};
+    // Run root loader and store its result in loaderMap so that
+    // deps(rootRoute) returns the actual root data (not empty {}).
+    const rootPromise: Promise<Record<string, unknown>> = rootLayout.loader
+      ? Promise.resolve(rootLayout.loader({ ...ctx }, deps)).then((r) => r ?? {})
+      : Promise.resolve({});
+    loaderMap.set(rootLayout, rootPromise);
+    const rootData = await rootPromise;
     const ctxWithRoot = { ...ctx, ...rootData };
 
     // Step 2: launch all ancestor + page loaders immediately in parallel.
@@ -52,8 +56,9 @@ export async function runLoaders(
       : Promise.resolve({});
 
     // Step 3: await all in parallel, then flat-merge results.
+    // loaderMap already contains the root promise, so we don't merge rootData separately.
     const results = await Promise.all([...loaderMap.values(), pagePromise]);
-    const data = Object.assign({}, rootData, ...results);
+    const data = Object.assign({}, ...results);
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
 

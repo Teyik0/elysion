@@ -16,9 +16,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
-    const stored = localStorage.getItem("furin-theme") as Theme | null;
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
+    try {
+      const stored = localStorage.getItem("furin-theme") as Theme | null;
+      if (stored === "light" || stored === "dark") {
+        setTheme(stored);
+      }
+    } catch {
+      // localStorage unavailable (private mode, sandboxed iframe, etc.) — keep default
     }
   }, []);
 
@@ -33,7 +37,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => {
     setTheme((t) => {
       const next = t === "dark" ? "light" : "dark";
-      localStorage.setItem("furin-theme", next);
+      try {
+        localStorage.setItem("furin-theme", next);
+      } catch {
+        // ignore
+      }
       return next;
     });
   };

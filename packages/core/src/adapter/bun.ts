@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
@@ -6,7 +6,56 @@ import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
+import { generateProdIndexHtml } from "../render/shell.ts";
 import type { ResolvedRoute } from "../router.ts";
+
+const BUILD_ID_INPUT_PATHS = [
+  resolve(import.meta.dir, "../build/compile-entry.ts"),
+  resolve(import.meta.dir, "../build/entry-template.ts"),
+  resolve(import.meta.dir, "../build/server-routes-entry.ts"),
+  resolve(import.meta.dir, "../render/index.ts"),
+  resolve(import.meta.dir, "../render/shell.ts"),
+  resolve(import.meta.dir, "../router.ts"),
+];
+
+async function createBuildFingerprint(
+  entryChunk: string,
+  cssChunks: string[],
+  routes: ResolvedRoute[],
+  rootPath: string,
+  serverEntry: string | null
+): Promise<string> {
+  const fingerprintPaths = new Set<string>([rootPath, ...routes.map((route) => route.path)]);
+  if (serverEntry) {
+    fingerprintPaths.add(serverEntry);
+  }
+  for (const path of BUILD_ID_INPUT_PATHS) {
+    if (!existsSync(path)) {
+      // A missing framework source file would silently produce an empty-string
+      // contribution to the fingerprint, making the build ID unreliable.
+      console.warn(
+        `[furin] Warning: build fingerprint input "${toPosixPath(path)}" is missing — ` +
+          "the generated build ID may not reflect all framework changes."
+      );
+    }
+    fingerprintPaths.add(path);
+  }
+
+  const fileParts = await Promise.all(
+    [...fingerprintPaths].sort().map(async (path) => {
+      const content = existsSync(path) ? await Bun.file(path).text() : "";
+      return `${toPosixPath(path)}:${content}`;
+    })
+  );
+
+  const routeParts = routes
+    .map((route) =>
+      JSON.stringify({ mode: route.mode, path: toPosixPath(route.path), pattern: route.pattern })
+    )
+    .sort();
+
+  return [entryChunk, ...[...cssChunks].sort(), ...routeParts, ...fileParts].join("\n");
+}
 
 export async function buildBunTarget(
   routes: ResolvedRoute[],
@@ -30,11 +79,29 @@ export async function buildBunTarget(
   rmSync(targetDir, { force: true, recursive: true });
   ensureDir(targetDir);
 
-  await buildClient(routes, {
+  const { entryChunk, cssChunks } = await buildClient(routes, {
     outDir: targetDir,
     rootLayout: rootPath,
     plugins: options.plugins,
   });
+
+  const buildFingerprint = await createBuildFingerprint(
+    entryChunk,
+    cssChunks,
+    routes,
+    rootPath,
+    serverEntry
+  );
+  const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
+  targetManifest.buildId = buildId;
+
+  // Write index.html with the buildId meta tag injected so the client can
+  // detect stale deploys via X-Furin-Build-ID header comparison.
+  const clientDir = join(targetDir, "client");
+  writeFileSync(
+    join(clientDir, "index.html"),
+    generateProdIndexHtml(entryChunk, cssChunks, buildId)
+  );
 
   const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
@@ -49,6 +116,7 @@ export async function buildBunTarget(
     const outfile = join(targetDir, "server");
 
     const entryPath = generateCompileEntry({
+      buildId,
       rootPath,
       routes: routeManifest,
       serverEntry,
@@ -77,6 +145,7 @@ export async function buildBunTarget(
   } else if (serverEntry) {
     // Disk mode: generate server.ts then bundle it into self-contained server.js
     const entryPath = generateServerRoutesEntry({
+      buildId,
       rootPath,
       routes: routeManifest,
       serverEntry,
@@ -99,12 +168,14 @@ export async function buildBunTarget(
   }
 
   // Clean up build intermediates — no longer needed once the bundle/binary is built.
+  // NOTE: "index.html" is intentionally absent — generateProdIndexHtml writes
+  // the final artifact to client/index.html (inside targetDir/client/), not to
+  // targetDir directly, so there is nothing to remove here.
   for (const file of [
     "_compile-entry.ts",
     "_compile-entry.js.map",
     "server.ts", // disk mode intermediate
     "_hydrate.tsx",
-    "index.html",
   ]) {
     rmSync(join(targetDir, file), { force: true });
   }

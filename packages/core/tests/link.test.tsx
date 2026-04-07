@@ -11,7 +11,14 @@ import type {
   RouterContextValue,
   RouterProviderProps,
 } from "../src/link";
-import { buildHref, buildPageElement, Link, shouldRefetch } from "../src/link";
+import {
+  applyRevalidateHeader,
+  buildHref,
+  buildPageElement,
+  Link,
+  shouldAutoRefreshPath,
+  shouldRefetch,
+} from "../src/link";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,31 +40,36 @@ function makeMatch(
   };
 }
 
-function makeCacheEntry(msSinceCreated: number): CacheEntry {
-  return { createdAt: Date.now() - msSinceCreated, promise: Promise.resolve(null) };
+function makeCacheEntry(msSinceCreated: number, staleTime: number): CacheEntry {
+  return { createdAt: Date.now() - msSinceCreated, promise: Promise.resolve(null), staleTime };
 }
 
 // ── shouldRefetch ──────────────────────────────────────────────────────────────
 
 describe("shouldRefetch", () => {
   test("returns false when entry is fresh", () => {
-    expect(shouldRefetch(makeCacheEntry(100), 1000)).toBe(false);
+    expect(shouldRefetch(makeCacheEntry(100, 1000))).toBe(false);
   });
 
   test("returns true when entry has expired", () => {
-    expect(shouldRefetch(makeCacheEntry(2000), 1000)).toBe(true);
+    expect(shouldRefetch(makeCacheEntry(2000, 1000))).toBe(true);
   });
 
   test("returns true at the exact staleTime boundary (strictly greater-than)", () => {
-    expect(shouldRefetch(makeCacheEntry(1001), 1000)).toBe(true);
+    expect(shouldRefetch(makeCacheEntry(1001, 1000))).toBe(true);
   });
 
   test("staleTime=0 — fresh entry does not force refetch (elapsed ≈ 0, not > 0)", () => {
-    expect(shouldRefetch(makeCacheEntry(0), 0)).toBe(false);
+    expect(shouldRefetch(makeCacheEntry(0, 0))).toBe(false);
   });
 
   test("very large staleTime — never refetches", () => {
-    expect(shouldRefetch(makeCacheEntry(999), Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(shouldRefetch(makeCacheEntry(999, Number.MAX_SAFE_INTEGER))).toBe(false);
+  });
+
+  test("uses the staleTime stored on the cache entry", () => {
+    expect(shouldRefetch(makeCacheEntry(200, 100))).toBe(true);
+    expect(shouldRefetch(makeCacheEntry(200, 1000))).toBe(false);
   });
 });
 
@@ -320,11 +332,23 @@ describe("types", () => {
   test("RouterContextValue has the expected fields", () => {
     expectTypeOf<RouterContextValue["navigate"]>().toBeFunction();
     expectTypeOf<RouterContextValue["prefetch"]>().toBeFunction();
+    expectTypeOf<RouterContextValue["refresh"]>().toBeFunction();
     expectTypeOf<RouterContextValue["isNavigating"]>().toEqualTypeOf<boolean>();
     expectTypeOf<RouterContextValue["defaultPreload"]>().toEqualTypeOf<PreloadStrategy>();
     expectTypeOf<RouterContextValue["defaultPreloadDelay"]>().toEqualTypeOf<number>();
     expectTypeOf<RouterContextValue["defaultPreloadStaleTime"]>().toEqualTypeOf<number>();
     expectTypeOf<RouterContextValue["currentHref"]>().toEqualTypeOf<string>();
+  });
+
+  test("RouterContextValue.refresh returns Promise<void> and accepts optional resetScroll", () => {
+    expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith();
+    expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith({ resetScroll: true });
+    expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith({ resetScroll: false });
+    expectTypeOf<ReturnType<RouterContextValue["refresh"]>>().toEqualTypeOf<Promise<void>>();
+  });
+
+  test("RouterProviderProps.autoRefresh is an optional boolean", () => {
+    expectTypeOf<RouterProviderProps["autoRefresh"]>().toEqualTypeOf<boolean | undefined>();
   });
 
   test("LinkProps.preload is an optional PreloadStrategy", () => {
@@ -425,5 +449,210 @@ describe("prefetch cache LRU eviction", () => {
     expect(cache.has("/a")).toBe(false); // evicted — still oldest despite being re-set
     expect(cache.has("/b")).toBe(true);
     expect(cache.has("/c")).toBe(true);
+  });
+});
+
+// ── applyRevalidateHeader ──────────────────────────────────────────────────────
+
+describe("applyRevalidateHeader", () => {
+  // ── Bullet 13: parses page entries ─────────────────────────────────────────
+
+  test("parses multiple page entries from header", () => {
+    const calls: [string, string?][] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/blog/post,/home" });
+    applyRevalidateHeader(headers, (path, type) => calls.push([path, type]));
+    expect(calls).toEqual([
+      ["/blog/post", "page"],
+      ["/home", "page"],
+    ]);
+  });
+
+  test("parses a single page entry", () => {
+    const calls: [string, string?][] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/blog/post" });
+    applyRevalidateHeader(headers, (path, type) => calls.push([path, type]));
+    expect(calls).toEqual([["/blog/post", "page"]]);
+  });
+
+  test("page entries are called with type 'page'", () => {
+    const types: (string | undefined)[] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/foo,/bar" });
+    applyRevalidateHeader(headers, (_path, type) => types.push(type));
+    expect(types).toEqual(["page", "page"]);
+  });
+
+  // ── Bullet 14: parses layout entries ───────────────────────────────────────
+
+  test("parses layout entries from header", () => {
+    const calls: [string, string?][] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/blog:layout" });
+    applyRevalidateHeader(headers, (path, type) => calls.push([path, type]));
+    expect(calls).toEqual([["/blog", "layout"]]);
+  });
+
+  test("layout entries strip the :layout suffix from the path", () => {
+    const paths: string[] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/blog:layout" });
+    applyRevalidateHeader(headers, (path) => paths.push(path));
+    expect(paths).toEqual(["/blog"]);
+  });
+
+  test("layout entries are called with type 'layout'", () => {
+    const types: (string | undefined)[] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/blog:layout" });
+    applyRevalidateHeader(headers, (_path, type) => types.push(type));
+    expect(types).toEqual(["layout"]);
+  });
+
+  test("mixed page and layout entries are parsed correctly", () => {
+    const calls: [string, string?][] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/home,/blog:layout,/about" });
+    applyRevalidateHeader(headers, (path, type) => calls.push([path, type]));
+    expect(calls).toEqual([
+      ["/home", "page"],
+      ["/blog", "layout"],
+      ["/about", "page"],
+    ]);
+  });
+
+  // ── Bullet 15: no-op when header absent ────────────────────────────────────
+
+  test("is a no-op when header is absent", () => {
+    const headers = new Headers();
+    applyRevalidateHeader(headers, () => {
+      throw new Error("should not call");
+    });
+    // No throw = pass
+  });
+
+  test("is a no-op when header is empty string", () => {
+    const headers = new Headers({ "x-furin-revalidate": "" });
+    const calls: string[] = [];
+    applyRevalidateHeader(headers, (path) => calls.push(path));
+    expect(calls).toEqual([]);
+  });
+
+  test("handles whitespace around commas gracefully", () => {
+    const calls: [string, string?][] = [];
+    const headers = new Headers({ "x-furin-revalidate": "/foo , /bar" });
+    applyRevalidateHeader(headers, (path, type) => calls.push([path, type]));
+    // Trimming is applied per entry
+    expect(calls).toEqual([
+      ["/foo", "page"],
+      ["/bar", "page"],
+    ]);
+  });
+});
+
+// ── shouldAutoRefreshPath ──────────────────────────────────────────────────────
+
+describe("shouldAutoRefreshPath", () => {
+  // ── page exact match ────────────────────────────────────────────────────────
+
+  test("page: exact match on pathname → true", () => {
+    expect(shouldAutoRefreshPath("/", [{ path: "/", type: "page" }])).toBe(true);
+  });
+
+  test("page: exact match on deep route → true", () => {
+    expect(shouldAutoRefreshPath("/blog/my-post", [{ path: "/blog/my-post", type: "page" }])).toBe(
+      true
+    );
+  });
+
+  test("page: different path → false", () => {
+    expect(shouldAutoRefreshPath("/about", [{ path: "/blog", type: "page" }])).toBe(false);
+  });
+
+  test("page: prefix is NOT a match (page is strict equality)", () => {
+    // /blog should not match /blog/my-post for page invalidation
+    expect(shouldAutoRefreshPath("/blog/my-post", [{ path: "/blog", type: "page" }])).toBe(false);
+  });
+
+  test("page: strips query string before comparing", () => {
+    expect(shouldAutoRefreshPath("/blog?page=2", [{ path: "/blog", type: "page" }])).toBe(true);
+  });
+
+  test("page: empty invalidations → false", () => {
+    expect(shouldAutoRefreshPath("/", [])).toBe(false);
+  });
+
+  test("page: one of multiple entries matches → true", () => {
+    expect(
+      shouldAutoRefreshPath("/about", [
+        { path: "/home", type: "page" },
+        { path: "/about", type: "page" },
+      ])
+    ).toBe(true);
+  });
+
+  // ── layout prefix match ─────────────────────────────────────────────────────
+
+  test("layout: exact path match → true", () => {
+    expect(shouldAutoRefreshPath("/board/abc", [{ path: "/board/abc", type: "layout" }])).toBe(
+      true
+    );
+  });
+
+  test("layout: direct child matches → true", () => {
+    expect(
+      shouldAutoRefreshPath("/board/abc/card/xyz", [{ path: "/board/abc", type: "layout" }])
+    ).toBe(true);
+  });
+
+  test("layout: deeply nested child matches → true", () => {
+    expect(
+      shouldAutoRefreshPath("/board/abc/card/xyz/edit", [{ path: "/board/abc", type: "layout" }])
+    ).toBe(true);
+  });
+
+  test("layout: sibling path does NOT match", () => {
+    // /board/other is NOT under /board/abc
+    expect(shouldAutoRefreshPath("/board/other", [{ path: "/board/abc", type: "layout" }])).toBe(
+      false
+    );
+  });
+
+  test("layout: partial segment prefix does NOT match", () => {
+    // /board/abcdef should not be matched by /board/abc layout
+    expect(shouldAutoRefreshPath("/board/abcdef", [{ path: "/board/abc", type: "layout" }])).toBe(
+      false
+    );
+  });
+
+  test("layout: root '/' invalidation matches every path", () => {
+    expect(shouldAutoRefreshPath("/blog/post", [{ path: "/", type: "layout" }])).toBe(true);
+    expect(shouldAutoRefreshPath("/", [{ path: "/", type: "layout" }])).toBe(true);
+  });
+
+  test("layout: trailing-slash path treated as prefix correctly", () => {
+    expect(
+      shouldAutoRefreshPath("/board/abc/card", [{ path: "/board/abc/", type: "layout" }])
+    ).toBe(true);
+  });
+
+  test("layout: strips query string before prefix comparison", () => {
+    expect(
+      shouldAutoRefreshPath("/board/abc?view=kanban", [{ path: "/board/abc", type: "layout" }])
+    ).toBe(true);
+  });
+
+  // ── mixed page + layout entries ─────────────────────────────────────────────
+
+  test("mixed: layout match wins even when page does not match", () => {
+    expect(
+      shouldAutoRefreshPath("/board/abc/card/xyz", [
+        { path: "/home", type: "page" },
+        { path: "/board/abc", type: "layout" },
+      ])
+    ).toBe(true);
+  });
+
+  test("mixed: no entry matches → false", () => {
+    expect(
+      shouldAutoRefreshPath("/settings", [
+        { path: "/home", type: "page" },
+        { path: "/board/abc", type: "layout" },
+      ])
+    ).toBe(false);
   });
 });

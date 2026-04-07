@@ -33,10 +33,10 @@ function walkNode(node: AstNode, out: string[]): void {
     const callee = node.callee as AstNode | undefined;
     const args = node.arguments as AstNode[] | undefined;
 
-    const isElyraCall =
+    const isFurinCall =
       callee?.type === "Identifier" && (callee as { name?: string }).name === "furin";
 
-    if (isElyraCall && Array.isArray(args) && args.length > 0) {
+    if (isFurinCall && Array.isArray(args) && args.length > 0) {
       const firstArg = args[0] as AstNode;
       if (firstArg?.type === "ObjectExpression") {
         const pagesDir = extractStringProperty(firstArg, "pagesDir");

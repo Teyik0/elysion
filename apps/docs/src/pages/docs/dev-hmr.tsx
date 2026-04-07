@@ -1,6 +1,7 @@
 import { DocPage } from "@/components/doc-page";
 import DevHmr from "@/content/docs/dev-hmr.mdx";
-import { DOCS_BY_PATH, getDocSourceText } from "@/lib/docs";
+import { DOCS_BY_PATH } from "@/lib/docs";
+import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({

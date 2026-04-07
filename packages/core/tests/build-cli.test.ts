@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { buildApp } from "../src/build/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
+import { withBuildStub } from "./helpers/with-build-stub.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
 const SERVER_JS_RE = /server\.js$/;
@@ -16,20 +17,6 @@ function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
 
 function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
-async function withBuildStub<T>(run: () => Promise<T>): Promise<T> {
-  Bun.build = (() =>
-    Promise.resolve({
-      success: true,
-      outputs: [],
-      logs: [],
-    } as Bun.BuildOutput)) as typeof Bun.build;
-  try {
-    return await run();
-  } finally {
-    Bun.build = originalBunBuild;
-  }
 }
 
 afterEach(() => {
@@ -182,5 +169,49 @@ describe.serial("CLI/build Bun feature", () => {
     }
 
     expect(setupWasCalled).toBe(true);
+  });
+
+  test("buildId changes when only server-side inputs change", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    await withBuildStub(() =>
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+      })
+    );
+    const firstManifest = readJsonFile<{ targets: { bun?: { buildId?: string } } }>(
+      join(app.path, ".furin/build/manifest.json")
+    );
+
+    writeAppFile(
+      app.path,
+      "src/server.ts",
+      [
+        'import { furin } from "@teyik0/furin";',
+        'import Elysia from "elysia";',
+        "",
+        "const app = new Elysia()",
+        '  .use(await furin({ pagesDir: "./src/pages" }))',
+        '  .get("/health", () => "ok")',
+        "  .listen(3000);",
+        "",
+        'console.log("server on", app.server?.port);',
+      ].join("\n")
+    );
+
+    await withBuildStub(() =>
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+      })
+    );
+    const secondManifest = readJsonFile<{ targets: { bun?: { buildId?: string } } }>(
+      join(app.path, ".furin/build/manifest.json")
+    );
+
+    expect(firstManifest.targets.bun?.buildId).toBeDefined();
+    expect(secondManifest.targets.bun?.buildId).toBeDefined();
+    expect(secondManifest.targets.bun?.buildId).not.toBe(firstManifest.targets.bun?.buildId);
   });
 });

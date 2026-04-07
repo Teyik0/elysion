@@ -70,12 +70,24 @@ export type MetaDescriptor =
 export interface HeadOptions {
   links?: Array<{ rel: string; href: string; [key: string]: string }>;
   meta?: MetaDescriptor[];
+  /**
+   * Inline scripts injected into `<head>`.
+   *
+   * **Security warning:** `children` is injected as raw HTML — never pass
+   * user-controlled or loader-derived data here without sanitisation.
+   */
   scripts?: Array<{
     src?: string;
     type?: string;
     children?: string;
     [key: string]: string | undefined;
   }>;
+  /**
+   * Inline styles injected into `<head>`.
+   *
+   * **Security warning:** `children` is injected as raw HTML — never pass
+   * user-controlled or loader-derived data here without sanitisation.
+   */
   styles?: Array<{ type?: string; children: string }>;
 }
 
@@ -259,7 +271,7 @@ export function createRoute<
 }
 
 export type InferProps<T> = T extends {
-  __type: "ELYRA_PAGE";
+  __type: "FURIN_PAGE";
   component: React.FC<infer P>;
 }
   ? P

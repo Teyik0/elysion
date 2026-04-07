@@ -1,15 +1,18 @@
 import { ScaffolderError } from "./errors.ts";
+import { TEMPLATE_IDS, type TemplateId } from "./pipeline/context.ts";
 
 export interface ParsedArgs {
   help: boolean;
   install: boolean;
   targetDir: string | null;
-  template: "minimal" | "shadcn" | null;
+  template: TemplateId | null;
   version: boolean;
   yes: boolean;
 }
 
-const flagAliases: Record<string, keyof ParsedArgs> = {
+type BooleanFlag = "help" | "version" | "yes";
+
+const FLAG_ALIASES: Record<string, BooleanFlag> = {
   "--help": "help",
   "-h": "help",
   "--version": "version",
@@ -28,15 +31,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
     yes: false,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
+  let skipNext = false;
 
-    if (!arg) {
+  for (const [index, arg] of argv.entries()) {
+    if (skipNext) {
+      skipNext = false;
       continue;
     }
 
-    if (flagAliases[arg]) {
-      result[flagAliases[arg]] = true as never;
+    const alias = FLAG_ALIASES[arg];
+    if (alias) {
+      result[alias] = true;
       continue;
     }
 
@@ -45,9 +50,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
-    if (arg === "--template") {
-      result.template = parseTemplate(argv[index + 1]);
-      index += 1;
+    if (arg === "--template" || arg === "-t") {
+      result.template = parseTemplateFlagValue(arg, argv[index + 1]);
+      skipNext = true;
       continue;
     }
 
@@ -74,10 +79,22 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return result;
 }
 
-function parseTemplate(value: string | undefined): "minimal" | "shadcn" {
-  if (value === "minimal" || value === "shadcn") {
-    return value;
+function parseTemplate(value: string | undefined): TemplateId {
+  if (TEMPLATE_IDS.includes(value as TemplateId)) {
+    return value as TemplateId;
+  }
+  throw new ScaffolderError(
+    `Invalid template "${value ?? ""}". Valid options: ${TEMPLATE_IDS.join(", ")}`
+  );
+}
+
+function parseTemplateFlagValue(flag: "--template" | "-t", value: string | undefined): TemplateId {
+  // Treat a missing token *or* a token that looks like a flag as a missing value
+  // so that e.g. `--template --yes` reports "Missing value" rather than
+  // "Invalid template '--yes'", and --yes is not silently consumed.
+  if (value === undefined || value.startsWith("-")) {
+    throw new ScaffolderError(`Missing value for ${flag}`);
   }
 
-  throw new ScaffolderError(`Invalid template "${value ?? ""}". Use "minimal" or "shadcn"`);
+  return parseTemplate(value);
 }

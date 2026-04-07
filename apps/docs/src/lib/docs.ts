@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
 import type { RouteManifest } from "@teyik0/furin/link";
-import { DOCS_CONTENT } from "../generated/docs-content";
 
 export type OpenInTarget = "github" | "chatgpt" | "claude" | "cursor" | "copilot";
 
@@ -20,7 +18,6 @@ export interface DocNavSection {
 }
 
 const DEFAULT_OPEN_IN: OpenInTarget[] = ["github", "chatgpt", "claude", "cursor", "copilot"];
-const SOURCE_PREFIX_RE = /^src\//;
 
 export const DOCS_NAV: DocNavSection[] = [
   {
@@ -109,6 +106,16 @@ export const DOCS_NAV: DocNavSection[] = [
         openIn: DEFAULT_OPEN_IN,
       },
       {
+        label: "Caching",
+        title: "Caching",
+        href: "/docs/caching",
+        description:
+          "Cache-Control strategies, revalidatePath, ETags, and CDN purging for every deployment target.",
+        sourcePath: "src/content/docs/caching.mdx",
+        githubPath: "apps/docs/src/content/docs/caching.mdx",
+        openIn: DEFAULT_OPEN_IN,
+      },
+      {
         label: "Deployment",
         title: "Deployment",
         href: "/docs/deployment",
@@ -144,19 +151,6 @@ export const DOCS_BY_PATH = Object.fromEntries(DOCS_CARDS.map((doc) => [doc.href
 
 export function getDocByPath(pathname: string): DocNavItem | undefined {
   return DOCS_BY_PATH[pathname as keyof RouteManifest];
-}
-
-export function getDocSourceText(sourcePath: string): string {
-  // In compiled binary: DOCS_CONTENT is pre-populated at build time (generate:content)
-  // In dev: DOCS_CONTENT may be empty (stub) → falls back to live filesystem read
-  const pregenerated = DOCS_CONTENT[sourcePath];
-  if (pregenerated) {
-    return pregenerated;
-  }
-  return readFileSync(
-    new URL(`../${sourcePath.replace(SOURCE_PREFIX_RE, "")}`, import.meta.url),
-    "utf8"
-  );
 }
 
 function trimPrompt(markdown: string): string {

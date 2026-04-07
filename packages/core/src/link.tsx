@@ -123,6 +123,71 @@ export function buildHref(
   return url;
 }
 
+// ── Revalidation helpers ────────────────────────────────────────────────────────
+
+/**
+ * Parses the `X-Furin-Revalidate` response header and calls `invalidate` for
+ * each path entry. Header format: `"/path1,/path2:layout,/path3"`
+ *
+ * Intended to be called from a `window.fetch` interceptor or SPA navigation
+ * handler so that client-side prefetch caches are busted automatically whenever
+ * a server-side `revalidatePath()` call is made within the same request.
+ *
+ * @example
+ * ```ts
+ * const res = await fetch("/api/publish");
+ * applyRevalidateHeader(res.headers, (path, type) => {
+ *   console.log("invalidate", path, type);
+ * });
+ * ```
+ */
+export function applyRevalidateHeader(
+  headers: Headers,
+  invalidate: (path: string, type?: "page" | "layout") => void
+): void {
+  const headerValue = headers.get("x-furin-revalidate");
+  if (!headerValue) {
+    return;
+  }
+  for (const entry of headerValue.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.endsWith(":layout")) {
+      invalidate(trimmed.slice(0, -":layout".length), "layout");
+    } else {
+      invalidate(trimmed, "page");
+    }
+  }
+}
+
+// ── Auto-refresh helpers ───────────────────────────────────────────────────────
+
+/**
+ * Returns `true` when `currentPath` is targeted by at least one invalidation entry,
+ * using the same matching rules as `invalidatePrefetch`:
+ * - `type: 'page'` — exact pathname match (query string stripped)
+ * - `type: 'layout'` — prefix match: the path itself OR any descendant
+ *
+ * @internal Exported for unit testing only.
+ */
+export function shouldAutoRefreshPath(
+  currentPath: string,
+  invalidations: ReadonlyArray<{ path: string; type: "page" | "layout" }>
+): boolean {
+  // Strip query string for comparison — revalidatePath works on pathnames
+  const normalizedCurrent = currentPath.split("?")[0] ?? currentPath;
+  return invalidations.some(({ path, type }) => {
+    if (type === "page") {
+      return path === normalizedCurrent;
+    }
+    // layout: match the path itself and all descendants
+    const prefix = path === "/" || path.endsWith("/") ? path : `${path}/`;
+    return normalizedCurrent === path || normalizedCurrent.startsWith(prefix);
+  });
+}
+
 // ── Router context ─────────────────────────────────────────────────────────────
 
 export interface RouterContextValue {
@@ -131,9 +196,33 @@ export interface RouterContextValue {
   defaultPreload: PreloadStrategy;
   defaultPreloadDelay: number;
   defaultPreloadStaleTime: number;
+  /**
+   * Evicts one or more prefetch cache entries, mirroring a `revalidatePath()` call
+   * made on the server. Called automatically by the `window.fetch` interceptor when
+   * the server emits `X-Furin-Revalidate` headers.
+   *
+   * - `type: 'page'` (default) — exact URL match
+   * - `type: 'layout'` — prefix match (path + all nested children)
+   */
+  invalidatePrefetch: (path: string, type?: "page" | "layout") => void;
   isNavigating: boolean;
   navigate: (href: string, opts?: { replace?: boolean; resetScroll?: boolean }) => Promise<void>;
   prefetch: (href: string, opts?: { staleTime?: number }) => void;
+  /**
+   * Re-fetches the current page in-place: busts the prefetch cache entry, re-runs
+   * loaders, and updates the rendered tree — without adding a history entry or
+   * resetting scroll (unless `resetScroll: true` is passed).
+   *
+   * Prefer this over `navigate(window.location.pathname)` after a mutation.
+   *
+   * @example
+   * ```tsx
+   * const { refresh } = useRouter();
+   * await apiClient.api.boards.post({ name });
+   * await refresh();
+   * ```
+   */
+  refresh: (opts?: { resetScroll?: boolean }) => Promise<void>;
 }
 
 export const RouterContext = createContext<RouterContextValue | null>(null);
@@ -153,6 +242,13 @@ export function useRouter(): RouterContextValue {
       },
       prefetch: () => {
         /* noop fallback */
+      },
+      invalidatePrefetch: () => {
+        /* noop fallback */
+      },
+      refresh: () => {
+        window.location.reload();
+        return Promise.resolve();
       },
       isNavigating: false,
       defaultPreload: "intent",
@@ -185,6 +281,14 @@ export type LoadedClientRoute = ClientRoute & {
 };
 
 export interface RouterProviderProps {
+  /**
+   * When `true` (default), the router automatically re-fetches the current page
+   * whenever a server `revalidatePath()` call targets it. The signal is the
+   * `X-Furin-Revalidate` header detected on any `window.fetch` response.
+   *
+   * Set to `false` to opt out and call `router.refresh()` manually instead.
+   */
+  autoRefresh?: boolean;
   defaultPreload?: PreloadStrategy;
   defaultPreloadDelay?: number;
   defaultPreloadStaleTime?: number;
@@ -208,11 +312,18 @@ interface RouterState {
 export interface CacheEntry {
   createdAt: number;
   promise: Promise<RouterState | null>;
+  staleTime: number;
 }
 
 /** @internal Exported for unit testing only. */
-export function shouldRefetch(entry: CacheEntry, staleTime: number): boolean {
-  return Date.now() - entry.createdAt > staleTime;
+export function shouldRefetch(entry: CacheEntry): boolean {
+  return Date.now() - entry.createdAt > entry.staleTime;
+}
+
+const HASH_FRAGMENT_RE = /#.*$/;
+
+function stripHashFromHref(href: string): string {
+  return href.replace(HASH_FRAGMENT_RE, "");
 }
 
 /** @internal Exported for unit testing only. */
@@ -253,11 +364,47 @@ export function buildPageElement(
   return element;
 }
 
+/** Scrolls to a hash target or the top of the page after SPA navigation. */
+function handleScrollRestoration(
+  href: string,
+  navigationToken: number,
+  navVersion: { current: number }
+): void {
+  const destUrl = new URL(href, window.location.origin);
+  if (destUrl.hash) {
+    const id = decodeURIComponent(destUrl.hash.slice(1));
+    const scrollToHashTarget = () => {
+      if (navVersion.current !== navigationToken) {
+        return;
+      }
+
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: "instant", block: "start" });
+      }
+    };
+
+    window.requestAnimationFrame(() => {
+      scrollToHashTarget();
+      if (document.getElementById(id)) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        scrollToHashTarget();
+      });
+    });
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
 export function RouterProvider({
   routes,
   root,
   initialMatch,
   initialData,
+  autoRefresh = true,
   defaultPreload = "intent",
   defaultPreloadDelay = 50,
   defaultPreloadStaleTime = 30_000,
@@ -272,6 +419,8 @@ export function RouterProvider({
     typeof window === "undefined" ? "/" : window.location.pathname + window.location.search
   );
   const prefetchCache = useRef(new Map<string, CacheEntry>());
+  /** Monotonic counter to discard stale navigations (race condition guard). */
+  const navVersion = useRef(0);
 
   const fetchPageState = useCallback(
     async (href: string): Promise<RouterState | null> => {
@@ -285,6 +434,29 @@ export function RouterProvider({
         // Parallelize HTML data fetch + JS chunk load for this route.
         // The browser module cache makes match.load() near-instant for already-loaded pages.
         const [res, loadedMod] = await Promise.all([fetch(href), match.load()]);
+
+        // Stale-deploy detection: if the server reports a different buildId, the client
+        // bundle is outdated and SPA navigation would mount wrong components / stale code.
+        // Force a full page reload to pick up the new bundle.
+        const serverBuildId = res.headers.get("x-furin-build-id");
+        if (serverBuildId) {
+          const metaEl =
+            typeof document === "undefined"
+              ? null
+              : document.querySelector<HTMLMetaElement>('meta[name="furin-build-id"]');
+          const clientBuildId = metaEl?.content;
+          if (clientBuildId && serverBuildId !== clientBuildId) {
+            window.location.href = href;
+            return null;
+          }
+        }
+
+        // Server error — bail out so we don't render with incomplete/missing data.
+        // The `navigate` fallback will do a full-page load to show the proper error page.
+        if (!res.ok) {
+          log.warn({ action: "navigate_server_error", href, status: res.status });
+          return null;
+        }
 
         // Detect server-side redirects (e.g. query-default redirect /?→/?city=Paris).
         // fetch() follows 302 automatically; res.url is the final URL, res.redirected is true.
@@ -315,16 +487,42 @@ export function RouterProvider({
     [routes]
   );
 
+  const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
+    const normalizedPath = stripHashFromHref(path);
+
+    if (type === "page") {
+      for (const key of [...prefetchCache.current.keys()]) {
+        if (stripHashFromHref(key) === normalizedPath) {
+          prefetchCache.current.delete(key);
+        }
+      }
+      return;
+    }
+
+    // layout: prefix match — evict the path itself and all nested children
+    const prefix =
+      normalizedPath === "/" || normalizedPath.endsWith("/")
+        ? normalizedPath
+        : `${normalizedPath}/`;
+    for (const key of [...prefetchCache.current.keys()]) {
+      const normalizedKey = stripHashFromHref(key);
+      if (normalizedKey === normalizedPath || normalizedKey.startsWith(prefix)) {
+        prefetchCache.current.delete(key);
+      }
+    }
+  }, []);
+
   const prefetch = useCallback(
     (href: string, opts?: { staleTime?: number }) => {
       const staleTime = opts?.staleTime ?? defaultPreloadStaleTime;
       const existing = prefetchCache.current.get(href);
-      if (existing && !shouldRefetch(existing, staleTime)) {
+      if (existing && !shouldRefetch(existing)) {
         return;
       }
       prefetchCache.current.set(href, {
         promise: fetchPageState(href),
         createdAt: Date.now(),
+        staleTime,
       });
       // Evict the oldest entry when the cap is exceeded
       if (prefetchCache.current.size > prefetchCacheSize) {
@@ -338,9 +536,14 @@ export function RouterProvider({
   const navigate = useCallback(
     async (href: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
       prefetch(href);
+      const myVersion = ++navVersion.current;
       setIsNavigating(true);
       try {
         const newState = await prefetchCache.current.get(href)?.promise;
+        // Discard if a newer navigation was started while we were waiting
+        if (navVersion.current !== myVersion) {
+          return;
+        }
         if (!newState) {
           log.warn({ action: "navigate_fallback", href, reason: "prefetch_returned_null" });
           window.location.href = href;
@@ -357,42 +560,48 @@ export function RouterProvider({
         } else {
           window.history.pushState(null, "", effectiveHref);
         }
-        setCurrentHref(
-          new URL(effectiveHref, window.location.origin).pathname +
-            new URL(effectiveHref, window.location.origin).search
-        );
-        const shouldReset = opts?.resetScroll ?? true;
-        if (shouldReset) {
-          const destUrl = new URL(href, window.location.origin);
-          if (destUrl.hash) {
-            const id = decodeURIComponent(destUrl.hash.slice(1));
-            const el = document.getElementById(id);
-            if (el) {
-              el.scrollIntoView({ behavior: "instant", block: "start" });
-            } else {
-              // Element may not be in DOM yet — retry after React commits
-              window.requestAnimationFrame(() => {
-                document
-                  .getElementById(id)
-                  ?.scrollIntoView({ behavior: "instant", block: "start" });
-              });
-            }
-          } else {
-            window.scrollTo(0, 0);
-          }
+        const effectiveUrl = new URL(effectiveHref, window.location.origin);
+        setCurrentHref(effectiveUrl.pathname + effectiveUrl.search);
+        if (opts?.resetScroll ?? true) {
+          handleScrollRestoration(effectiveHref, myVersion, navVersion);
         }
       } finally {
-        setIsNavigating(false);
+        // Only clear navigating flag if this is still the latest navigation
+        if (navVersion.current === myVersion) {
+          setIsNavigating(false);
+        }
       }
     },
     [prefetch]
   );
 
+  const refresh = useCallback(
+    async (opts?: { resetScroll?: boolean }) => {
+      const href = window.location.pathname + window.location.search;
+      // Bust the cache for this exact page so navigate always re-fetches
+      invalidatePrefetch(href, "page");
+      await navigate(href, { replace: true, resetScroll: opts?.resetScroll ?? false });
+    },
+    [navigate, invalidatePrefetch]
+  );
+
   const handlePopState = useCallback(async () => {
     const href = window.location.pathname + window.location.search;
+    const myVersion = ++navVersion.current;
     setIsNavigating(true);
     try {
-      const newState = await fetchPageState(href);
+      // Check prefetch cache before fetching fresh
+      const cached = prefetchCache.current.get(href);
+      let newState: RouterState | null;
+      if (cached && !shouldRefetch(cached)) {
+        newState = await cached.promise;
+      } else {
+        newState = await fetchPageState(href);
+      }
+      // Discard if a newer navigation was started while we were waiting
+      if (navVersion.current !== myVersion) {
+        return;
+      }
       if (!newState) {
         log.warn({ action: "popstate_fallback", href, reason: "fetchPageState_returned_null" });
         window.location.reload();
@@ -407,13 +616,13 @@ export function RouterProvider({
       if (newState.finalHref) {
         window.history.replaceState(null, "", effectiveHref);
       }
-      setCurrentHref(
-        new URL(effectiveHref, window.location.origin).pathname +
-          new URL(effectiveHref, window.location.origin).search
-      );
+      const effectiveUrl = new URL(effectiveHref, window.location.origin);
+      setCurrentHref(effectiveUrl.pathname + effectiveUrl.search);
       // No scrollTo(0, 0) — browser handles scroll restoration
     } finally {
-      setIsNavigating(false);
+      if (navVersion.current === myVersion) {
+        setIsNavigating(false);
+      }
     }
   }, [fetchPageState]);
 
@@ -423,6 +632,40 @@ export function RouterProvider({
     return () => window.removeEventListener("popstate", handlePopState);
   }, [handlePopState]);
 
+  // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
+  // This ensures that API routes calling revalidatePath() automatically bust the
+  // client prefetch cache, even for non-navigation fetches (e.g. form submissions).
+  // When autoRefresh=true (default), also re-fetches the current page if it was invalidated.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const originalFetch = window.fetch;
+    const wrapped = async (...args: Parameters<typeof fetch>): Promise<Response> => {
+      const response = await originalFetch.apply(window, args);
+      const invalidated: Array<{ path: string; type: "page" | "layout" }> = [];
+      applyRevalidateHeader(response.headers, (path, type = "page") => {
+        invalidatePrefetch(path, type);
+        invalidated.push({ path, type });
+      });
+      if (autoRefresh && invalidated.length > 0) {
+        const currentPath = window.location.pathname + window.location.search;
+        if (shouldAutoRefreshPath(currentPath, invalidated)) {
+          // fire-and-forget: don't block the original fetch caller
+          refresh();
+        }
+      }
+      return response;
+    };
+    // Copy static fetch methods (e.g. preconnect) so the patched value satisfies typeof fetch.
+    Object.assign(wrapped, originalFetch);
+    // biome-ignore lint/suspicious/noExplicitAny: Object.assign copies all static props but TS can't infer it
+    window.fetch = wrapped as any;
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [invalidatePrefetch, refresh, autoRefresh]);
+
   return createElement(
     RouterContext.Provider,
     {
@@ -430,6 +673,8 @@ export function RouterProvider({
         currentHref,
         navigate,
         prefetch,
+        refresh,
+        invalidatePrefetch,
         isNavigating,
         defaultPreload,
         defaultPreloadDelay,

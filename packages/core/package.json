@@ -1,6 +1,6 @@
 {
   "name": "@teyik0/furin",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "type": "module",
   "files": [
     "dist",
@@ -69,7 +69,7 @@
   },
   "peerDependencies": {
     "elysia": "catalog:",
-    "evlog": "^2.10.0",
+    "evlog": "^2.11.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": ">=6.0.2",
