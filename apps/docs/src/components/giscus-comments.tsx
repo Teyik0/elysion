@@ -15,6 +15,18 @@ export function GiscusComments() {
       return;
     }
 
+    // If the Giscus iframe is already loaded, update theme via postMessage
+    // instead of destroying and recreating the entire widget.
+    const existingIframe = container.querySelector<HTMLIFrameElement>("iframe.giscus-frame");
+    if (existingIframe?.contentWindow) {
+      existingIframe.contentWindow.postMessage(
+        { giscus: { setConfig: { theme: getGiscusTheme(theme) } } },
+        "https://giscus.app"
+      );
+      return;
+    }
+
+    // First mount: inject the script tag to load Giscus.
     container.innerHTML = "";
 
     const script = document.createElement("script");

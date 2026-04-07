@@ -89,16 +89,20 @@ describe("template files — all src paths exist on disk and stay within roots",
     }
 
     for (const file of simpleTemplate.files) {
+      // src itself must not be an absolute path before resolution
+      expect(file.src, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
+
       // src must resolve inside TEMPLATES_DIR
       const absoluteSrc = resolve(TEMPLATES_DIR, file.src);
       const relSrc = relative(TEMPLATES_DIR, absoluteSrc);
       expect(relSrc.startsWith(".."), `src escapes templates/: ${file.src}`).toBe(false);
-      expect(relSrc, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
 
-      // dest must not escape the project root (no leading .. or absolute path)
+      // dest itself must not be an absolute path
+      expect(file.dest, `dest must not be absolute: ${file.dest}`).not.toMatch(ABSOLUTE_PATH_RE);
+
+      // dest must not escape the project root (no leading ..)
       const relDest = relative("/", resolve("/", file.dest));
       expect(relDest.startsWith(".."), `dest escapes project root: ${file.dest}`).toBe(false);
-      expect(relDest, `dest must not be absolute: ${file.dest}`).not.toMatch(ABSOLUTE_PATH_RE);
 
       const exists = await Bun.file(absoluteSrc).exists();
       expect(exists, `Missing: templates/${file.src}`).toBe(true);
@@ -113,14 +117,18 @@ describe("template files — all src paths exist on disk and stay within roots",
     }
 
     for (const file of fullTemplate.files) {
+      // src itself must not be an absolute path before resolution
+      expect(file.src, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
+
       const absoluteSrc = resolve(TEMPLATES_DIR, file.src);
       const relSrc = relative(TEMPLATES_DIR, absoluteSrc);
       expect(relSrc.startsWith(".."), `src escapes templates/: ${file.src}`).toBe(false);
-      expect(relSrc, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
+
+      // dest itself must not be an absolute path
+      expect(file.dest, `dest must not be absolute: ${file.dest}`).not.toMatch(ABSOLUTE_PATH_RE);
 
       const relDest = relative("/", resolve("/", file.dest));
       expect(relDest.startsWith(".."), `dest escapes project root: ${file.dest}`).toBe(false);
-      expect(relDest, `dest must not be absolute: ${file.dest}`).not.toMatch(ABSOLUTE_PATH_RE);
 
       const exists = await Bun.file(absoluteSrc).exists();
       expect(exists, `Missing: templates/${file.src}`).toBe(true);

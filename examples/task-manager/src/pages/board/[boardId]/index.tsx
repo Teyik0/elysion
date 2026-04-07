@@ -11,11 +11,15 @@ import { route } from "../_route";
 // ---------------------------------------------------------------------------
 
 async function fetchBoardStats(boardId: string): Promise<BoardStats | null> {
-  const { data, error } = await apiClient.api.boards({ boardId }).stats.get();
-  if (error) {
+  try {
+    const { data, error } = await apiClient.api.boards({ boardId }).stats.get();
+    if (error) {
+      return null;
+    }
+    return data as BoardStats;
+  } catch {
     return null;
   }
-  return data as BoardStats;
 }
 
 // ---------------------------------------------------------------------------

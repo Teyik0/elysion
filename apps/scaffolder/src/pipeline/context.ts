@@ -94,7 +94,8 @@ export interface PipelineContext {
   yes: boolean;
 }
 
-export function createContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
+export function createContext(overrides?: Partial<PipelineContext>): PipelineContext {
+  const normalizedOverrides = overrides ?? {};
   return {
     projectName: "",
     projectNameKebab: "",
@@ -115,7 +116,7 @@ export function createContext(overrides: Partial<PipelineContext> = {}): Pipelin
     yes: false,
     furinVersion: "latest",
     features: [],
-    ...overrides,
+    ...normalizedOverrides,
   };
 }
 

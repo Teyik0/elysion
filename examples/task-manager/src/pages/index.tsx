@@ -132,6 +132,8 @@ function CreateBoardForm() {
             throw new Error("Could not create the board. Please try again.");
           }
           setName("");
+          // Reload so the ISR-busted page is refetched with the new board included.
+          window.location.reload();
         } catch (err: unknown) {
           const message =
             err instanceof Error ? err.message : "Could not create the board. Please try again.";

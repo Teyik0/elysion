@@ -624,7 +624,7 @@ export function RouterProvider({
         setIsNavigating(false);
       }
     }
-  }, [fetchPageState, defaultPreloadStaleTime]);
+  }, [fetchPageState]);
 
   // Handle browser back/forward
   useEffect(() => {

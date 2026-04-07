@@ -1,7 +1,8 @@
 import { create, insertMultiple, search } from "@orama/orama";
 import type { DocNavItem } from "./docs";
-import { DOCS_CARDS, getDocSourceText } from "./docs";
+import { DOCS_CARDS } from "./docs";
 import { getUniqueHeadingId } from "./docs-heading";
+import { getDocSourceText } from "./docs-server";
 
 export interface SearchIndexEntry {
   content: string;

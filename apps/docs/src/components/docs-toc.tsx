@@ -96,15 +96,27 @@ export function DocsToc() {
     window.addEventListener("hashchange", scrollToHashTarget);
 
     if (!registerHeadings()) {
-      const frame = window.requestAnimationFrame(() => {
-        if (!cancelled) {
-          registerHeadings();
+      // Retry up to 5 animation frames — handles slow MDX renders without
+      // blocking layout or triggering excessive work.
+      let attempts = 0;
+      const MAX_ATTEMPTS = 5;
+      let frameId: number;
+
+      const retry = () => {
+        if (cancelled || attempts >= MAX_ATTEMPTS) {
+          return;
         }
-      });
+        attempts++;
+        if (!registerHeadings()) {
+          frameId = window.requestAnimationFrame(retry);
+        }
+      };
+
+      frameId = window.requestAnimationFrame(retry);
 
       return () => {
         cancelled = true;
-        window.cancelAnimationFrame(frame);
+        window.cancelAnimationFrame(frameId);
         window.removeEventListener("hashchange", scrollToHashTarget);
         observer?.disconnect();
       };
