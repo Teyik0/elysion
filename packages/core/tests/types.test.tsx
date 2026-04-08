@@ -190,6 +190,59 @@ describe("createRoute types", () => {
     });
   });
 
+  test("createRoute loader can use any function return type and extract value for component (inline)", () => {
+    interface HelloPayload {
+      message: string;
+      source: string;
+    }
+
+    function getHelloPayload(): HelloPayload {
+      return {
+        message: "Hello from Elysia",
+        source: "api:/api/hello",
+      };
+    }
+
+    createRoute({
+      loader: () => {
+        return getHelloPayload();
+      },
+      layout: ({ message, source }) => {
+        expectTypeOf(message).toEqualTypeOf<string>();
+        expectTypeOf(source).toEqualTypeOf<string>();
+        return null;
+      },
+    });
+  });
+
+  test("createRoute loader can use any function return type and extract value for component (chained)", () => {
+    interface HelloPayload {
+      message: string;
+      source: string;
+    }
+
+    function getHelloPayload(): HelloPayload {
+      return {
+        message: "Hello from Elysia",
+        source: "api:/api/hello",
+      };
+    }
+
+    const route = createRoute({
+      loader: () => {
+        return getHelloPayload();
+      },
+    });
+
+    route.page({
+      component: ({ message, source }) => {
+        expectTypeOf(message).toEqualTypeOf<string>();
+        expectTypeOf(source).toEqualTypeOf<string>();
+        return null;
+      },
+    });
+  });
+
   test("loader can use headers to extract values for component", () => {
     const route = createRoute({
       loader: async ({ headers }) => ({

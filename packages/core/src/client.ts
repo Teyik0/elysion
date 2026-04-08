@@ -13,6 +13,10 @@ import type { AnySchema, HTTPHeaders, UnwrapSchema } from "elysia/types";
 declare const UNSET: unique symbol;
 type Unset = typeof UNSET;
 
+// Expands interfaces into plain mapped types so they satisfy Record<string, unknown>.
+// Interfaces lack an implicit index signature; mapped types have one.
+type ToRecord<T> = { [K in keyof T]: T[K] };
+
 type ResolvedSchema<T> = [T] extends [Unset]
   ? Unset
   : T extends AnySchema
@@ -53,7 +57,7 @@ type ResolveParent<T> =
     : { data: {}; params: Unset; query: Unset };
 
 interface Resolved<TParentRef, TLoaderData, TParamsSchema = Unset, TQuerySchema = Unset> {
-  data: ResolveParent<TParentRef>["data"] & TLoaderData;
+  data: ToRecord<ResolveParent<TParentRef>["data"] & TLoaderData>;
   params: MergeSchema<ResolveParent<TParentRef>["params"], ResolvedSchema<TParamsSchema>>;
   query: MergeSchema<ResolveParent<TParentRef>["query"], ResolvedSchema<TQuerySchema>>;
 }
@@ -97,8 +101,8 @@ export type LoaderDeps = (route: { __type: string }) => Promise<Record<string, u
 // Using ReturnType + Awaited here means TLoader is inferred as the whole function
 // first, and then we extract the data — so inference is order-independent.
 type ExtractLoaderReturn<TLoader> = TLoader extends (...args: never[]) => unknown
-  ? Awaited<ReturnType<TLoader>> extends Record<string, unknown>
-    ? Awaited<ReturnType<TLoader>>
+  ? Awaited<ReturnType<TLoader>> extends object
+    ? ToRecord<Awaited<ReturnType<TLoader>>>
     : {}
   : {};
 
@@ -156,7 +160,7 @@ interface PageResult<
   TData extends Record<string, unknown>,
   TParams,
   TQuery,
-  TPageLoaderData extends Record<string, unknown>,
+  TPageLoaderData extends object,
 > {
   __type: "FURIN_PAGE";
   _route: Route<TData, TParams, TQuery>;
@@ -183,7 +187,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
   // resolved — making declaration order of head/component irrelevant.
   page<
     TLoader extends (ctx: RouteContext<TParams, TQuery> & TParentData, deps: TypedDeps) => unknown,
-    TPageLoaderData extends Record<string, unknown> = ExtractLoaderReturn<TLoader>,
+    TPageLoaderData extends object = ExtractLoaderReturn<TLoader>,
   >(config: {
     loader: TLoader;
     mode?: "ssr" | "ssg" | "isr";
@@ -223,7 +227,7 @@ export function createRoute<
   TParentRef extends RouteRef | undefined = undefined,
   TParamsSchema extends AnySchema | Unset = Unset,
   TQuerySchema extends AnySchema | Unset = Unset,
-  TLoaderData extends Record<string, unknown> = {},
+  TLoaderData extends object = {},
 >(config?: {
   parent?: { ref: TParentRef } & { __type: "FURIN_ROUTE" };
   mode?: "ssr" | "ssg" | "isr";
