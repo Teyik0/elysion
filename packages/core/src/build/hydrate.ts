@@ -85,7 +85,9 @@ const _match = routes.find((r) => r.regex.test(pathname));
   } else {
     log.error({ action: "hydrate_no_match", pathname });
   }
-})();
+})().catch((err: unknown) => {
+  log.error({ action: "hydrate_failed", pathname, error: String(err) });
+});
 `;
 }
 

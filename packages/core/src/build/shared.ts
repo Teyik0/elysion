@@ -1,11 +1,15 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import type { BuildTarget } from "../config";
 import type { ResolvedRoute } from "../router";
 import type { BuildRouteManifestEntry, TargetBuildManifest } from "./types";
 
-export const CLIENT_MODULE_PATH = resolve(import.meta.dir, "../client.ts").replace(/\\/g, "/");
-export const LINK_MODULE_PATH = resolve(import.meta.dir, "../link.tsx").replace(/\\/g, "/");
+// import.meta.dir/path/url are inlined at bundle time to the OUTPUT file's
+// location — so relative paths break when bundled. import.meta.resolve() is a
+// function call (not inlined), runs at runtime, and resolves through package
+// exports. This is the Web-standard approach (Bun, Node 20.6+, browsers).
+export const CLIENT_MODULE_PATH = new URL(import.meta.resolve("@teyik0/furin/client")).pathname;
+export const LINK_MODULE_PATH = new URL(import.meta.resolve("@teyik0/furin/link")).pathname;
 
 export function ensureDir(path: string): void {
   if (!existsSync(path)) {

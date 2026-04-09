@@ -1,5 +1,5 @@
 import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
 import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
@@ -9,13 +9,16 @@ import type { BuildTarget } from "../config.ts";
 import { generateProdIndexHtml } from "../render/shell.ts";
 import type { ResolvedRoute } from "../router.ts";
 
+// import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
+// through package exports, and is the Web-standard API.
+const _pkgSrcDir = dirname(new URL(import.meta.resolve("@teyik0/furin")).pathname);
 const BUILD_ID_INPUT_PATHS = [
-  resolve(import.meta.dir, "../build/compile-entry.ts"),
-  resolve(import.meta.dir, "../build/entry-template.ts"),
-  resolve(import.meta.dir, "../build/server-routes-entry.ts"),
-  resolve(import.meta.dir, "../render/index.ts"),
-  resolve(import.meta.dir, "../render/shell.ts"),
-  resolve(import.meta.dir, "../router.ts"),
+  `${_pkgSrcDir}/build/compile-entry.ts`,
+  `${_pkgSrcDir}/build/entry-template.ts`,
+  `${_pkgSrcDir}/build/server-routes-entry.ts`,
+  `${_pkgSrcDir}/render/index.ts`,
+  `${_pkgSrcDir}/render/shell.ts`,
+  `${_pkgSrcDir}/router.ts`,
 ];
 
 async function createBuildFingerprint(

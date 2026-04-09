@@ -1,3 +1,4 @@
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { $ } from "bun";
 
 $.cwd(import.meta.dir);
@@ -29,3 +30,9 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/link.tsx`] }),
 ]);
+
+// Prepend shebang to CLI bin so the OS runs it with Bun (not as a shell script).
+const cliPath = `${import.meta.dir}/dist/cli/index.js`;
+const content = readFileSync(cliPath, "utf8");
+writeFileSync(cliPath, `#!/usr/bin/env bun\n${content}`);
+chmodSync(cliPath, 0o755);
