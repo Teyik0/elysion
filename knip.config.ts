@@ -9,9 +9,6 @@ const config: KnipConfig = {
       ignoreDependencies: ["@biomejs/biome", "@commitlint/cli", "react-doctor"],
     },
     "packages/core": {
-      // bin field points to ./src/cli/index.ts (source path, no "bun" condition in bin),
-      // so src/cli/index.ts is not auto-detected by knip — must be declared explicitly
-      entry: ["src/cli/index.ts"],
       project: ["src/**/*.{ts,tsx}"],
     },
     "apps/docs": {
