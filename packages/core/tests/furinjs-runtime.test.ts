@@ -46,14 +46,12 @@ function resetProcessState(): void {
   process.argv.push(...originalArgv);
 
   if (originalPath === undefined) {
-    // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
     delete process.env.PATH;
   } else {
     process.env.PATH = originalPath;
   }
 
   if (originalClientDir === undefined) {
-    // biome-ignore lint/performance/noDelete: process.env requires delete to properly unset a variable
     delete process.env.FURIN_CLIENT_DIR;
   } else {
     process.env.FURIN_CLIENT_DIR = originalClientDir;
