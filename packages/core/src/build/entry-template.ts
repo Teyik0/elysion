@@ -1,7 +1,11 @@
-import { resolve } from "node:path";
+import { dirname } from "node:path";
 
-const INTERNAL_MODULE_PATH = resolve(import.meta.dir, "../internal.ts").replace(/\\/g, "/");
-const RUNTIME_ENV_MODULE_PATH = resolve(import.meta.dir, "../runtime-env.ts").replace(/\\/g, "/");
+// import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
+// through package exports, and is the Web-standard API. The "bun" condition
+// on "." resolves to src/furin.ts, so dirname gives us the src/ dir.
+const _pkgSrcDir = dirname(new URL(import.meta.resolve("@teyik0/furin")).pathname);
+const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/internal.ts`;
+const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/runtime-env.ts`;
 
 export interface EntryTemplateOptions {
   buildId?: string;

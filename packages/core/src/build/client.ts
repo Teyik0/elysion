@@ -99,6 +99,13 @@ export async function buildClient(
     splitting: true,
     minify: true,
     sourcemap: "linked",
+    // Hash the entry point name so it gets immutable caching like chunks.
+    // Without this, _hydrate.js keeps the same name across builds and browsers
+    // serve stale versions that reference old chunk hashes → dynamic import 404.
+    naming: {
+      entry: "[dir]/[name]-[hash].[ext]",
+      chunk: "[name]-[hash].[ext]",
+    },
     // Absolute public path so SSR template asset URLs resolve on any route
     publicPath: "/_client/",
     // User plugins run before the internal transform so they pre-process files first
