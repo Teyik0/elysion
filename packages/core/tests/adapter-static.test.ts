@@ -2,8 +2,8 @@
  * Tests for the static export adapter.
  *
  * All tests are inside a single describe.serial block because buildStaticTarget
- * calls __setDevMode() and setProductionTemplateContent() — module-level
- * singletons that are not safe to mutate from concurrent describe blocks.
+ * calls setProductionTemplateContent() — a module-level singleton that is not
+ * safe to mutate from concurrent describe blocks.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";

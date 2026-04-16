@@ -8,6 +8,7 @@ import { scanFurinInstances } from "./scan-server";
 import { ensureDir, toBuildRouteManifestEntry, toPosixPath } from "./shared";
 import type { BuildAppOptions, BuildAppResult, BuildManifest } from "./types";
 
+// biome-ignore lint/performance/noBarrelFile: intentional — build/index.ts is the public build API entry
 export { buildClient } from "./client";
 export { writeDevFiles } from "./hydrate";
 export { patternToTypeString, schemaToTypeString, writeRouteTypes } from "./route-types";

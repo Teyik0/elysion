@@ -13,7 +13,7 @@ import mdxPlugin from "./src/lib/bun-mdx-plugin";
 export default defineConfig({
   plugins: [tailwind, mdxPlugin],
   static: {
-    basePath: "/elysion",
+    basePath: "/furin",
     outDir: "dist",
   },
 });

@@ -26,32 +26,34 @@ export function scanFurinInstances(serverEntryPath: string): string[] {
   return results;
 }
 
-function walkNode(node: AstNode, out: string[]): void {
-  if (!node || typeof node !== "object") {
+const SKIP_KEYS = new Set(["type", "start", "end"]);
+
+/** Checks whether `node` is a `furin({ pagesDir: "..." })` call and, if so, pushes the value. */
+function checkFurinCall(node: AstNode, out: string[]): void {
+  const callee = node.callee as AstNode | undefined;
+  const args = node.arguments as AstNode[] | undefined;
+  const isFurinCall =
+    callee?.type === "Identifier" && (callee as { name?: string }).name === "furin";
+
+  if (!(isFurinCall && Array.isArray(args)) || args.length === 0) {
     return;
   }
 
-  if (node.type === "CallExpression") {
-    const callee = node.callee as AstNode | undefined;
-    const args = node.arguments as AstNode[] | undefined;
-
-    const isFurinCall =
-      callee?.type === "Identifier" && (callee as { name?: string }).name === "furin";
-
-    if (isFurinCall && Array.isArray(args) && args.length > 0) {
-      const firstArg = args[0] as AstNode;
-      if (firstArg?.type === "ObjectExpression") {
-        const pagesDir = extractStringProperty(firstArg, "pagesDir");
-        if (pagesDir !== null) {
-          out.push(pagesDir);
-        }
-      }
-    }
+  const firstArg = args[0] as AstNode;
+  if (firstArg?.type !== "ObjectExpression") {
+    return;
   }
 
-  // Recurse into all child node values
+  const pagesDir = extractStringProperty(firstArg, "pagesDir");
+  if (pagesDir !== null) {
+    out.push(pagesDir);
+  }
+}
+
+/** Recurses into all child AST node values (arrays and plain objects). */
+function walkChildren(node: AstNode, out: string[]): void {
   for (const key of Object.keys(node)) {
-    if (key === "type" || key === "start" || key === "end") {
+    if (SKIP_KEYS.has(key)) {
       continue;
     }
     const child = node[key];
@@ -65,6 +67,16 @@ function walkNode(node: AstNode, out: string[]): void {
       walkNode(child as AstNode, out);
     }
   }
+}
+
+function walkNode(node: AstNode, out: string[]): void {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  if (node.type === "CallExpression") {
+    checkFurinCall(node, out);
+  }
+  walkChildren(node, out);
 }
 
 function extractStringProperty(obj: AstNode, propName: string): string | null {

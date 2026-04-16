@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { extname, join } from "node:path";
 
 const distDir = join(import.meta.dir, "../dist");
-const basePath = "/elysion";
+const basePath = "/furin";
 const port = 3012;
 
 const MIME: Record<string, string> = {

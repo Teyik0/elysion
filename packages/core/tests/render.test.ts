@@ -24,7 +24,7 @@ import {
   streamToString,
   warmSSGCache,
 } from "../src/render";
-import { ssgCache } from "../src/render/cache";
+import { isrCache, ssgCache } from "../src/render/cache";
 import type { ResolvedRoute } from "../src/router";
 import { scanPages } from "../src/router";
 import { __setDevMode, IS_DEV } from "../src/runtime-env";
@@ -628,6 +628,31 @@ describe("render.tsx", () => {
       const html2 = await handleISR(isrRoute, ctx, root);
 
       expect(html1).toBe(html2);
+    });
+
+    test("serves stale cached HTML and triggers background revalidation", async () => {
+      const isrRoute = await getRoute("/isr-page");
+      const root = await getRoot();
+
+      // First request — populate the ISR cache
+      const ctx1 = createMockLoaderContext({ path: "/isr-page" });
+      await handleISR(isrRoute, ctx1, root, "build1");
+
+      // Manually expire the entry so isFresh → false
+      const entry = isrCache.get("/isr-page");
+      if (entry) {
+        isrCache.set("/isr-page", { ...entry, generatedAt: 0 });
+      }
+
+      // Second request with a stale entry — triggers revalidateInBackground
+      // and also covers the etag branch of serveISRCacheHit (buildId set)
+      const ctx2 = createMockLoaderContext({ path: "/isr-page" });
+      const html = await handleISR(isrRoute, ctx2, root, "build1");
+
+      expect(html).toBeTruthy();
+      // s-maxage should be 0 for a stale entry
+      expect(ctx2.set.headers["cache-control"]).toContain("s-maxage=0");
+      expect(ctx2.set.headers.etag).toBeTruthy();
     });
   });
 

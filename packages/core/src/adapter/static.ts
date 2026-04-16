@@ -4,11 +4,11 @@ import { buildClient } from "../build/client.ts";
 import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
 import type { StaticExportConfig } from "../config.ts";
+import { resolvePath } from "../render/assemble.ts";
 import { prerenderSSG } from "../render/index.ts";
 import { generateProdIndexHtml } from "../render/shell.ts";
 import { setProductionTemplateContent } from "../render/template.ts";
 import type { ResolvedRoute, RootLayout } from "../router.ts";
-import { __setDevMode } from "../runtime-env.ts";
 
 /** Maximum concurrent pre-render calls (mirrors warmSSGCache). */
 const STATIC_CONCURRENCY = 4;
@@ -17,18 +17,6 @@ const STATIC_CONCURRENCY = 4;
 const DYNAMIC_SEGMENT_RE = /\/:[^/]+|\/\*/;
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Resolves a route pattern + params into a concrete URL path.
- * "/blog/:slug" + { slug: "hello" } → "/blog/hello"
- */
-function resolveStaticPath(pattern: string, params: Record<string, string>): string {
-  let path = pattern;
-  for (const [key, val] of Object.entries(params)) {
-    path = path.replace(key === "*" ? "*" : `:${key}`, val);
-  }
-  return path;
-}
 
 /**
  * Converts a URL path to a filesystem output path.
@@ -52,7 +40,7 @@ async function prerenderAndWrite(
   renderedRoutes: string[],
   basePath: string
 ): Promise<void> {
-  const urlPath = resolveStaticPath(route.pattern, params);
+  const urlPath = resolvePath(route.pattern, params);
   const outputFile = pathToOutputFile(urlPath, outDir);
 
   try {
@@ -217,10 +205,10 @@ export async function buildStaticTarget(
   // ── 4. Generate HTML shell template ──────────────────────────────────────
   const shellHtml = generateProdIndexHtml(entryChunk, cssChunks);
 
-  // ── 5. Prime the renderer for production mode ─────────────────────────────
-  // CRITICAL: must be called before any prerenderSSG invocation.
-  // Without this, prepareRender() tries to fetch the dev HMR template.
-  __setDevMode(false);
+  // ── 5. Prime the renderer with the production shell ──────────────────────
+  // Must be called before any prerenderSSG invocation.
+  // prepareRender() checks getProductionTemplate() first (before IS_DEV), so
+  // setting the content here is sufficient — no need to flip IS_DEV globally.
   setProductionTemplateContent(shellHtml);
 
   // ── 6. Copy public/ → outDir/ ─────────────────────────────────────────────

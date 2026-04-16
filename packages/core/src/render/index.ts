@@ -79,9 +79,13 @@ async function prepareRender(
 
   const headData = buildHeadInjection(route.page?.head?.(componentProps));
 
-  const template = IS_DEV
-    ? await getDevTemplate(new URL(ctx.request.url).origin)
-    : (getProductionTemplate() ?? generateIndexHtml());
+  // An explicitly-set production template (static pre-render, compiled Bun server)
+  // always wins over the IS_DEV flag.  This decouples template resolution from the
+  // IS_DEV singleton so callers never need to flip IS_DEV just to get the right shell.
+  const prodTemplate = getProductionTemplate();
+  const template =
+    prodTemplate ??
+    (IS_DEV ? await getDevTemplate(new URL(ctx.request.url).origin) : generateIndexHtml());
 
   let element = buildElement(route, componentProps, root.route);
 
