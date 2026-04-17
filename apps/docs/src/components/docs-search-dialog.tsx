@@ -68,6 +68,46 @@ interface SearchResult {
   title: string;
 }
 
+type ScoredResult = SearchResult & { order: number; score: number };
+
+interface OramaHit {
+  document: {
+    content: string;
+    description: string;
+    href: string;
+    kind: "page" | "section";
+    order: number;
+    score?: number;
+    section: string;
+    title: string;
+  };
+  score: number;
+}
+
+function deduplicateAndSort(hits: OramaHit[], trimmedQuery: string): SearchResult[] {
+  const deduped = new Map<string, ScoredResult>();
+  for (const hit of hits) {
+    const doc = hit.document;
+    const existing = deduped.get(doc.href);
+    const next: ScoredResult = {
+      excerpt: createExcerpt(doc.content, doc.description, trimmedQuery),
+      href: doc.href,
+      kind: doc.kind,
+      order: doc.order,
+      score: hit.score,
+      section: doc.section,
+      title: doc.title,
+    };
+    if (!existing || hit.score > existing.score) {
+      deduped.set(doc.href, next);
+    }
+  }
+  return [...deduped.values()]
+    .sort((a, b) => (b.score === a.score ? a.order - b.order : b.score - a.score))
+    .slice(0, 8)
+    .map(({ order: _o, score: _s, ...result }) => result);
+}
+
 const MAC_PLATFORM_RE = /Mac|iPhone|iPad|iPod/;
 
 function isMacLikePlatform(value: string): boolean {
@@ -93,6 +133,8 @@ export function DocsSearchDialog() {
   const inputRef = useRef<HTMLInputElement>(null);
   const oramaIndexRef = useRef<OramaIndex | null>(null);
   const indexLoadingRef = useRef(false);
+  const indexFailedRef = useRef(false);
+  const searchGenRef = useRef(0);
 
   const navigateToResult = useCallback(
     (href: string): void => {
@@ -157,18 +199,22 @@ export function DocsSearchDialog() {
     indexLoadingRef.current = true;
     const url = `${router.basePath}/search-entries.json`;
 
-    fetch(url)
-      .then((r) => r.json())
-      .then(async (entries: SearchIndexEntry[]) => {
-        const index = create({ schema: ORAMA_SCHEMA });
+    (async () => {
+      try {
+        const r = await fetch(url);
+        const entries = (await r.json()) as SearchIndexEntry[];
+        const index = await create({ schema: ORAMA_SCHEMA });
         await insertMultiple(index, entries);
         oramaIndexRef.current = index;
         setIndexReady(true);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("[search] Failed to load search index:", err);
         indexLoadingRef.current = false;
-      });
+        indexFailedRef.current = true;
+        // Clear the spinner so the UI does not stay stuck in a loading state.
+        setLoading(false);
+      }
+    })();
   }, [open, router.basePath]);
 
   // Run a local Orama search whenever the query or index changes.
@@ -188,10 +234,17 @@ export function DocsSearchDialog() {
 
     const index = oramaIndexRef.current;
     if (!index) {
-      // Index still loading — show spinner and wait for indexReady to re-fire
-      setLoading(true);
+      // If the load failed permanently, don't spin forever.
+      if (!indexFailedRef.current) {
+        // Index still loading — show spinner and wait for indexReady to re-fire.
+        setLoading(true);
+      }
       return;
     }
+
+    // Increment generation so any in-flight search from a previous query can
+    // detect it is stale and discard its results.
+    const gen = ++searchGenRef.current;
 
     setLoading(true);
     const timeout = window.setTimeout(async () => {
@@ -203,37 +256,23 @@ export function DocsSearchDialog() {
           term: trimmedQuery,
         });
 
-        // Deduplicate by href, keep highest-score hit per page/section
-        const deduped = new Map<string, SearchResult & { order: number; score: number }>();
-        for (const hit of response.hits) {
-          const doc = hit.document;
-          const existing = deduped.get(doc.href);
-          const next = {
-            excerpt: createExcerpt(doc.content, doc.description, trimmedQuery),
-            href: doc.href,
-            kind: doc.kind,
-            order: doc.order,
-            score: hit.score,
-            section: doc.section,
-            title: doc.title,
-          };
-          if (!existing || hit.score > existing.score) {
-            deduped.set(doc.href, next);
-          }
+        const sorted = deduplicateAndSort(response.hits as unknown as OramaHit[], trimmedQuery);
+
+        // Guard against out-of-order completions: discard stale results.
+        if (gen !== searchGenRef.current) {
+          return;
         }
-
-        const sorted = [...deduped.values()]
-          .sort((a, b) => (b.score === a.score ? a.order - b.order : b.score - a.score))
-          .slice(0, 8)
-          .map(({ order: _o, score: _s, ...result }) => result);
-
         setResults(sorted);
         setActiveIndex(0);
       } catch (err) {
         console.error("[search] Search failed:", err);
-        setResults([]);
+        if (gen === searchGenRef.current) {
+          setResults([]);
+        }
       } finally {
-        setLoading(false);
+        if (gen === searchGenRef.current) {
+          setLoading(false);
+        }
       }
     }, 180);
 

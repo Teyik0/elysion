@@ -22,12 +22,23 @@ const DYNAMIC_SEGMENT_RE = /\/:[^/]+|\/\*/;
  * Converts a URL path to a filesystem output path.
  * "/"              → "outDir/index.html"
  * "/docs/routing"  → "outDir/docs/routing/index.html"
+ *
+ * The resolved path is validated to stay within `outDir` so that `..`
+ * segments injected via dynamic `staticParams()` values cannot escape
+ * the output directory.
  */
 function pathToOutputFile(urlPath: string, outDir: string): string {
+  const normalizedOutDir = resolve(outDir);
   if (urlPath === "/" || urlPath === "") {
-    return join(outDir, "index.html");
+    return join(normalizedOutDir, "index.html");
   }
-  return join(outDir, urlPath.slice(1), "index.html");
+  const resolved = resolve(normalizedOutDir, urlPath.slice(1), "index.html");
+  if (!resolved.startsWith(`${normalizedOutDir}/`)) {
+    throw new Error(
+      `[furin] static: unsafe output path detected for URL "${urlPath}" — path traversal via ".." is not allowed.`
+    );
+  }
+  return resolved;
 }
 
 // ── Pre-render worker ─────────────────────────────────────────────────────────
@@ -174,8 +185,42 @@ export async function buildStaticTarget(
   options: BuildAppOptions
 ): Promise<StaticTargetBuildManifest> {
   const staticConfig: StaticExportConfig = options.staticConfig ?? {};
-  const basePath = staticConfig.basePath ?? "";
+
+  // Normalize basePath: treat "" and "/" identically as no prefix; strip any
+  // trailing slash so `${basePath}/_client/` never produces double slashes.
+  const rawBasePath = staticConfig.basePath ?? "";
+  let basePath: string;
+  if (rawBasePath === "/" || rawBasePath === "") {
+    basePath = "";
+  } else if (rawBasePath.endsWith("/")) {
+    basePath = rawBasePath.slice(0, -1);
+  } else {
+    basePath = rawBasePath;
+  }
+  if (basePath && !basePath.startsWith("/")) {
+    throw new Error(
+      `[furin] static: basePath must start with "/" (received "${rawBasePath}"). ` +
+        `Use "" for root deployments or "/sub-path" for sub-path deployments.`
+    );
+  }
+
   const outDir = resolve(rootDir, staticConfig.outDir ?? "dist");
+
+  // Guard against destructive rmSync on obviously wrong output directories.
+  const normalizedRoot = resolve(rootDir);
+  const normalizedBuildRoot = resolve(buildRoot);
+  if (
+    outDir === normalizedRoot ||
+    outDir === normalizedBuildRoot ||
+    outDir === "/" ||
+    outDir === "."
+  ) {
+    throw new Error(
+      `[furin] static: outDir resolves to "${outDir}" which is unsafe to delete. ` +
+        `Use a dedicated output directory such as "dist".`
+    );
+  }
+
   const onSSR = staticConfig.onSSR ?? "error";
   const publicPath = basePath ? `${basePath}/_client/` : "/_client/";
 

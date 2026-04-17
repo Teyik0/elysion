@@ -3,19 +3,20 @@ import type { ResolvedRoute } from "../router";
 
 export interface BuildClientOptions {
   /**
-   * Sub-path prefix for the deployment (e.g. "/elysion" for GitHub Pages).
-   * When set, the generated hydrate entry strips the prefix from `window.location.pathname`
-   * and passes it to `RouterProvider` so SPA navigation uses correct physical URLs.
+   * Sub-path prefix for the deployment (e.g. "/furin" for GitHub Pages).
+   * Passed through to the generated hydrate entry so SPA navigation uses
+   * correct physical URLs. Pass "" for root deployments.
    */
-  basePath?: string;
+  basePath: string;
   outDir: string;
   pagesDir?: string;
   plugins?: Bun.BunPlugin[];
   /**
    * Public path prefix for all emitted JS/CSS chunks.
-   * Default: "/_client/".  Override for basePath deployments, e.g. "/furin/_client/".
+   * Pass "/_client/" for root deployments; override for basePath deployments,
+   * e.g. "/furin/_client/".
    */
-  publicPath?: string;
+  publicPath: string;
   rootLayout: string;
 }
 

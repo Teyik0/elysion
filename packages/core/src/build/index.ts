@@ -70,8 +70,12 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
   for (const plugin of options.plugins ?? []) {
     try {
       Bun.plugin(plugin);
-    } catch {
-      /* build-only plugin — safe to ignore at runtime */
+    } catch (err) {
+      // Build-only plugins (e.g. bun-plugin-tailwind uses onBeforeParse which
+      // does not exist in the runtime context) are expected to throw here —
+      // they only affect the Bun.build() client bundle, not server-side rendering.
+      // Log at debug level so genuine plugin registration errors remain visible.
+      console.debug("[furin] Skipped build-only plugin at runtime:", err);
     }
   }
 
@@ -101,7 +105,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
     rootDir: toPosixPath(rootDir),
     pagesDir: toPosixPath(relative(rootDir, pagesDir)),
     rootPath: toPosixPath(relative(rootDir, root.path)),
-    serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry as string)) : null,
+    serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry)) : null,
     routes: routes.map((route) => toBuildRouteManifestEntry(route, rootDir)),
     targets: {},
   };

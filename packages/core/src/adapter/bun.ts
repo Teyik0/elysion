@@ -87,6 +87,8 @@ export async function buildBunTarget(
     outDir: targetDir,
     rootLayout: rootPath,
     plugins: options.plugins,
+    publicPath: "/_client/",
+    basePath: "",
   });
 
   const buildFingerprint = await createBuildFingerprint(

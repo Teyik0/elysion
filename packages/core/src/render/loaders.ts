@@ -25,9 +25,17 @@ function createLoaderCtx(
       if (typeof prop !== "string") {
         return Reflect.get(target, prop);
       }
+      // Short-circuit well-known Promise/serialisation introspection keys so
+      // the proxy is never treated as a thenable by Promise.resolve() or
+      // JSON.stringify(), which would cause silent infinite loops or wrong types.
+      if (prop === "then" || prop === "catch" || prop === "finally" || prop === "toJSON") {
+        return Reflect.get(target, prop);
+      }
       // RouteContext fields (request, params, query, set, headers, cookie,
       // path, redirect) are present on target — return directly.
-      if (prop in target) {
+      // Use hasOwn so prototype keys (toString, constructor, …) are not
+      // mistaken for context fields and incorrectly hide parent loader data.
+      if (Object.hasOwn(target, prop)) {
         return target[prop];
       }
       // Everything else is a parent-data field → individual lazy Promise.
@@ -65,10 +73,13 @@ export async function runLoaders(
         loaderMap.set(r, loaderPromise);
 
         // Accumulate: previous ancestors + this loader's result.
-        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise]).then(([acc, own]) => ({
-          ...acc,
-          ...own,
-        }));
+        // Attach a no-op .catch so the intermediate promise does not surface
+        // as an unhandled rejection when a later-derived loader throws first
+        // (the real rejection is still available via loaderMap and re-thrown
+        // by the Promise.all below).
+        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise])
+          .then(([acc, own]) => ({ ...acc, ...own }))
+          .catch(() => ({})) as Promise<Record<string, unknown>>;
       }
     }
 

@@ -22,7 +22,7 @@ import type { BuildClientOptions } from "./types";
 export function generateHydrateEntry(
   routes: ResolvedRoute[],
   rootLayout: string,
-  basePath = ""
+  basePath: string
 ): string {
   const routeEntries: string[] = [];
 
@@ -38,8 +38,11 @@ export function generateHydrateEntry(
   // basePath stripping: when deployed to a sub-path (e.g. /furin), strip the
   // prefix before route matching so patterns like /docs/routing still work.
   const basePathLiteral = JSON.stringify(basePath);
+  // Strip basePath only when it matches on a path boundary (prevents "/furin" from
+  // matching "/furinity/foo"). The boundary holds when the pathname ends exactly
+  // at the prefix length OR the next character is "/".
   const pathnameExpr = basePath
-    ? `(window.location.pathname.startsWith(${basePathLiteral}) ? window.location.pathname.slice(${basePathLiteral}.length) || "/" : window.location.pathname)`
+    ? `(() => { const p = window.location.pathname; const b = ${basePathLiteral}; return (p.startsWith(b) && (p.length === b.length || p[b.length] === "/")) ? p.slice(b.length) || "/" : p; })()`
     : "window.location.pathname";
 
   // Log drain endpoint: prepend basePath so the request goes to the correct origin path.
@@ -129,7 +132,7 @@ export function writeDevFiles(
     mkdirSync(outDir, { recursive: true });
   }
 
-  const hydrateCode = generateHydrateEntry(routes, rootLayout);
+  const hydrateCode = generateHydrateEntry(routes, rootLayout, "");
   const hydratePath = join(outDir, "_hydrate.tsx");
   const existingHydrate = existsSync(hydratePath) ? readFileSync(hydratePath, "utf8") : "";
   if (hydrateCode !== existingHydrate) {

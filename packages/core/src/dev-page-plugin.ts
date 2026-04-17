@@ -45,10 +45,10 @@
  * guaranteeing a single shared React instance regardless of CWD or
  * hot-reload state.
  *
- * Only the *first* occurrence of each quoted specifier is replaced, because
- * ESM `import` statements must appear at the top of a module — any later
- * occurrence of the same string is inside a template literal or a comment
- * and must not be modified.
+ * All import/re-export occurrences of each quoted specifier are replaced using
+ * a context-aware regex (requires a preceding `from` or `import` keyword) so
+ * that modules which both import and re-export from the same package are fully
+ * rewritten while string literals in non-import positions are left untouched.
  */
 
 import { dirname, resolve } from "node:path";
@@ -224,13 +224,13 @@ export function rewriteRelativeImports(source: string, dir: string): string {
  * list of *actual* import specifiers (parsing correctly handles template
  * literals, comments, etc.).  For each bare specifier that is not already
  * handled by `rewriteSingletonImports`, it calls `Bun.resolveSync` and
- * replaces the **first** occurrence of the quoted specifier string in the
- * transpiled output.
- *
- * Replacing only the first occurrence is correct because ESM `import`
- * statements must appear at the top of a module — any subsequent occurrence
- * of the same string literal is inside a template literal or a comment and
- * must not be touched.
+ * replaces **every** import/re-export occurrence of the quoted specifier using
+ * a context-aware regex with the `g` flag — mirroring the approach used by
+ * `rewriteSingletonImports`.  This correctly handles modules that both import
+ * and re-export from the same package without leaving any bare specifier
+ * behind.  String literals that happen to contain the same text (inside
+ * template literals, JSX props, etc.) are not touched because the regex
+ * requires a preceding `from` or `import` keyword.
  *
  * @internal exported for testing
  */
@@ -270,12 +270,13 @@ export function rewriteBareImports(source: string, transpiled: string, dir: stri
       continue;
     }
 
-    // Replace only the FIRST occurrence of the quoted specifier string.
-    // ESM imports must be at the top of a module, so any later occurrence
-    // of the same string is in template literal / comment / non-import context.
-    result = result.replace(`"${spec}"`, `"${resolved}"`);
-    // Handle single-quoted imports (uncommon after Bun.Transpiler, but safe).
-    result = result.replace(`'${spec}'`, `"${resolved}"`);
+    // Replace ALL import/re-export occurrences of the bare specifier using a
+    // context-aware regex with the `g` flag. This correctly handles modules
+    // that both import and re-export from the same package. The regex only
+    // matches when the specifier is preceded by `from` or `import` so string
+    // literals in non-import positions are left untouched.
+    const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(spec)}["']`, "g");
+    result = result.replace(re, `$1"${resolved}"`);
   }
   return result;
 }

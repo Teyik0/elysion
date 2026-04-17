@@ -419,7 +419,12 @@ function handleScrollRestoration(
 
 /** Strips basePath prefix from a physical pathname, returning the logical path. */
 function toLogical(physicalPathname: string, basePath: string): string {
-  if (basePath && physicalPathname.startsWith(basePath)) {
+  if (
+    basePath &&
+    physicalPathname.startsWith(basePath) &&
+    // Require a path boundary after the prefix so "/furin" doesn't match "/furinity/foo"
+    (physicalPathname.length === basePath.length || physicalPathname[basePath.length] === "/")
+  ) {
     return physicalPathname.slice(basePath.length) || "/";
   }
   return physicalPathname;

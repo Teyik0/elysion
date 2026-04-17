@@ -236,7 +236,11 @@ export async function furin({
     const { root, routes } = await scanPages(resolvedPagesDir);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
-    writeDevFiles(routes, { outDir: furinDir, rootLayout: root.path }, cwd);
+    writeDevFiles(
+      routes,
+      { outDir: furinDir, rootLayout: root.path, basePath: "", publicPath: "/_client/" },
+      cwd
+    );
 
     const publicDir = resolve(cwd, "public");
     const publicExists = existsSync(publicDir);

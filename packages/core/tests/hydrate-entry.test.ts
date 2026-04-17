@@ -32,13 +32,13 @@ const ROOT = "/app/src/pages/root.tsx";
 
 describe("generateHydrateEntry", () => {
   test("imports RouterProvider via package specifier so client links share one RouterContext", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT);
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
     expect(code).toContain('import { RouterProvider } from "@teyik0/furin/link";');
     expect(code).not.toContain("/packages/core/src/link.tsx");
   });
 
   test("B12: without basePath — uses window.location.pathname directly", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT);
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
     // No basePath stripping logic
     expect(code).toContain("window.location.pathname");
     expect(code).not.toContain("startsWith");
@@ -46,7 +46,7 @@ describe("generateHydrateEntry", () => {
   });
 
   test("B12b: without basePath — log drain endpoint is the bare path", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT);
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
     // endpoint should be the bare string, not a concatenation
     expect(code).toContain('endpoint: "/_furin/ingest"');
     // No string concatenation for the endpoint
@@ -54,7 +54,7 @@ describe("generateHydrateEntry", () => {
   });
 
   test("B12c: without basePath — RouterProvider has no basePath prop", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT);
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
     expect(code).not.toContain("basePath:");
   });
 
@@ -126,7 +126,7 @@ describe("generateHydrateEntry", () => {
         ].join("\n")
       );
 
-      writeFileSync(hydratePath, generateHydrateEntry([makeRoute("/", pagePath)], rootPath));
+      writeFileSync(hydratePath, generateHydrateEntry([makeRoute("/", pagePath)], rootPath, ""));
 
       const result = Bun.spawnSync(
         [

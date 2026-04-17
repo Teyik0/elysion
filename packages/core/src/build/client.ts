@@ -34,7 +34,7 @@ export interface BuildClientResult {
  */
 export async function buildClient(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, plugins, publicPath = "/_client/", basePath = "" }: BuildClientOptions
+  { outDir, rootLayout, plugins, publicPath, basePath }: BuildClientOptions
 ): Promise<BuildClientResult> {
   const clientDir = join(outDir, "client");
 

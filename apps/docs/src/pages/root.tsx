@@ -25,7 +25,7 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   // basePath is available during static pre-render (RouterContext injected) and on the client.
   // Falls back to "/public" in dev (Elysia static plugin serves public/ at /public/).
   const router = useContext(RouterContext);
-  const imgPrefix = router?.basePath ?? "/public";
+  const imgPrefix = router?.basePath || "/public";
 
   return (
     <ThemeProvider>

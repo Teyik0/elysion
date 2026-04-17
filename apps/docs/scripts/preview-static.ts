@@ -2,9 +2,9 @@
  * Local preview server for the static export.
  *
  * Mirrors GitHub Pages behaviour:
- *   - serves dist/ mounted at /elysion/
+ *   - serves dist/ mounted at /furin/
  *   - unknown paths fall back to dist/404.html (the SPA shell)
- *   - navigating to / redirects to /elysion/
+ *   - navigating to / redirects to /furin/
  *
  * Usage: bun run preview:static
  */
@@ -33,7 +33,7 @@ function mime(filePath: string): string {
   return MIME[extname(filePath)] ?? "application/octet-stream";
 }
 
-function serveFile(filePath: string, status = 200): Response {
+function serveFile(filePath: string, status: number): Response {
   const file = Bun.file(filePath);
   return new Response(file, {
     status,
@@ -57,7 +57,7 @@ Bun.serve({
     if (pathname === "/favicon.ico") {
       const faviconPath = join(distDir, "favicon.ico");
       if (existsSync(faviconPath)) {
-        return serveFile(faviconPath);
+        return serveFile(faviconPath, 200);
       }
     }
 
@@ -77,14 +77,14 @@ Bun.serve({
     if (existsSync(exactPath) && !exactPath.endsWith("/")) {
       const stat = Bun.file(exactPath);
       if (await stat.exists()) {
-        return serveFile(exactPath);
+        return serveFile(exactPath, 200);
       }
     }
 
     // Try directory index (e.g. /docs/routing → dist/docs/routing/index.html)
     const indexPath = join(distDir, logical, "index.html");
     if (existsSync(indexPath)) {
-      return serveFile(indexPath);
+      return serveFile(indexPath, 200);
     }
 
     // SPA fallback — serve 404.html shell so client-side router can take over

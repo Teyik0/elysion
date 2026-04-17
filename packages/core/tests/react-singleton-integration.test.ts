@@ -41,11 +41,15 @@ function withTmpFiles(
     writeFileSync(requirePath(paths, name), typeof source === "function" ? source(paths) : source);
   }
 
+  // Remove only the files created by this invocation so concurrent test runs
+  // do not race against each other by deleting the shared TMP_DIR.
   return fn(paths).finally(() => {
-    try {
-      rmSync(TMP_DIR, { recursive: true, force: true });
-    } catch {
-      /* cleanup failure is non-critical */
+    for (const filePath of Object.values(paths)) {
+      try {
+        rmSync(filePath, { force: true });
+      } catch {
+        /* cleanup failure is non-critical */
+      }
     }
   });
 }
