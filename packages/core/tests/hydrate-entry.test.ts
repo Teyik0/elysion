@@ -62,9 +62,10 @@ describe("generateHydrateEntry", () => {
 
   test("B13: with basePath='/furin' — code strips prefix before route matching", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
-    // The generated pathname expression must start with the basePath check
-    expect(code).toContain('startsWith("/furin")');
-    expect(code).toContain('.slice("/furin".length)');
+    // The generated pathname expression uses a `b` variable for the basePath literal
+    expect(code).toContain('const b = "/furin"');
+    expect(code).toContain("startsWith(b)");
+    expect(code).toContain("p.slice(b.length)");
   });
 
   test("B13b: with basePath — falls back to '/' when pathname equals basePath exactly", () => {
@@ -90,7 +91,8 @@ describe("generateHydrateEntry", () => {
   test("B14b: different basePath value is correctly injected", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "/my-app");
     expect(code).toContain('basePath: "/my-app"');
-    expect(code).toContain('startsWith("/my-app")');
+    expect(code).toContain('const b = "/my-app"');
+    expect(code).toContain("startsWith(b)");
   });
 
   test("client bundle keeps a single RouterContext when a page imports Link", () => {
