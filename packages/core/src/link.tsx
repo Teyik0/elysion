@@ -241,8 +241,9 @@ export function useRouter(): RouterContextValue {
   return (
     useContext(RouterContext) ?? {
       basePath: "",
-      currentHref:
-        typeof window === "undefined" ? "/" : window.location.pathname + window.location.search,
+      // Use the same "/" as SSR_FALLBACK_ROUTER so SSR and client render the
+      // same active-state when no RouterProvider is present, avoiding hydration mismatches.
+      currentHref: "/",
       navigate: (href) => {
         window.location.href = href;
         return Promise.resolve();
@@ -674,14 +675,13 @@ export function RouterProvider({
       if (newState.title) {
         document.title = newState.title;
       }
-      // effectiveHref is logical; push physical to history if server redirected.
+      // effectiveHref is logical (includes search); push physical to history if server redirected.
       const effectiveLogical = newState.finalHref ?? logicalHref;
       if (newState.finalHref) {
         window.history.replaceState(null, "", basePath + effectiveLogical);
       }
-      const effectiveUrl = new URL(basePath + effectiveLogical, window.location.origin);
-      const logicalEffective = toLogical(effectiveUrl.pathname, basePath);
-      setCurrentHref(logicalEffective + effectiveUrl.search);
+      // effectiveLogical already contains the search params — no URL round-trip needed.
+      setCurrentHref(effectiveLogical);
       // No scrollTo(0, 0) — browser handles scroll restoration
     } finally {
       if (navVersion.current === myVersion) {
@@ -752,6 +752,49 @@ export function RouterProvider({
 
 // ── Link ───────────────────────────────────────────────────────────────────────
 
+interface LinkView {
+  extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement>;
+  href: string;
+  isActive: boolean;
+  logicalHref: string;
+  resolvedChildren: React.ReactNode;
+}
+
+/**
+ * Shared href/active-state/props computation used by both LinkInteractive (CSR)
+ * and renderLinkElement (SSR). Centralising this keeps the two render paths in sync.
+ */
+function computeLinkView<To extends RouteTo>(
+  {
+    to,
+    search,
+    hash,
+    children,
+    activeProps,
+    inactiveProps,
+  }: Pick<LinkProps<To>, "to" | "search" | "hash" | "children" | "activeProps" | "inactiveProps">,
+  router: RouterContextValue
+): LinkView {
+  const logicalHref = buildHref(
+    to as string,
+    search as Record<string, unknown> | null | undefined,
+    hash
+  );
+  const logicalHrefWithoutHash = buildHref(
+    to as string,
+    search as Record<string, unknown> | null | undefined,
+    undefined
+  );
+  const href = router.basePath + logicalHref;
+  const isActive = router.currentHref === logicalHrefWithoutHash;
+  const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
+  const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
+    ...(inactiveProps && !isActive ? inactiveProps() : {}),
+    ...(activeProps ? activeProps({ isActive }) : {}),
+  };
+  return { logicalHref, href, isActive, resolvedChildren, extraProps };
+}
+
 /**
  * Full interactive Link — only rendered on the client where hooks are safe.
  * Never rendered during SSR so it's immune to duplicate-React-instance issues
@@ -781,21 +824,12 @@ function LinkInteractive<To extends RouteTo>({
   const anchorRef = useRef<HTMLAnchorElement>(null);
   const intentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // logicalHref: the route-relative path (no basePath prefix), used for navigation + active state.
-  const logicalHref = buildHref(
-    to as string,
-    search as Record<string, unknown> | null | undefined,
-    hash
+  // logicalHref: route-relative path (no basePath), used for navigation + active state.
+  // physicalHref (href): what the browser sees — basePath + logicalHref.
+  const { logicalHref, href, isActive, resolvedChildren, extraProps } = computeLinkView(
+    { to, search, hash, children, activeProps, inactiveProps },
+    router
   );
-  const logicalHrefWithoutHash = buildHref(
-    to as string,
-    search as Record<string, unknown> | null | undefined,
-    undefined
-  );
-  // physicalHref: what the browser sees in the address bar and the <a href> attribute.
-  // When basePath="" this equals logicalHref, preserving all existing behaviour.
-  const href = router.basePath + logicalHref;
-  const isActive = router.currentHref === logicalHrefWithoutHash;
 
   const effectivePreload = preload ?? router.defaultPreload;
   const effectiveDelay = preloadDelay ?? router.defaultPreloadDelay;
@@ -883,14 +917,6 @@ function LinkInteractive<To extends RouteTo>({
     }
   };
 
-  const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
-
-  // activeProps wins over static consumer props; inactiveProps only applied when not active
-  const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
-    ...(inactiveProps && !isActive ? inactiveProps() : {}),
-    ...(activeProps ? activeProps({ isActive }) : {}),
-  };
-
   return createElement(
     "a",
     {
@@ -941,15 +967,17 @@ function renderLinkElement<To extends RouteTo>(
   props: LinkProps<To>,
   router: RouterContextValue
 ): React.ReactElement {
+  const { href, isActive, resolvedChildren, extraProps } = computeLinkView(props, router);
+
+  // Destructure to strip Link-specific and client-only props before spreading onto <a>.
   const {
-    to,
-    search,
-    hash,
-    children,
+    to: _to,
+    search: _search,
+    hash: _hash,
+    children: _children,
+    activeProps: _ap,
+    inactiveProps: _ip,
     disabled,
-    activeProps,
-    inactiveProps,
-    // strip client-only / event props — not needed in static HTML
     preload: _p,
     preloadDelay: _pd,
     preloadStaleTime: _ps,
@@ -961,26 +989,6 @@ function renderLinkElement<To extends RouteTo>(
     onFocus: _of,
     ...anchorProps
   } = props;
-
-  const logicalHref = buildHref(
-    to as string,
-    search as Record<string, unknown> | null | undefined,
-    hash
-  );
-  const logicalHrefWithoutHash = buildHref(
-    to as string,
-    search as Record<string, unknown> | null | undefined,
-    undefined
-  );
-  const href = router.basePath + logicalHref;
-  const isActive = router.currentHref === logicalHrefWithoutHash;
-
-  const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
-
-  const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
-    ...(inactiveProps && !isActive ? inactiveProps() : {}),
-    ...(activeProps ? activeProps({ isActive }) : {}),
-  };
 
   return createElement(
     "a",

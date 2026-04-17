@@ -77,7 +77,6 @@ interface OramaHit {
     href: string;
     kind: "page" | "section";
     order: number;
-    score?: number;
     section: string;
     title: string;
   };
@@ -130,6 +129,7 @@ export function DocsSearchDialog() {
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [indexReady, setIndexReady] = useState(false);
+  const [indexUnavailable, setIndexUnavailable] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const oramaIndexRef = useRef<OramaIndex | null>(null);
   const indexLoadingRef = useRef(false);
@@ -202,16 +202,29 @@ export function DocsSearchDialog() {
     (async () => {
       try {
         const r = await fetch(url);
-        const entries = (await r.json()) as SearchIndexEntry[];
-        const index = await create({ schema: ORAMA_SCHEMA });
-        await insertMultiple(index, entries);
+        if (!r.ok) {
+          console.error(`[search] Failed to load search index: HTTP ${r.status} ${r.statusText}`);
+          indexLoadingRef.current = false;
+          indexFailedRef.current = true;
+          setLoading(false);
+          return;
+        }
+        const rawEntries = await r.json();
+        if (!Array.isArray(rawEntries)) {
+          console.error("[search] Search index payload is not an array");
+          indexLoadingRef.current = false;
+          indexFailedRef.current = true;
+          setLoading(false);
+          return;
+        }
+        const index = create({ schema: ORAMA_SCHEMA });
+        await insertMultiple(index, rawEntries as SearchIndexEntry[]);
         oramaIndexRef.current = index;
         setIndexReady(true);
       } catch (err) {
         console.error("[search] Failed to load search index:", err);
         indexLoadingRef.current = false;
         indexFailedRef.current = true;
-        // Clear the spinner so the UI does not stay stuck in a loading state.
         setLoading(false);
       }
     })();
@@ -224,6 +237,11 @@ export function DocsSearchDialog() {
       return;
     }
 
+    // Bump the generation counter before any early exit so that any in-flight
+    // oramaSearch from the previous effect run is invalidated — even when the
+    // query is cleared or becomes too short to search.
+    const gen = ++searchGenRef.current;
+
     const trimmedQuery = query.trim();
     if (trimmedQuery.length < 2) {
       setResults([]);
@@ -234,17 +252,16 @@ export function DocsSearchDialog() {
 
     const index = oramaIndexRef.current;
     if (!index) {
-      // If the load failed permanently, don't spin forever.
-      if (!indexFailedRef.current) {
+      if (indexFailedRef.current) {
+        // Index load failed permanently — surface error state instead of spinning.
+        setLoading(false);
+        setIndexUnavailable(true);
+      } else {
         // Index still loading — show spinner and wait for indexReady to re-fire.
         setLoading(true);
       }
       return;
     }
-
-    // Increment generation so any in-flight search from a previous query can
-    // detect it is stale and discard its results.
-    const gen = ++searchGenRef.current;
 
     setLoading(true);
     const timeout = window.setTimeout(async () => {
@@ -287,7 +304,11 @@ export function DocsSearchDialog() {
     <DialogRoot
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (!nextOpen) {
+        if (nextOpen) {
+          // Reset failure state so the index load is retried on re-open.
+          indexFailedRef.current = false;
+          setIndexUnavailable(false);
+        } else {
           setQuery("");
           setResults([]);
           setLoading(false);
@@ -370,7 +391,13 @@ export function DocsSearchDialog() {
             </div>
           ) : null}
 
-          {query.trim().length >= 2 && !loading && results.length === 0 ? (
+          {query.trim().length >= 2 && !loading && indexUnavailable ? (
+            <div className="px-4 py-10 text-center text-muted-foreground text-sm">
+              Search is temporarily unavailable.
+            </div>
+          ) : null}
+
+          {query.trim().length >= 2 && !loading && !indexUnavailable && results.length === 0 ? (
             <div className="px-4 py-10 text-center text-muted-foreground text-sm">
               No results found.
             </div>

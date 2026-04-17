@@ -136,8 +136,15 @@ export async function buildClient(
     throw new Error("[furin] client build did not emit entry chunk");
   }
 
-  // Normalise: ensure publicPath ends with exactly one "/"
-  const publicPrefix = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
+  // Normalise: ensure publicPath ends with exactly one "/".
+  // Preserve an empty publicPath ("") as-is so callers that want
+  // relative chunk URLs don't get an unintended root-absolute "/".
+  let publicPrefix: string;
+  if (publicPath === "") {
+    publicPrefix = "";
+  } else {
+    publicPrefix = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
+  }
   const entryChunk = `${publicPrefix}${basename(entryOutput.path)}`;
   const cssChunks = cssOutputs.map((o) => `${publicPrefix}${basename(o.path)}`);
 

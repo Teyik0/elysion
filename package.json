@@ -23,7 +23,7 @@
     "knip": "^6.4.1",
     "lefthook": "^2.1.6",
     "react-doctor": "^0.0.37",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "ultracite": "7.6.0"
   },
   "catalog": {

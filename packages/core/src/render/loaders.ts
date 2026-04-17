@@ -49,13 +49,15 @@ function createLoaderCtx(
   });
 }
 
+// TODO: remove _rootLayout parameter in next refactor (unused; routeChain[0] is root layout)
 export async function runLoaders(
   route: ResolvedRoute,
   ctx: Context,
-  // kept for API compat; routeChain[0] is the root layout
   _rootLayout: RuntimeRoute
 ): Promise<LoaderResult> {
   try {
+    // Hoist the cast once so it doesn't repeat at every createLoaderCtx call site.
+    const ctxRecord = ctx as Record<string, unknown>;
     const loaderMap = new Map<RuntimeRoute, Promise<Record<string, unknown>>>();
 
     // All loaders in the chain start immediately. Each receives a Proxy where
@@ -68,23 +70,29 @@ export async function runLoaders(
       const parentAccum = accumulatedParentPromise; // capture for closure
 
       if (r.loader) {
-        const loaderCtx = createLoaderCtx(ctx as Record<string, unknown>, parentAccum);
+        const loaderCtx = createLoaderCtx(ctxRecord, parentAccum);
         const loaderPromise = Promise.resolve(r.loader(loaderCtx)).then((res) => res ?? {});
         loaderMap.set(r, loaderPromise);
 
         // Accumulate: previous ancestors + this loader's result.
-        // Attach a no-op .catch so the intermediate promise does not surface
-        // as an unhandled rejection when a later-derived loader throws first
-        // (the real rejection is still available via loaderMap and re-thrown
-        // by the Promise.all below).
-        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise])
-          .then(([acc, own]) => ({ ...acc, ...own }))
-          .catch(() => ({})) as Promise<Record<string, unknown>>;
+        // A void .catch() suppresses the "unhandled rejection" warning that
+        // fires when a sibling or child loader throws — but unlike `.catch(
+        // () => ({}))` it does NOT resolve the promise, so child loaders'
+        // field-accesses via createLoaderCtx still receive the rejection
+        // instead of silently resolving to undefined. The real rejection is
+        // re-thrown by the Promise.all below.
+        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise]).then(([acc, own]) => ({
+          ...acc,
+          ...own,
+        }));
+        accumulatedParentPromise.catch(() => {
+          /* suppress unhandled-rejection warning */
+        });
       }
     }
 
     // Page loader receives all route-chain fields as individual Promises.
-    const pageCtx = createLoaderCtx(ctx as Record<string, unknown>, accumulatedParentPromise);
+    const pageCtx = createLoaderCtx(ctxRecord, accumulatedParentPromise);
     const pagePromise: Promise<Record<string, unknown>> = route.page?.loader
       ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
       : Promise.resolve({});

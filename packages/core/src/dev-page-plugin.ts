@@ -52,6 +52,7 @@
  */
 
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
 const FURIN_SERVER_FILTER = /\?furin-server(?:&t=\d+)?$/;
@@ -88,7 +89,7 @@ const SINGLETON_PKGS = [
 const SINGLETON_PATHS = new Map<string, string>();
 for (const pkg of SINGLETON_PKGS) {
   try {
-    SINGLETON_PATHS.set(pkg, new URL(import.meta.resolve(pkg)).pathname);
+    SINGLETON_PATHS.set(pkg, fileURLToPath(import.meta.resolve(pkg)));
   } catch {
     // Package not installed — skip (e.g. react-dom/client in a server-only env)
   }

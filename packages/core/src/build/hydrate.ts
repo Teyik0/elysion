@@ -125,14 +125,14 @@ const _match = routes.find((r) => r.regex.test(pathname));
  */
 export function writeDevFiles(
   routes: ResolvedRoute[],
-  { outDir, rootLayout }: BuildClientOptions,
+  { outDir, rootLayout, basePath }: BuildClientOptions,
   projectRoot: string
 ): void {
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true });
   }
 
-  const hydrateCode = generateHydrateEntry(routes, rootLayout, "");
+  const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath);
   const hydratePath = join(outDir, "_hydrate.tsx");
   const existingHydrate = existsSync(hydratePath) ? readFileSync(hydratePath, "utf8") : "";
   if (hydrateCode !== existingHydrate) {

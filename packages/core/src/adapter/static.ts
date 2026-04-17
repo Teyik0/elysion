@@ -1,5 +1,5 @@
 import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
@@ -33,7 +33,7 @@ function pathToOutputFile(urlPath: string, outDir: string): string {
     return join(normalizedOutDir, "index.html");
   }
   const resolved = resolve(normalizedOutDir, urlPath.slice(1), "index.html");
-  if (!resolved.startsWith(`${normalizedOutDir}/`)) {
+  if (!resolved.startsWith(`${normalizedOutDir}${sep}`)) {
     throw new Error(
       `[furin] static: unsafe output path detected for URL "${urlPath}" — path traversal via ".." is not allowed.`
     );
