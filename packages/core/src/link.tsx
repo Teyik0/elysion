@@ -414,9 +414,56 @@ function handleScrollRestoration(
       });
     });
   } else {
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
 }
+
+// ── Scroll restoration helpers ─────────────────────────────────────────────────
+
+const SCROLL_STORAGE_KEY = "__furin_scroll__";
+
+function getHistoryKey(state: unknown): string | undefined {
+  return (state as { _furinKey?: string } | null)?._furinKey;
+}
+
+function generateHistoryKey(): string {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function saveScrollPosition(key: string): void {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
+    positions[key] = window.scrollY;
+    const keys = Object.keys(positions);
+    if (keys.length > 50) {
+      delete positions[keys[0] as string];
+    }
+    sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify(positions));
+  } catch {
+    // sessionStorage unavailable (private mode, quota exceeded, etc.)
+  }
+}
+
+function restoreScrollPosition(key: string, token: number, version: { current: number }): void {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const y = positions[key] ?? 0;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (version.current !== token) {
+          return;
+        }
+        window.scrollTo({ top: y, behavior: "instant" });
+      });
+    });
+  } catch {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+}
+
+// ── Path helpers ───────────────────────────────────────────────────────────────
 
 /** Strips basePath prefix from a physical pathname, returning the logical path. */
 function toLogical(physicalPathname: string, basePath: string): string {
@@ -610,9 +657,22 @@ export function RouterProvider({
         // Push the PHYSICAL path to browser history.
         const physicalEffective = basePath + effectiveLogical;
         if (opts?.replace) {
-          window.history.replaceState(null, "", physicalEffective);
+          // Preserve the existing key — same history entry, URL just updated.
+          window.history.replaceState(
+            {
+              ...((history.state as object) ?? {}),
+              _furinKey: getHistoryKey(history.state) ?? generateHistoryKey(),
+            },
+            "",
+            physicalEffective
+          );
         } else {
-          window.history.pushState(null, "", physicalEffective);
+          // Save current position before leaving, then push a fresh entry.
+          const currentKey = getHistoryKey(history.state);
+          if (currentKey) {
+            saveScrollPosition(currentKey);
+          }
+          window.history.pushState({ _furinKey: generateHistoryKey() }, "", physicalEffective);
         }
         // Store the LOGICAL path in currentHref so Link active-state works.
         const effectiveUrl = new URL(physicalEffective, window.location.origin);
@@ -644,6 +704,9 @@ export function RouterProvider({
   );
 
   const handlePopState = useCallback(async () => {
+    // Capture the destination key immediately — history.state is already the
+    // destination entry when popstate fires, before any awaits.
+    const destKey = getHistoryKey(history.state);
     // Convert physical browser URL to logical href for cache lookup + fetchPageState.
     const logicalPath = toLogical(window.location.pathname, basePath);
     const logicalHref = logicalPath + window.location.search;
@@ -678,17 +741,38 @@ export function RouterProvider({
       // effectiveHref is logical (includes search); push physical to history if server redirected.
       const effectiveLogical = newState.finalHref ?? logicalHref;
       if (newState.finalHref) {
-        window.history.replaceState(null, "", basePath + effectiveLogical);
+        // Preserve _furinKey so restoreScrollPosition still works after a redirect.
+        window.history.replaceState(history.state, "", basePath + effectiveLogical);
       }
       // effectiveLogical already contains the search params — no URL round-trip needed.
       setCurrentHref(effectiveLogical);
-      // No scrollTo(0, 0) — browser handles scroll restoration
+      // Restore the saved scroll position for this history entry (double rAF waits
+      // for React to finish painting the new page before scrolling).
+      if (destKey) {
+        restoreScrollPosition(destKey, myVersion, navVersion);
+      } else {
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
     } finally {
       if (navVersion.current === myVersion) {
         setIsNavigating(false);
       }
     }
   }, [fetchPageState, basePath]);
+
+  // Disable native scroll restoration and assign a key to the initial history entry
+  useEffect(() => {
+    history.scrollRestoration = "manual";
+    if (!getHistoryKey(history.state)) {
+      history.replaceState(
+        { ...((history.state as object) ?? {}), _furinKey: generateHistoryKey() },
+        ""
+      );
+    }
+    return () => {
+      history.scrollRestoration = "auto";
+    };
+  }, []);
 
   // Handle browser back/forward
   useEffect(() => {

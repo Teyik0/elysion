@@ -1,0 +1,198 @@
+# Logging
+
+Furin ships with [evlog](https://evlog.dev) wired in on both sides of the stack — no setup required for the basics.
+
+## What Ships by Default
+
+When you call `furin()`, two things happen automatically:
+
+**Server side** — the `evlog/elysia` middleware runs on every request and emits a structured wide event with method, path, status, duration, and any fields you add during the request.
+
+**Client side** — the generated hydration entry calls `initLogger` with an HTTP drain pointed at `/_furin/ingest`. Navigation events (`hydrate_complete`, `navigate_server_error`, `navigate_failed`, etc.) are logged from `RouterProvider` automatically. Those events are batched, sent to the server, and re-emitted there as `service: "furin:browser"` so everything lands in one stream.
+
+Internal paths are excluded from request logging by default:
+
+```
+/_client/**
+/public/**
+/favicon.ico
+/_furin/* (except /_furin/ingest itself)
+/_bun_hmr_entry/**
+```
+
+## Customising the Logger
+
+Pass a `logger` option to `furin()`. It accepts the full `EvlogElysiaOptions` shape — drain adapters, enrichers, redaction, tail sampling, and extra path exclusions.
+
+```ts
+// src/server.ts
+import { Elysia } from "elysia"
+import { furin } from "@teyik0/furin"
+
+const app = new Elysia()
+  .use(
+    await furin({
+      pagesDir: "./src/pages",
+      logger: {
+        exclude: ["/healthz", "/metrics"],
+      },
+    })
+  )
+  .listen(3000)
+```
+
+## Adding Fields During a Request
+
+Import `useLogger` from `@teyik0/furin` — not from `evlog/elysia` directly. The Furin wrapper falls back to a no-op logger during background renders (ISR revalidation, SSG pre-render) instead of throwing:
+
+```ts
+// src/lib/posts.ts
+import { useLogger } from "@teyik0/furin"
+
+export async function getPost(slug: string) {
+  const log = useLogger()
+  log.set({ action: "db.query", table: "posts" })
+  const post = await db.query("SELECT * FROM posts WHERE slug = ?", [slug])
+  log.set({ found: post !== null })
+  return post[0] ?? null
+}
+```
+
+You can call it directly in a loader too:
+
+```ts
+// src/pages/blog/[slug].tsx
+import { useLogger } from "@teyik0/furin"
+import { route } from "./_route"
+
+export default route.page({
+  loader: async ({ params }) => {
+    const log = useLogger()
+    log.set({ slug: params.slug })
+    const post = await getPost(params.slug)
+    return { post }
+  },
+  component: ({ post }) => <BlogPost post={post} />,
+})
+```
+
+During ISR background revalidation, the loader **is** re-executed with a synthetic context (no cookies, no headers, empty query). `useLogger()` from `@teyik0/furin` returns a no-op in that case — fields are silently dropped rather than crashing the revalidation.
+
+## Drain Adapters
+
+To forward logs to an external platform, pass a `drain` function to the `logger` option. evlog ships built-in adapters for the most common providers.
+
+### Datadog
+
+```ts
+import { Elysia } from "elysia"
+import { furin } from "@teyik0/furin"
+import { createDatadogDrain } from "evlog/adapters/datadog"
+
+const app = new Elysia()
+  .use(
+    await furin({
+      pagesDir: "./src/pages",
+      logger: {
+        drain: createDatadogDrain({
+          apiKey: process.env.DD_API_KEY!,
+          site: "datadoghq.eu", // default: "datadoghq.com"
+        }),
+      },
+    })
+  )
+  .listen(3000)
+```
+
+### Axiom
+
+```ts
+import { createAxiomDrain } from "evlog/adapters/axiom"
+
+await furin({
+  logger: {
+    drain: createAxiomDrain({
+      token: process.env.AXIOM_TOKEN!,
+      dataset: "my-app",
+    }),
+  },
+})
+```
+
+### OTLP (OpenTelemetry)
+
+```ts
+import { createOtlpDrain } from "evlog/adapters/otlp"
+
+await furin({
+  logger: {
+    drain: createOtlpDrain({
+      endpoint: "http://localhost:4318/v1/logs",
+    }),
+  },
+})
+```
+
+Other built-in adapters: `evlog/adapters/sentry`, `evlog/adapters/hyperdx`, `evlog/adapters/better-stack`, `evlog/adapters/posthog`, `evlog/adapters/fs`.
+
+## Enriching Events
+
+Use `enrich` to add context that is the same for every request — deployment metadata, region, release version:
+
+```ts
+await furin({
+  logger: {
+    enrich: (ctx) => {
+      ctx.event.region = process.env.FLY_REGION
+      ctx.event.release = process.env.RELEASE_SHA
+    },
+  },
+})
+```
+
+## PII Redaction
+
+Pass `redact: true` to enable all built-in PII patterns (emails, IPs, bearer tokens, credit card numbers, etc.), or supply a fine-grained config:
+
+```ts
+await furin({
+  logger: {
+    redact: {
+      fields: ["user.email", "body.password"],
+      patterns: [/Bearer\s+\S+/gi],
+    },
+  },
+})
+```
+
+## Client-Side Logging
+
+The hydration entry already calls `initLogger` for you. To emit your own events from a component or browser utility, import `log` directly:
+
+```ts
+import { log } from "evlog"
+
+function trackSearch(query: string) {
+  log.info({ action: "search", query })
+}
+```
+
+Events are batched and flushed to `/_furin/ingest` automatically. On page hide/unload, `sendBeacon` is used so no events are dropped.
+
+The server tags re-emitted browser events with `service: "furin:browser"`, so you can filter server-side logs vs. client-side logs in your drain platform using that field.
+
+## Filesystem Drain (Development)
+
+For local development without a SaaS account, write logs to disk:
+
+```ts
+import { createFsDrain } from "evlog/adapters/fs"
+
+await furin({
+  logger: {
+    drain: createFsDrain({ path: "./.logs/app.ndjson" }),
+  },
+})
+```
+
+Each line is a JSON-encoded wide event. Pair with `tail -f .logs/app.ndjson | bunx pino-pretty` or any NDJSON viewer.

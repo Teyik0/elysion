@@ -116,6 +116,15 @@ export const DOCS_NAV: DocNavSection[] = [
         openIn: DEFAULT_OPEN_IN,
       },
       {
+        label: "Logging",
+        title: "Logging",
+        href: "/docs/logging",
+        description: "Built-in evlog integration: request logs, client-side drain, and adapters.",
+        sourcePath: "src/content/docs/logging.mdx",
+        githubPath: "apps/docs/src/content/docs/logging.mdx",
+        openIn: DEFAULT_OPEN_IN,
+      },
+      {
         label: "Deployment",
         title: "Deployment",
         href: "/docs/deployment",

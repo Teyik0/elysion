@@ -3,6 +3,7 @@
 import { createRoute } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { DocsMobileNav } from "@/components/docs-mobile-nav";
+import { DocsPager } from "@/components/docs-pager";
 import { DocsToc } from "@/components/docs-toc";
 import { GiscusComments } from "@/components/giscus-comments";
 import { DOCS_NAV } from "@/lib/docs";
@@ -53,6 +54,7 @@ export const route = createRoute({
 
           <div className="min-w-0">
             {children}
+            <DocsPager pathname={pathname} />
             <GiscusComments key={pathname} />
           </div>
 
