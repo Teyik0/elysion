@@ -7,6 +7,7 @@
     "dev": "bun --hot src/server.ts",
     "build": "furin build --target bun --compile embed",
     "start": "./.furin/build/bun/server",
+    "fix": "ultracite fix",
     "test:types": "tsc --noEmit"
   },
   "dependencies": {
@@ -24,10 +25,12 @@
     "tw-animate-css": "<%= versions['tw-animate-css'] %>"
   },
   "devDependencies": {
+    "@biomejs/biome": "<%= versions['@biomejs/biome'] %>",
     "@types/bun": "<%= versions['@types/bun'] %>",
     "@types/react": "<%= versions['@types/react'] %>",
     "@types/react-dom": "<%= versions['@types/react-dom'] %>",
     "tailwindcss": "<%= versions['tailwindcss'] %>",
-    "typescript": "<%= versions['typescript'] %>"
+    "typescript": "<%= versions['typescript'] %>",
+    "ultracite": "<%= versions['ultracite'] %>"
   }
 }

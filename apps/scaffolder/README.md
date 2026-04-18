@@ -10,16 +10,16 @@ Scaffolder officiel pour [Furin](https://github.com/Teyik0/furin) — le meta-fr
 
 ## Utilisation
 
-### Via `bun create` (après publication npm)
+### Via `bun create`
 
 ```bash
-bun create furin my-app
+bun create furin@latest my-app
 ```
 
 ### Via `bunx`
 
 ```bash
-bunx @teyik0/create-furin my-app
+bunx create-furin@latest my-app
 ```
 
 ### En local (développement dans le monorepo)
@@ -34,8 +34,8 @@ bun apps/scaffolder/src/index.ts my-app
 
 ```text
 Usage:
-  bun create furin <dir>
-  bun create furin <dir> --template <simple|full>
+  bun create furin@latest <dir>
+  bun create furin@latest <dir> --template <simple|full>
 
 Options:
   --template <simple|full>   Choix du template (par défaut : interactif)
@@ -49,13 +49,13 @@ Options:
 
 ```bash
 # Mode interactif complet
-bun create furin my-app
+bun create furin@latest my-app
 
 # Générer directement, sans prompts
-bun create furin my-app --template full --yes
+bun create furin@latest my-app --template full --yes
 
 # Générer sans installer les dépendances
-bun create furin my-app --no-install
+bun create furin@latest my-app --no-install
 ```
 
 ---

@@ -16,6 +16,14 @@ Furin is a React meta-framework on top of Elysia and Bun. It gives you file-base
 - Bun-native development flow with Fast Refresh and SSR kept in sync
 - A single process for pages and API routes
 
+## Quick Start
+
+```bash
+bun create furin@latest my-app
+cd my-app
+bun dev
+```
+
 ## Start Here
 
 - [Getting Started](/docs/getting-started) for project setup and your first page
@@ -52,24 +60,26 @@ The core build target implemented in this branch is Bun. Other targets may alrea
 
 Furin is a React meta-framework built on Elysia and Bun. It gives you file-based routing, SSR, SSG, ISR, nested layouts, and typed route data without a separate frontend toolchain.
 
-## Install A Starter
+## Create A Project
 
 ```bash
 bun create furin@latest my-app
 cd my-app
+bun dev
 ```
 
-For the shadcn starter:
+For the shadcn/ui starter:
 
 ```bash
-bun create furin@latest my-app --template shadcn
+bun create furin@latest my-app --template full
 cd my-app
+bun dev
 ```
 
 ## Available Templates
 
-- `minimal` is the default starter with Tailwind, `/api/hello`, and an SSR page loader
-- `shadcn` adds Tailwind plus shadcn-style `button`, `card`, and `input` primitives
+- `simple` — Tailwind CSS + `/api/hello` route + SSR page loader (default)
+- `full` — everything in `simple` plus shadcn/ui components (`button`, `card`, `input`)
 
 ## Project Shape
 

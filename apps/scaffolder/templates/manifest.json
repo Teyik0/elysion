@@ -39,11 +39,16 @@
           "kind": "static"
         },
         {
-          "src": "simple/bunfig.toml",
+          "src": "simple/bunfig.toml.ejs",
           "dest": "bunfig.toml",
-          "kind": "static"
+          "kind": "ejs"
         },
-        { "src": "simple/.gitignore", "dest": ".gitignore", "kind": "static" },
+        { "src": "simple/gitignore", "dest": ".gitignore", "kind": "static" },
+        {
+          "src": "simple/biome.jsonc.ejs",
+          "dest": "biome.jsonc",
+          "kind": "ejs"
+        },
         {
           "src": "simple/furin-env.d.ts.ejs",
           "dest": "furin-env.d.ts",
@@ -123,8 +128,9 @@
           "dest": "tsconfig.json",
           "kind": "static"
         },
-        { "src": "full/bunfig.toml", "dest": "bunfig.toml", "kind": "static" },
-        { "src": "full/.gitignore", "dest": ".gitignore", "kind": "static" },
+        { "src": "full/bunfig.toml.ejs", "dest": "bunfig.toml", "kind": "ejs" },
+        { "src": "full/gitignore", "dest": ".gitignore", "kind": "static" },
+        { "src": "full/biome.jsonc.ejs", "dest": "biome.jsonc", "kind": "ejs" },
         {
           "src": "full/furin-env.d.ts.ejs",
           "dest": "furin-env.d.ts",
