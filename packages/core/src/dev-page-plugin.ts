@@ -57,7 +57,8 @@ import { fileURLToPath } from "node:url";
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
 const FURIN_SERVER_FILTER = /\?furin-server(?:&t=\d+)?$/;
 const ANY_FILTER = /.*/;
-const WORKSPACE_SOURCE_FILTER = /^(?!.*(?:\/node_modules\/|\/\.bun\/)).*\.[jt]sx?$/;
+const WORKSPACE_SOURCE_FILTER =
+  /^(?!.*(?:\/node_modules\/|\/\.bun\/))(?!.*\.(?:test|spec)\.[jt]sx?$).*\.[jt]sx?$/;
 const T_PARAM_RE = /&t=(\d+)/;
 const STRIP_FURIN_SERVER_RE = /\?furin-server.*$/;
 const STRIP_T_PARAM_RE = /\?t=\d+$/;
@@ -116,7 +117,7 @@ export function rewriteSingletonImports(source: string): string {
   let result = source;
   for (const [pkg, absPath] of SINGLETON_PATHS) {
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(pkg)}["']`, "g");
-    result = result.replace(re, `$1"${absPath}"`);
+    result = result.replace(re, (_, g1: string) => `${g1}"${absPath}"`);
   }
   return result;
 }
@@ -277,7 +278,7 @@ export function rewriteBareImports(source: string, transpiled: string, dir: stri
     // matches when the specifier is preceded by `from` or `import` so string
     // literals in non-import positions are left untouched.
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(spec)}["']`, "g");
-    result = result.replace(re, `$1"${resolved}"`);
+    result = result.replace(re, (_, g1: string) => `${g1}"${resolved}"`);
   }
   return result;
 }

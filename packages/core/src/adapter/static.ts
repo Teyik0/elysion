@@ -1,5 +1,5 @@
 import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
@@ -231,13 +231,13 @@ export async function buildStaticTarget(
   }
   // Also reject ancestor paths: if rootDir or buildRoot is inside outDir, deleting
   // outDir would destroy them. path.relative(outDir, x) not starting with ".." means x
-  // is inside (or equal to) outDir.
-  if (
-    !(
-      relative(outDir, normalizedRoot).startsWith("..") &&
-      relative(outDir, normalizedBuildRoot).startsWith("..")
-    )
-  ) {
+  // is inside (or equal to) outDir. On Windows, paths on different drives produce an
+  // absolute result from relative(), which also indicates they are outside outDir.
+  function isOutsideOutDir(target: string): boolean {
+    const rel = relative(outDir, target);
+    return rel.startsWith("..") || isAbsolute(rel);
+  }
+  if (!(isOutsideOutDir(normalizedRoot) && isOutsideOutDir(normalizedBuildRoot))) {
     throw new Error(
       `[furin] static: outDir resolves to "${outDir}" which is unsafe to delete. ` +
         `Use a dedicated output directory such as "dist".`
