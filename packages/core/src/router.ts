@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
-import { type AnyElysia, type Context, Elysia } from "elysia";
+import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
@@ -283,13 +283,37 @@ async function handleSSGRequest(
   return entry.html;
 }
 
+/**
+ * Merges TObject schemas from all routeChain entries for a given key.
+ * Each entry's `.properties` are spread left-to-right (leaf wins on key conflict).
+ * Returns undefined when no entry in the chain defines the key.
+ *
+ * @internal Exported for unit testing.
+ */
+export function mergeRouteSchemas(
+  routeChain: RuntimeRoute[],
+  key: "params" | "query"
+): AnySchema | undefined {
+  const schemas = routeChain.map((r) => r[key]).filter(Boolean) as Array<{
+    properties?: Record<string, unknown>;
+  }>;
+
+  if (schemas.length === 0) {
+    return;
+  }
+  if (schemas.length === 1) {
+    return schemas[0] as AnySchema;
+  }
+
+  const merged = Object.assign({}, ...schemas.map((s) => s.properties ?? {}));
+  return t.Object(merged) as AnySchema;
+}
+
 export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildId = ""): AnyElysia {
   const { pattern, routeChain } = route;
 
-  // TODO: merge schemas from all routeChain entries (requires TypeBox t.Object/t.Composite)
-  // For now, prefer the leaf route's schema (last in chain) over ancestor routes.
-  const allParams = routeChain.findLast((r) => r.params)?.params;
-  const allQuery = routeChain.findLast((r) => r.query)?.query;
+  const allParams = mergeRouteSchemas(routeChain, "params");
+  const allQuery = mergeRouteSchemas(routeChain, "query");
   const hasQuerySchema = !!allQuery;
 
   // Guard and handler MUST live in the same Elysia scope so that validation

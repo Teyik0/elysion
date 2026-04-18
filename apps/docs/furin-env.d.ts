@@ -13,6 +13,7 @@ declare module "@teyik0/furin/link" {
     "/docs/dev-hmr": { search?: never };
     "/docs/getting-started": { search?: never };
     "/docs/layouts": { search?: never };
+    "/docs/logging": { search?: never };
     "/docs/plugins": { search?: never };
     "/docs/rendering": { search?: never };
     "/docs/routing": { search?: never };
