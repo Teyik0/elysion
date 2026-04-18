@@ -1,3 +1,4 @@
+import { Link } from "@teyik0/furin/link";
 import { getHelloPayload } from "@/api/hello";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +41,11 @@ export default route.page({
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <Input className="max-w-xs" placeholder="Type something..." />
           <Button>Get started</Button>
-          <Button variant="outline">Read the docs</Button>
+          <Button asChild variant="outline">
+            <Link rel="noopener noreferrer" target="_blank" to="https://teyik0.github.io/furin/">
+              Read the docs
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </div>
