@@ -144,7 +144,7 @@ export function rewriteSingletonImports(source: string): string {
 export function injectJsxHelperImports(transpiled: string): string {
   // Match mangled JSX helper names. Alternation order matters: try longer
   // prefixes first so "jsxDEV_xxx" isn't partially matched as "jsx_xxx".
-  const JSX_HELPER_RE = /\b(jsxDEV|jsxs|jsx|Fragment)_(\w+)\b/g;
+  const JSX_HELPER_RE = /\b(jsxDEV|jsxs|jsx|Fragment)_([0-9a-z]{8})\b/g;
 
   // Package → Map<varName, exportName>
   const devRuntime = new Map<string, string>(); // react/jsx-dev-runtime
@@ -300,11 +300,7 @@ function getSourceLoader(filePath: string): SourceLoader | null {
 
 function shouldSkipWorkspaceTransform(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
-  return (
-    normalized.includes("/.furin/") ||
-    normalized.includes("/packages/core/src/") ||
-    normalized.endsWith("/root.tsx")
-  );
+  return normalized.includes("/.furin/");
 }
 
 function transformDevSource(

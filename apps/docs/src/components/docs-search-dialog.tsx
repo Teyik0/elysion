@@ -207,6 +207,7 @@ export function DocsSearchDialog() {
           indexLoadingRef.current = false;
           indexFailedRef.current = true;
           setLoading(false);
+          setIndexUnavailable(true);
           return;
         }
         const rawEntries = await r.json();
@@ -215,6 +216,7 @@ export function DocsSearchDialog() {
           indexLoadingRef.current = false;
           indexFailedRef.current = true;
           setLoading(false);
+          setIndexUnavailable(true);
           return;
         }
         const index = create({ schema: ORAMA_SCHEMA });
@@ -226,6 +228,7 @@ export function DocsSearchDialog() {
         indexLoadingRef.current = false;
         indexFailedRef.current = true;
         setLoading(false);
+        setIndexUnavailable(true);
       }
     })();
   }, [open, router.basePath]);

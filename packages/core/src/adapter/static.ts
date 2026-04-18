@@ -1,5 +1,5 @@
 import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { buildClient } from "../build/client.ts";
 import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
@@ -15,6 +15,9 @@ const STATIC_CONCURRENCY = 4;
 
 /** Pattern that identifies a dynamic route segment. */
 const DYNAMIC_SEGMENT_RE = /\/:[^/]+|\/\*/;
+
+/** Strips all trailing slashes from a string. */
+const TRAILING_SLASHES_RE = /\/+$/;
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
@@ -49,6 +52,7 @@ async function prerenderAndWrite(
   root: RootLayout,
   outDir: string,
   renderedRoutes: string[],
+  skippedRoutes: string[],
   basePath: string
 ): Promise<void> {
   const urlPath = resolvePath(route.pattern, params);
@@ -73,6 +77,7 @@ async function prerenderAndWrite(
       `[furin] static: prerender failed for "${route.pattern}" (params: ${JSON.stringify(params)}):`,
       err
     );
+    skippedRoutes.push(urlPath);
   }
 }
 
@@ -132,7 +137,9 @@ async function buildTaskQueue(
 
   for (const route of ssgRoutes) {
     if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
-      tasks.push(() => prerenderAndWrite(route, {}, root, outDir, renderedRoutes, basePath));
+      tasks.push(() =>
+        prerenderAndWrite(route, {}, root, outDir, renderedRoutes, skippedRoutes, basePath)
+      );
       continue;
     }
 
@@ -147,7 +154,9 @@ async function buildTaskQueue(
     try {
       const paramSets = (await route.page.staticParams()) ?? [];
       for (const params of paramSets) {
-        tasks.push(() => prerenderAndWrite(route, params, root, outDir, renderedRoutes, basePath));
+        tasks.push(() =>
+          prerenderAndWrite(route, params, root, outDir, renderedRoutes, skippedRoutes, basePath)
+        );
       }
     } catch (err) {
       console.error(`[furin] static: staticParams() failed for "${route.pattern}":`, err);
@@ -193,7 +202,7 @@ export async function buildStaticTarget(
   if (rawBasePath === "/" || rawBasePath === "") {
     basePath = "";
   } else if (rawBasePath.endsWith("/")) {
-    basePath = rawBasePath.slice(0, -1);
+    basePath = rawBasePath.replace(TRAILING_SLASHES_RE, "");
   } else {
     basePath = rawBasePath;
   }
@@ -214,6 +223,20 @@ export async function buildStaticTarget(
     outDir === normalizedBuildRoot ||
     outDir === "/" ||
     outDir === "."
+  ) {
+    throw new Error(
+      `[furin] static: outDir resolves to "${outDir}" which is unsafe to delete. ` +
+        `Use a dedicated output directory such as "dist".`
+    );
+  }
+  // Also reject ancestor paths: if rootDir or buildRoot is inside outDir, deleting
+  // outDir would destroy them. path.relative(outDir, x) not starting with ".." means x
+  // is inside (or equal to) outDir.
+  if (
+    !(
+      relative(outDir, normalizedRoot).startsWith("..") &&
+      relative(outDir, normalizedBuildRoot).startsWith("..")
+    )
   ) {
     throw new Error(
       `[furin] static: outDir resolves to "${outDir}" which is unsafe to delete. ` +
@@ -277,7 +300,20 @@ export async function buildStaticTarget(
     skippedRoutes,
     basePath
   );
+  // Snapshot after queue-building: routes skipped due to missing staticParams() are
+  // already recorded; only routes added during task execution are prerender failures.
+  const afterQueueCount = skippedRoutes.length;
   await runWithConcurrency(tasks, STATIC_CONCURRENCY);
+
+  // Fail the build when onSSR="error" and any prerender task was recorded as skipped.
+  if (onSSR === "error" && skippedRoutes.length > afterQueueCount) {
+    const failed = skippedRoutes.slice(afterQueueCount);
+    const list = failed.map((r) => `  • ${r}`).join("\n");
+    throw new Error(
+      `[furin] static: ${failed.length} route(s) failed to pre-render:\n${list}\n` +
+        `Set \`onSSR: "skip"\` in your static config to suppress this error.`
+    );
+  }
 
   // ── 9. Write 404.html (SPA fallback for GitHub Pages) ───────────────────
   writeFileSync(join(outDir, "404.html"), shellHtml);
