@@ -28,6 +28,12 @@ function makeRoute(pattern: string, filePath: string): ResolvedRoute {
 const ROUTES = [makeRoute("/", "/app/src/pages/index.tsx")];
 const ROOT = "/app/src/pages/root.tsx";
 
+// Biome's useTopLevelRegex: hoist Slice 10 regexes so repeated test runs
+// don't reconstruct them inside the callback.
+const INITIAL_DIGEST_BOUND_RE = /initialDigest:\s*loaderData\.__furinError\?\.digest/;
+const LOADER_DIGEST_CHAIN_RE = /loaderData\.__furinError\?\.digest/;
+const INITIAL_DIGEST_PROP_RE = /initialDigest:/;
+
 // ── B12: no basePath — generated code is unchanged ───────────────────────────
 
 describe("generateHydrateEntry", () => {
@@ -161,5 +167,156 @@ describe("generateHydrateEntry", () => {
     } finally {
       rmSync(tmpRoot, { force: true, recursive: true });
     }
+  });
+});
+
+// ── Boundary chain emission (Slice 6) ─────────────────────────────────────────
+//
+// The client must render the same interleaved React tree as the server.
+// To do that, each route entry carries a `segmentBoundaries` array of
+// { depth, error?, notFound? } triples. The emitted code:
+//   1. Emits ONE static `import` per unique convention file (across all routes).
+//   2. References those identifiers inside each route's `segmentBoundaries`.
+//   3. Skips the field entirely when a route has no boundaries, so existing
+//      tests asserting "no basePath / no boundaries" still pass.
+
+/** Builds a ResolvedRoute with a populated `segmentBoundaries` list. */
+function makeRouteWithBoundaries(
+  pattern: string,
+  filePath: string,
+  boundaries: Array<{
+    depth: number;
+    errorPath?: string;
+    notFoundPath?: string;
+  }>
+): ResolvedRoute {
+  return {
+    ...makeRoute(pattern, filePath),
+    // Component identity doesn't matter here — only the paths are used for
+    // hydrate emission. The tests synthesize marker objects.
+    segmentBoundaries: boundaries.map((b) => ({
+      depth: b.depth,
+      path: "/unused",
+      // Marker components — `generateHydrateEntry` only reads the `*Path`
+      // fields, so the identity of these functions doesn't matter.
+      error: b.errorPath ? () => null : undefined,
+      notFound: b.notFoundPath ? () => null : undefined,
+      errorPath: b.errorPath,
+      notFoundPath: b.notFoundPath,
+    })),
+  } as ResolvedRoute;
+}
+
+// Hoisted regex literals — Biome's `useTopLevelRegex` rule requires them out
+// of the hot path; declaring them at module scope also makes the intent (what
+// the hydrate output is expected to look like) clearer.
+const ERROR_IMPORT_RE = /import __furin_bnd_\d+ from "\/app\/src\/pages\/error\.tsx";/;
+const ERROR_IMPORT_RE_G = /import __furin_bnd_\d+ from "\/app\/src\/pages\/error\.tsx";/g;
+const ERROR_IMPORT_CAPTURE_RE = /import (__furin_bnd_\d+) from "\/app\/src\/pages\/error\.tsx";/;
+const NOT_FOUND_IMPORT_RE =
+  /import __furin_bnd_\d+ from "\/app\/src\/pages\/blog\/not-found\.tsx";/;
+const ERROR_BOUNDARY_DEPTH0_RE =
+  /segmentBoundaries:\s*\[\s*\{\s*depth:\s*0,\s*error:\s*__furin_bnd_\d+/;
+const NOT_FOUND_BOUNDARY_DEPTH1_RE =
+  /segmentBoundaries:\s*\[\s*\{\s*depth:\s*1,\s*notFound:\s*__furin_bnd_\d+/;
+const ERROR_AND_NOT_FOUND_BOUNDARY_RE =
+  /\{\s*depth:\s*0,\s*error:\s*__furin_bnd_\d+,\s*notFound:\s*__furin_bnd_\d+\s*\}/;
+
+describe("generateHydrateEntry — boundary chain emission", () => {
+  test("no segmentBoundaries → no `segmentBoundaries:` field in the emitted route", () => {
+    const routes = [makeRoute("/", "/app/src/pages/index.tsx")];
+    const code = generateHydrateEntry(routes, ROOT, "");
+    expect(code).not.toContain("segmentBoundaries:");
+  });
+
+  test("route with error boundary at depth 0 → static import + segmentBoundaries field", () => {
+    const errorPath = "/app/src/pages/error.tsx";
+    const routes = [
+      makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
+    ];
+    const code = generateHydrateEntry(routes, ROOT, "");
+
+    // A static import was emitted for the convention file.
+    expect(code).toMatch(ERROR_IMPORT_RE);
+
+    // The route entry carries `segmentBoundaries` referencing that identifier.
+    expect(code).toMatch(ERROR_BOUNDARY_DEPTH0_RE);
+  });
+
+  test("route with notFound boundary at middle depth → static import + field", () => {
+    const notFoundPath = "/app/src/pages/blog/not-found.tsx";
+    const routes = [
+      makeRouteWithBoundaries("/blog/:slug", "/app/src/pages/blog/[slug].tsx", [
+        { depth: 1, notFoundPath },
+      ]),
+    ];
+    const code = generateHydrateEntry(routes, ROOT, "");
+    expect(code).toMatch(NOT_FOUND_IMPORT_RE);
+    expect(code).toMatch(NOT_FOUND_BOUNDARY_DEPTH1_RE);
+  });
+
+  test("same convention file shared across two routes → imported exactly once", () => {
+    const errorPath = "/app/src/pages/error.tsx";
+    const routes = [
+      makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
+      makeRouteWithBoundaries("/about", "/app/src/pages/about.tsx", [{ depth: 0, errorPath }]),
+    ];
+    const code = generateHydrateEntry(routes, ROOT, "");
+
+    const importMatches = code.match(ERROR_IMPORT_RE_G);
+    expect(importMatches?.length ?? 0).toBe(1);
+
+    // Both routes should reference the same identifier.
+    const identMatch = code.match(ERROR_IMPORT_CAPTURE_RE);
+    const ident = identMatch?.[1];
+    expect(ident).toBeDefined();
+    const usages = code.match(new RegExp(`error:\\s*${ident}`, "g"));
+    expect(usages?.length ?? 0).toBe(2);
+  });
+
+  test("error + notFound at the same depth → both idents in one boundary entry", () => {
+    const errorPath = "/app/src/pages/error.tsx";
+    const notFoundPath = "/app/src/pages/not-found.tsx";
+    const routes = [
+      makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [
+        { depth: 0, errorPath, notFoundPath },
+      ]),
+    ];
+    const code = generateHydrateEntry(routes, ROOT, "");
+    expect(code).toMatch(ERROR_AND_NOT_FOUND_BOUNDARY_RE);
+  });
+});
+
+// ── Slice 10 — Digest rehydration ─────────────────────────────────────────────
+//
+// The server embeds `__FURIN_DATA__.__furinError.digest` in the initial HTML
+// whenever the loader or shell-render threw. The hydrate entry must forward
+// that id onto RouterProvider as `initialDigest`, which in turn passes it to
+// the root FurinErrorBoundary. That way, any client-side error that bubbles
+// up to the root safety-net displays the SAME digest the server already
+// logged — so a user-reported "Error ID: abc123" can be correlated with a
+// server log entry.
+
+describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
+  test("reads __furinError.digest off the parsed loader data", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    // The generated code must *extract* the digest from loaderData before
+    // passing it to RouterProvider. We tolerate minor formatting (optional
+    // chaining, intermediate vars) but the chain must be present somewhere.
+    expect(code).toMatch(LOADER_DIGEST_CHAIN_RE);
+  });
+
+  test("passes initialDigest prop onto RouterProvider", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    // The prop is emitted as `initialDigest:` in the RouterProvider props
+    // object literal (alongside routes, root, initialMatch, initialData).
+    expect(code).toMatch(INITIAL_DIGEST_PROP_RE);
+  });
+
+  test("the initialDigest value is DERIVED from loader data (not a hardcoded string)", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    // Guard against a regression where someone hardcodes `initialDigest: ""`
+    // or similar — the value must be a JS expression referencing loaderData.
+    expect(code).toMatch(INITIAL_DIGEST_BOUND_RE);
   });
 });

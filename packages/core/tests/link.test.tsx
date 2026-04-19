@@ -15,12 +15,18 @@ import type {
 import {
   applyRevalidateHeader,
   buildHref,
+  buildNotFoundPageElement,
   buildPageElement,
+  buildRouterTree,
+  classifySpaResponse,
   Link,
+  pickDeepestNotFound,
   RouterContext,
   shouldAutoRefreshPath,
   shouldRefetch,
 } from "../src/link";
+import type { NotFoundComponent } from "../src/not-found";
+import { FurinErrorBoundary } from "../src/render/boundaries";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -154,7 +160,9 @@ describe("buildPageElement", () => {
 
   test("no layout — returns the page element directly", () => {
     const match = makeMatch(Page, makeRoute());
-    expect(renderToStaticMarkup(buildPageElement(match, null, data))).toBe("<p>page</p>");
+    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
+      "<p>page</p>"
+    );
   });
 
   test("one layout in pageRoute (no root) — wraps the page", () => {
@@ -162,7 +170,7 @@ describe("buildPageElement", () => {
       createElement("main", null, children);
 
     const match = makeMatch(Page, makeRoute({ layout: Layout }));
-    expect(renderToStaticMarkup(buildPageElement(match, null, data))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
       "<main><p>page</p></main>"
     );
   });
@@ -173,7 +181,7 @@ describe("buildPageElement", () => {
 
     const root = makeRoute({ layout: Root });
     const match = makeMatch(Page, makeRoute()); // pageRoute has no layout
-    expect(renderToStaticMarkup(buildPageElement(match, root, data))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, root, data, undefined))).toBe(
       "<body><p>page</p></body>"
     );
   });
@@ -188,7 +196,7 @@ describe("buildPageElement", () => {
     const pageRoute = makeRoute({ layout: Nav, parent: rootRoute });
     const match = makeMatch(Page, pageRoute, "/dashboard");
 
-    expect(renderToStaticMarkup(buildPageElement(match, rootRoute, data))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, rootRoute, data, undefined))).toBe(
       '<section data-root="true"><nav><p>page</p></nav></section>'
     );
   });
@@ -198,9 +206,9 @@ describe("buildPageElement", () => {
       createElement("h1", null, String(title));
 
     const match = makeMatch(DataPage, makeRoute());
-    expect(renderToStaticMarkup(buildPageElement(match, null, { title: "Hello World" }))).toBe(
-      "<h1>Hello World</h1>"
-    );
+    expect(
+      renderToStaticMarkup(buildPageElement(match, null, { title: "Hello World" }, undefined))
+    ).toBe("<h1>Hello World</h1>");
   });
 
   test("passes loader data to layout components as props", () => {
@@ -208,9 +216,9 @@ describe("buildPageElement", () => {
       createElement("div", { "data-title": String(title) }, children as React.ReactNode);
 
     const match = makeMatch(Page, makeRoute({ layout: Layout }));
-    expect(renderToStaticMarkup(buildPageElement(match, null, { title: "My Blog" }))).toBe(
-      '<div data-title="My Blog"><p>page</p></div>'
-    );
+    expect(
+      renderToStaticMarkup(buildPageElement(match, null, { title: "My Blog" }, undefined))
+    ).toBe('<div data-title="My Blog"><p>page</p></div>');
   });
 });
 
@@ -709,5 +717,224 @@ describe("shouldAutoRefreshPath", () => {
         { path: "/board/abc", type: "layout" },
       ])
     ).toBe(false);
+  });
+});
+
+// ── classifySpaResponse (Slice 8) ─────────────────────────────────────────────
+//
+// Pure classifier used by `fetchPageState` to decide whether a fetch response
+// represents a normal page (→ render), a server-signalled 404 (→ render
+// not-found inline), or an unrecoverable state (→ bail to full-page reload).
+// The signal is `__FURIN_DATA__.__furinStatus === 404` — same pattern as the
+// existing `__furinError.digest` channel for 500s.
+
+describe("classifySpaResponse", () => {
+  test("2xx response with valid data → ok", () => {
+    expect(classifySpaResponse(200, { foo: "bar" })).toEqual({ kind: "ok" });
+  });
+
+  test("404 with __furinStatus=404 → not-found with empty error when __furinNotFound is absent", () => {
+    const result = classifySpaResponse(404, { __furinStatus: 404 });
+    expect(result).toEqual({ kind: "not-found", error: {} });
+  });
+
+  test("404 with __furinStatus=404 AND __furinNotFound → carries message + data", () => {
+    const result = classifySpaResponse(404, {
+      __furinStatus: 404,
+      __furinNotFound: { message: "Post not found", data: { id: "abc" } },
+    });
+    expect(result).toEqual({
+      kind: "not-found",
+      error: { message: "Post not found", data: { id: "abc" } },
+    });
+  });
+
+  test("404 WITHOUT __furinStatus → bail (legacy payload / renderRootNotFound pre-signal)", () => {
+    expect(classifySpaResponse(404, {})).toEqual({ kind: "bail" });
+  });
+
+  test("500 response → bail regardless of payload", () => {
+    expect(classifySpaResponse(500, { __furinError: { digest: "x" } })).toEqual({ kind: "bail" });
+  });
+
+  test("null/missing data → bail (cannot render without loader data)", () => {
+    expect(classifySpaResponse(200, null)).toEqual({ kind: "bail" });
+  });
+
+  test("200 with __furinStatus=404 trusts the payload signal over HTTP status", () => {
+    // Guards against odd proxy/CDN setups that rewrite the status but preserve HTML.
+    const result = classifySpaResponse(200, { __furinStatus: 404 });
+    expect(result).toEqual({ kind: "not-found", error: {} });
+  });
+});
+
+// ── pickDeepestNotFound (Slice 8) ─────────────────────────────────────────────
+//
+// Mirror of the server-side `route.notFound ?? root.notFound` selection:
+// segmentBoundaries is ordered shallow→deep, so the deepest entry with a
+// `notFound` wins.
+
+describe("pickDeepestNotFound", () => {
+  const NF1: NotFoundComponent = () => createElement("p", null, "nf1");
+  const NF2: NotFoundComponent = () => createElement("p", null, "nf2");
+
+  test("undefined boundaries → undefined", () => {
+    expect(pickDeepestNotFound(undefined)).toBeUndefined();
+  });
+
+  test("empty boundaries → undefined", () => {
+    expect(pickDeepestNotFound([])).toBeUndefined();
+  });
+
+  test("single entry with notFound → returns it", () => {
+    expect(pickDeepestNotFound([{ depth: 0, notFound: NF1 }])).toBe(NF1);
+  });
+
+  test("multiple entries → deepest notFound wins", () => {
+    expect(
+      pickDeepestNotFound([
+        { depth: 0, notFound: NF1 },
+        { depth: 2, notFound: NF2 },
+      ])
+    ).toBe(NF2);
+  });
+
+  test("deepest entry has no notFound → falls back to the next shallower one", () => {
+    // Only error declared at the deepest level; notFound is only at depth 0.
+    expect(
+      pickDeepestNotFound([
+        { depth: 0, notFound: NF1 },
+        { depth: 2, error: (() => null) as never },
+      ])
+    ).toBe(NF1);
+  });
+
+  test("boundaries with only error declarations → undefined", () => {
+    expect(
+      pickDeepestNotFound([
+        { depth: 0, error: (() => null) as never },
+        { depth: 1, error: (() => null) as never },
+      ])
+    ).toBeUndefined();
+  });
+});
+
+// ── buildNotFoundPageElement (Slice 8) ────────────────────────────────────────
+//
+// Inline 404 renderer used by RouterProvider when `state.notFound` is set.
+// Matches server's `buildNotFoundElement`: no layouts, no boundary wrappers,
+// just the deepest user-declared not-found (or built-in default).
+
+describe("buildNotFoundPageElement", () => {
+  const Page: React.FC<Record<string, unknown>> = () => createElement("p", null, "page");
+
+  test("renders the deepest user-declared not-found bare (no layouts)", () => {
+    const NF: NotFoundComponent = ({ error }) =>
+      createElement("h1", null, `custom 404: ${error.message ?? ""}`);
+    const rootRoute = makeRoute({
+      layout: ({ children }) => createElement("main", null, children),
+    });
+    const pageRoute = makeRoute({
+      layout: ({ children }) => createElement("section", null, children),
+      parent: rootRoute,
+    });
+    const match = makeMatch(Page, pageRoute);
+    match.segmentBoundaries = [{ depth: 0, notFound: NF }];
+
+    const html = renderToStaticMarkup(buildNotFoundPageElement(match, { message: "boom" }));
+    // No <main> (root layout) or <section> (nested layout) should appear.
+    expect(html).toBe("<h1>custom 404: boom</h1>");
+  });
+
+  test("falls back to built-in 404 when no segmentBoundaries declare notFound", () => {
+    const match = makeMatch(Page, makeRoute());
+    match.segmentBoundaries = [];
+
+    const html = renderToStaticMarkup(buildNotFoundPageElement(match, {}));
+    expect(html).toContain("404");
+  });
+
+  test("forwards error.message and error.data to the NotFound component", () => {
+    const seen: Array<{ message?: string; data?: unknown }> = [];
+    const NF: NotFoundComponent = ({ error }) => {
+      seen.push({ message: error.message, data: error.data });
+      return createElement("div", null, "ok");
+    };
+    const match = makeMatch(Page, makeRoute());
+    match.segmentBoundaries = [{ depth: 0, notFound: NF }];
+
+    renderToStaticMarkup(buildNotFoundPageElement(match, { message: "m", data: { id: 42 } }));
+    expect(seen).toEqual([{ message: "m", data: { id: 42 } }]);
+  });
+});
+
+// ── buildRouterTree (Slice 9 + 10) ────────────────────────────────────────────
+//
+// Root-level safety net. Wraps the entire RouterProvider render tree in a
+// FurinErrorBoundary so that ANY render error (root layout, hydration
+// mismatch, scaffolding code) that escapes per-segment boundaries still
+// surfaces a graceful fallback instead of crashing to a blank page.
+//
+// The `initialDigest` prop (Slice 10) carries the server-logged error id
+// from __FURIN_DATA__.__furinError.digest — letting client fallback UIs
+// show the same id a user would find in server logs.
+
+describe("buildRouterTree", () => {
+  const page = createElement("p", null, "page");
+
+  test("returns a FurinErrorBoundary as the outermost element", () => {
+    const tree = buildRouterTree(makeRouterContext(), page, {});
+    expect(tree.type).toBe(FurinErrorBoundary);
+  });
+
+  test("passes the page element through inside RouterContext.Provider", () => {
+    const ctx = makeRouterContext({ currentHref: "/abc" });
+    const tree = buildRouterTree(ctx, page, {});
+    // FurinErrorBoundary.children = RouterContext.Provider
+    const providerEl = (tree.props as { children: React.ReactElement }).children;
+    expect(providerEl.type).toBe(RouterContext.Provider);
+    expect((providerEl.props as { value: RouterContextValue }).value.currentHref).toBe("/abc");
+    // RouterContext.Provider.children = the page element
+    expect((providerEl.props as { children: React.ReactNode }).children).toBe(page);
+  });
+
+  test("forwards digest onto the root boundary (Slice 10 — rehydration)", () => {
+    const tree = buildRouterTree(makeRouterContext(), page, { digest: "deadbeef12" });
+    expect((tree.props as { digest?: string }).digest).toBe("deadbeef12");
+  });
+
+  test("forwards onReset + resetKey onto the root boundary", () => {
+    const onReset = () => {
+      /* noop */
+    };
+    const tree = buildRouterTree(makeRouterContext(), page, {
+      onReset,
+      resetKey: "/blog",
+    });
+    const props = tree.props as { onReset?: () => void; resetKey?: string };
+    expect(props.onReset).toBe(onReset);
+    expect(props.resetKey).toBe("/blog");
+  });
+
+  test("omits digest when not provided (no false correlation)", () => {
+    const tree = buildRouterTree(makeRouterContext(), page, {});
+    expect((tree.props as { digest?: string }).digest).toBeUndefined();
+  });
+
+  test("renders children unchanged when no error is thrown (SSR passthrough)", () => {
+    const html = renderToStaticMarkup(
+      buildRouterTree(makeRouterContext(), createElement("h1", null, "hello"), {})
+    );
+    expect(html).toContain("hello");
+  });
+
+  test("omits no fallback prop (uses FurinErrorBoundary's built-in default)", () => {
+    // The TOP boundary is the LAST line of defense — users who want a custom
+    // global error UI declare a root-level error.tsx, which segmentBoundaries
+    // already picks up at depth 0. The top boundary stays with the built-in
+    // default so there's always something to render even if user's own
+    // error.tsx throws during its own render.
+    const tree = buildRouterTree(makeRouterContext(), page, {});
+    expect((tree.props as { fallback?: unknown }).fallback).toBeUndefined();
   });
 });

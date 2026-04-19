@@ -24,16 +24,61 @@ export function generateHydrateEntry(
   rootLayout: string,
   basePath: string
 ): string {
+  // Deduplicate convention-file paths across all routes so each physical file
+  // produces ONE static import, even when shared by many routes (e.g. the
+  // pages-dir-level error.tsx covers every page at depth 0).
+  const conventionIdents = new Map<string, string>();
+  const getIdent = (filePath: string | undefined): string | undefined => {
+    if (!filePath) {
+      return;
+    }
+    const existing = conventionIdents.get(filePath);
+    if (existing) {
+      return existing;
+    }
+    const ident = `__furin_bnd_${conventionIdents.size}`;
+    conventionIdents.set(filePath, ident);
+    return ident;
+  };
+
   const routeEntries: string[] = [];
 
   for (const route of routes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
     const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
 
+    // Emit one boundary literal per segment that actually carries a convention
+    // file — segments that only declare one of the two are emitted with the
+    // missing field omitted entirely (keeps the generated JS tidy).
+    const boundaryLiterals: string[] = [];
+    for (const seg of route.segmentBoundaries ?? []) {
+      const errorIdent = getIdent(seg.errorPath);
+      const notFoundIdent = getIdent(seg.notFoundPath);
+      if (!(errorIdent || notFoundIdent)) {
+        continue;
+      }
+      const parts = [`depth: ${seg.depth}`];
+      if (errorIdent) {
+        parts.push(`error: ${errorIdent}`);
+      }
+      if (notFoundIdent) {
+        parts.push(`notFound: ${notFoundIdent}`);
+      }
+      boundaryLiterals.push(`{ ${parts.join(", ")} }`);
+    }
+    const boundariesField =
+      boundaryLiterals.length > 0 ? `, segmentBoundaries: [${boundaryLiterals.join(", ")}]` : "";
+
     routeEntries.push(
-      ` { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), load: () => import("${resolvedPage}") }`
+      ` { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), load: () => import("${resolvedPage}")${boundariesField} }`
     );
   }
+
+  // Collect all deduplicated convention-file imports. Emitted BEFORE the
+  // route array so the idents are in scope when the array literal is built.
+  const conventionImportLines = [...conventionIdents.entries()]
+    .map(([filePath, ident]) => `import ${ident} from "${filePath.replace(/\\/g, "/")}";`)
+    .join("\n");
 
   // basePath stripping: when deployed to a sub-path (e.g. /furin), strip the
   // prefix before route matching so patterns like /docs/routing still work.
@@ -53,12 +98,14 @@ export function generateHydrateEntry(
   // RouterProvider receives basePath so navigate() / Link push physical paths.
   const basePathProp = basePath ? `\n      basePath: ${basePathLiteral},` : "";
 
+  const conventionImportsBlock = conventionImportLines ? `\n${conventionImportLines}` : "";
+
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 import { initLogger, log } from "evlog";
 import { createHttpLogDrain } from "evlog/http";
 import { RouterProvider } from "@teyik0/furin/link";
-import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
+import { route as root } from "${rootLayout.replace(/\\/g, "/")}";${conventionImportsBlock}
 
 initLogger({ drain: createHttpLogDrain({ drain: { endpoint: ${logEndpoint} } }) });
 
@@ -86,7 +133,8 @@ const _match = routes.find((r) => r.regex.test(pathname));
       routes,
       root,
       initialMatch: match,
-      initialData: loaderData,${basePathProp}
+      initialData: loaderData,
+      initialDigest: loaderData.__furinError?.digest,${basePathProp}
     } as any);
 
     if (import.meta.hot) {

@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { Context } from "elysia";
+import { createElement } from "react";
+
+const capturedLogs: Record<string, unknown>[] = [];
 
 mock.module("evlog/elysia", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
+  useLogger: () => ({
+    set: (entry: Record<string, unknown>) => {
+      capturedLogs.push(entry);
+    },
+  }),
   evlog: () => (app: unknown) => app,
 }));
 
@@ -266,5 +272,184 @@ describe("renderToHTML — error handling", () => {
     expect(rendered.html).toContain("500 — Something went wrong");
     // No <p> is rendered because errorMessageOf() returned empty string.
     expect(rendered.html).not.toContain("<p>");
+  });
+});
+
+// ── Digest (Phase 2 Slice 2) ─────────────────────────────────────────────────
+// A digest is an opaque 10-hex-char hash of (error.message + error.stack), used
+// to correlate client-side error displays with server-side logs WITHOUT leaking
+// the stack trace to the browser. The server logs the full error + digest, the
+// client only ever sees the digest.
+
+const DIGEST_RE = /[0-9a-f]{10}/;
+const CUSTOM_ERROR_DIGEST_RE = /digest=[0-9a-f]{10}/;
+const FURIN_ERROR_DIGEST_RE = /"digest":"[0-9a-f]{10}"/;
+
+describe("renderToHTML — digest", () => {
+  const originalDevMode = IS_DEV;
+  beforeAll(() => __setDevMode(false));
+  afterAll(() => __setDevMode(originalDevMode));
+
+  test("default error component renders a 10-hex-char digest", async () => {
+    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
+    const result = await scanPages(BARE_FIXTURES_DIR);
+    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
+    if (!loaderRoute) {
+      throw new Error("Expected /with-loader route in fixture");
+    }
+
+    const routeWithError = {
+      ...loaderRoute,
+      page: {
+        ...loaderRoute.page,
+        loader: () => {
+          throw new Error("boom");
+        },
+      },
+    } as ResolvedRoute;
+
+    const rendered = await renderToHTML(
+      routeWithError,
+      createMockLoaderContext({ path: "/with-loader" }),
+      result.root
+    );
+
+    expect(rendered.html).toMatch(DIGEST_RE);
+  });
+
+  test("user-defined error component receives a digest prop", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const CustomError = ({ error }: { error: { message: string; digest: string } }) =>
+      createElement(
+        "div",
+        { "data-testid": "custom-error" },
+        createElement("span", null, `msg=${error.message}`),
+        createElement("span", null, `digest=${error.digest}`)
+      );
+
+    const routeWithError = {
+      ...blogRoute,
+      error: CustomError,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Error("boom");
+        },
+      },
+    } as ResolvedRoute;
+
+    const rendered = await renderToHTML(
+      routeWithError,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+
+    expect(rendered.html).toMatch(CUSTOM_ERROR_DIGEST_RE);
+  });
+
+  test("identical errors produce identical digests across renders", async () => {
+    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
+    const result = await scanPages(BARE_FIXTURES_DIR);
+    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
+    if (!loaderRoute) {
+      throw new Error("Expected /with-loader route in fixture");
+    }
+
+    const fixedErr = new Error("stable");
+    fixedErr.stack = "Error: stable\n  at frozen (/frozen:1:1)";
+    const routeWithError = {
+      ...loaderRoute,
+      page: {
+        ...loaderRoute.page,
+        loader: () => {
+          throw fixedErr;
+        },
+      },
+    } as ResolvedRoute;
+
+    const a = await renderToHTML(
+      routeWithError,
+      createMockLoaderContext({ path: "/with-loader" }),
+      result.root
+    );
+    const b = await renderToHTML(
+      routeWithError,
+      createMockLoaderContext({ path: "/with-loader" }),
+      result.root
+    );
+    const digestA = a.html.match(DIGEST_RE)?.[0];
+    const digestB = b.html.match(DIGEST_RE)?.[0];
+    expect(digestA).toBeDefined();
+    expect(digestA).toBe(digestB);
+  });
+});
+
+describe("renderSSR — digest", () => {
+  const originalDevMode = IS_DEV;
+  beforeAll(() => __setDevMode(false));
+  afterAll(() => __setDevMode(originalDevMode));
+
+  test("__FURIN_DATA__ blob contains a digest under __furinError on 500 response", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const routeWithError = {
+      ...blogRoute,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Error("kaboom");
+        },
+      },
+    } as ResolvedRoute;
+
+    const response = await renderSSR(
+      routeWithError,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+    const body = await response.text();
+    expect(body).toContain("__furinError");
+    expect(body).toMatch(FURIN_ERROR_DIGEST_RE);
+  });
+
+  test("server logs the digest alongside the rendered error", async () => {
+    capturedLogs.length = 0;
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const routeWithError = {
+      ...blogRoute,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Error("log-me");
+        },
+      },
+    } as ResolvedRoute;
+
+    const response = await renderSSR(
+      routeWithError,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+    await response.text(); // drain
+
+    const hasDigestLog = capturedLogs.some((entry) => {
+      const furin = entry.furin as Record<string, unknown> | undefined;
+      return typeof furin?.digest === "string" && DIGEST_RE.test(furin.digest as string);
+    });
+    expect(hasDigestLog).toBe(true);
   });
 });

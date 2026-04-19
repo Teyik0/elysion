@@ -10,6 +10,9 @@ import {
   useState,
 } from "react";
 import type { RuntimeRoute } from "./client";
+import type { ErrorComponent } from "./error";
+import type { NotFoundComponent } from "./not-found";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "./render/boundaries.tsx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -268,6 +271,22 @@ export function useRouter(): RouterContextValue {
 
 // ── RouterProvider ─────────────────────────────────────────────────────────────
 
+/**
+ * Client-side mirror of `SegmentBoundary` from router.ts. Unlike the server
+ * version this does NOT carry the directory path — it's purely a (depth,
+ * fallback) pair because the client never reads files, only renders.
+ *
+ * Emitted by `generateHydrateEntry` from the scanned `segmentBoundaries`
+ * array: each route's entry lists ONLY the directories on its path that
+ * declare a convention file, so routes with no error.tsx / not-found.tsx
+ * anywhere carry an empty list (or omit the field entirely).
+ */
+export interface ClientSegmentBoundary {
+  depth: number;
+  error?: ErrorComponent;
+  notFound?: NotFoundComponent;
+}
+
 export interface ClientRoute {
   component?: React.ComponentType<Record<string, unknown>>;
   load: () => Promise<{
@@ -276,6 +295,13 @@ export interface ClientRoute {
   pageRoute?: RuntimeRoute;
   pattern: string;
   regex: RegExp;
+  /**
+   * Per-segment boundary chain, ordered shallow→deep. Each `depth` maps 1:1
+   * to the route-chain index used on the server side, so `buildPageElement`
+   * can interleave boundaries at the exact same positions that the server
+   * used in `buildElement` — guaranteeing hydration consistency.
+   */
+  segmentBoundaries?: ClientSegmentBoundary[];
 }
 
 /**
@@ -312,6 +338,16 @@ export interface RouterProviderProps {
   defaultPreloadDelay?: number;
   defaultPreloadStaleTime?: number;
   initialData: Record<string, unknown>;
+  /**
+   * Slice 10 — server-logged error digest threaded from
+   * `__FURIN_DATA__.__furinError.digest`. Forwarded onto the root-level
+   * `FurinErrorBoundary` so that if a client-side error escapes the
+   * per-segment boundaries (root layout crash, hydration mismatch, …), the
+   * fallback UI surfaces the id a user would find in server logs.
+   * Undefined when the initial SSR response was successful (no server-side
+   * error digest to correlate).
+   */
+  initialDigest: string | undefined;
   initialMatch: LoadedClientRoute;
   /** Maximum number of prefetch cache entries. Oldest entry is evicted when exceeded. Default: 50. */
   prefetchCacheSize?: number;
@@ -324,6 +360,13 @@ interface RouterState {
   /** The canonical href after server-side redirects (e.g. query-default redirect). */
   finalHref?: string;
   match: LoadedClientRoute;
+  /**
+   * Slice 8 — set when the matched route's loader threw `notFound()` on the
+   * server (signalled via `__FURIN_DATA__.__furinStatus === 404`). Triggers
+   * inline rendering of the deepest segment-level not-found.tsx instead of
+   * the normal layout+page tree, mirroring the server's `buildNotFoundElement`.
+   */
+  notFound?: { data?: unknown; message?: string };
   title?: string;
 }
 
@@ -345,11 +388,220 @@ function stripHashFromHref(href: string): string {
   return href.replace(HASH_FRAGMENT_RE, "");
 }
 
+// ── Slice 8 helpers — SPA 404 inline rendering ─────────────────────────────────
+
+/**
+ * Classification of a fetch response during SPA navigation. Returned by the
+ * pure `classifySpaResponse` so `fetchPageState` stays a thin orchestrator.
+ *
+ * - `ok` — 2xx response with usable loader data; render normally.
+ * - `not-found` — server signalled `__FURIN_DATA__.__furinStatus === 404`; the
+ *   caller should render the not-found UI inline (no full-page reload).
+ * - `bail` — any other non-2xx (5xx, stale-deploy, unparseable payload…);
+ *   the caller falls back to a full-page navigation so the browser picks up
+ *   whatever the server wants to send (could be an error page, redirect, etc.).
+ *
+ * @internal Exported for unit testing only.
+ */
+export type SpaResponseKind =
+  | { kind: "ok" }
+  | { kind: "not-found"; error: { data?: unknown; message?: string } }
+  | { kind: "bail" };
+
+/**
+ * Pure classifier for an SPA-nav fetch result. Takes the HTTP status and the
+ * already-parsed `__FURIN_DATA__` payload. The 404 signal is trusted over the
+ * HTTP status (guards against proxies that rewrite status but preserve body),
+ * while any other non-ok HTTP status triggers a bail even if the payload is
+ * well-formed.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function classifySpaResponse(
+  status: number,
+  data: Record<string, unknown> | null
+): SpaResponseKind {
+  if (!data) {
+    return { kind: "bail" };
+  }
+  if (data.__furinStatus === 404) {
+    const notFound = data.__furinNotFound as { data?: unknown; message?: string } | undefined;
+    return { kind: "not-found", error: notFound ?? {} };
+  }
+  if (status >= 200 && status < 300) {
+    return { kind: "ok" };
+  }
+  return { kind: "bail" };
+}
+
+/**
+ * Picks the deepest not-found component declared on the match's boundary
+ * chain. Mirrors the server's `route.notFound ?? root.notFound` selection:
+ * since `segmentBoundaries` is ordered shallow→deep, the last entry with a
+ * `notFound` wins. Returns undefined when no boundary on the chain declares
+ * a not-found convention.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function pickDeepestNotFound(
+  boundaries: ClientSegmentBoundary[] | undefined
+): NotFoundComponent | undefined {
+  if (!boundaries) {
+    return;
+  }
+  for (let i = boundaries.length - 1; i >= 0; i--) {
+    const seg = boundaries[i];
+    if (seg?.notFound) {
+      return seg.notFound;
+    }
+  }
+  return;
+}
+
+const DefaultClientNotFoundFallback: NotFoundComponent = ({ error }) =>
+  createElement(
+    "div",
+    null,
+    createElement("h1", null, "404 — Not Found"),
+    error.message ? createElement("p", null, error.message) : null
+  );
+
+/**
+ * Builds the bare not-found element rendered inline by RouterProvider on SPA
+ * navigation when the server signalled a 404. Matches the server's
+ * `buildNotFoundElement` exactly — NO layouts, NO segment boundaries, just the
+ * deepest user-declared `not-found.tsx` (or the built-in default). Preserving
+ * layouts on 404 is a deliberate non-goal for this slice: it would diverge
+ * from the server's current behaviour and require coordinated changes on both
+ * sides.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function buildNotFoundPageElement(
+  match: LoadedClientRoute,
+  error: { data?: unknown; message?: string }
+): React.ReactNode {
+  const Fallback = pickDeepestNotFound(match.segmentBoundaries) ?? DefaultClientNotFoundFallback;
+  return createElement(Fallback, { error });
+}
+
+/**
+ * Root-level safety-net options forwarded onto the outermost
+ * `FurinErrorBoundary` that wraps the entire RouterProvider tree. See
+ * `buildRouterTree` for the full rationale.
+ */
+export interface RootBoundaryOptions {
+  /**
+   * Server-logged error id propagated from `__FURIN_DATA__.__furinError.digest`.
+   * When the server's SSR response carried a digest (loader error or shell
+   * recovery) this value lets the client's fallback UI display the SAME id a
+   * user would find in the server logs — without having to recompute and
+   * potentially produce a different hash from a different error instance.
+   */
+  digest?: string;
+  onReset?: () => void;
+  resetKey?: string | number;
+}
+
+/**
+ * Composes the outermost tree produced by `RouterProvider`:
+ *
+ *   <FurinErrorBoundary digest onReset resetKey>
+ *     <RouterContext.Provider value={context}>
+ *       {pageElement}
+ *     </RouterContext.Provider>
+ *   </FurinErrorBoundary>
+ *
+ * This top boundary is the LAST line of defence. Per-segment
+ * `FurinErrorBoundary`s inserted by `buildPageElement` only wrap the page
+ * subtree BELOW the root layout, so they cannot catch errors thrown in:
+ *   - the root layout itself,
+ *   - hydration mismatches (these tear the whole tree before any inner
+ *     boundary is reached),
+ *   - the RouterProvider / page-building scaffolding code.
+ *
+ * We deliberately omit the `fallback` prop so the boundary falls back to its
+ * built-in `DefaultErrorFallback` — if a user-authored fallback crashed
+ * during its own render, we'd still have a guaranteed-to-render UI here.
+ * Users who want a custom *branded* global error UI author a root-level
+ * `error.tsx`; that convention is already picked up by `segmentBoundaries`
+ * at depth 0 and sits inside this top boundary.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function buildRouterTree(
+  context: RouterContextValue,
+  pageElement: React.ReactNode,
+  options: RootBoundaryOptions
+): React.ReactElement {
+  return (
+    <FurinErrorBoundary {...options}>
+      <RouterContext.Provider value={context}>{pageElement}</RouterContext.Provider>
+    </FurinErrorBoundary>
+  );
+}
+
+/**
+ * Options threaded from `RouterProvider` (or a test harness) into each
+ * boundary that `buildPageElement` inserts:
+ *
+ * - `onReset` — invoked by `FurinErrorBoundary.reset` after it clears local
+ *   error state. RouterProvider wires this to `refresh()` so the user's
+ *   `reset()` prop re-runs the current route's loaders in addition to
+ *   remounting the subtree.
+ * - `resetKey` — when it changes, both boundary classes clear their latched
+ *   error. RouterProvider passes `currentHref`, so navigating between
+ *   sibling routes that share a boundary (e.g. /blog/a → /blog/b) auto-clears
+ *   any stuck error state even when the boundary instance persists.
+ */
+export interface BoundaryOptions {
+  onReset?: () => void;
+  resetKey?: string | number;
+}
+
+/**
+ * Wraps `inner` with the client-side boundary pair declared at one depth.
+ * Error boundary must be OUTSIDE the not-found boundary — see the detailed
+ * justification in `render/element.tsx`'s `wrapInBoundaries`. The client
+ * mirrors the server's wrap order exactly so hydration sees an identical
+ * React tree.
+ */
+function wrapPageBoundaries(
+  inner: React.ReactNode,
+  segment: ClientSegmentBoundary | undefined,
+  options: BoundaryOptions | undefined
+): React.ReactNode {
+  if (!segment) {
+    return inner;
+  }
+  let wrapped = inner;
+  if (segment.notFound) {
+    wrapped = (
+      <FurinNotFoundBoundary fallback={segment.notFound} resetKey={options?.resetKey}>
+        {wrapped}
+      </FurinNotFoundBoundary>
+    );
+  }
+  if (segment.error) {
+    wrapped = (
+      <FurinErrorBoundary
+        fallback={segment.error}
+        onReset={options?.onReset}
+        resetKey={options?.resetKey}
+      >
+        {wrapped}
+      </FurinErrorBoundary>
+    );
+  }
+  return wrapped;
+}
+
 /** @internal Exported for unit testing only. */
 export function buildPageElement(
   match: LoadedClientRoute,
   root: RuntimeRoute | null,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  options: BoundaryOptions | undefined
 ): React.ReactNode {
   let element: React.ReactNode = createElement(match.component, data);
 
@@ -367,13 +619,27 @@ export function buildPageElement(
   // If a root layout exists, the first entry in allLayouts IS the root — skip it here
   const layouts = root ? allLayouts.slice(1) : allLayouts;
 
+  // Index boundaries by depth for O(1) lookup. `layouts[i]` corresponds to
+  // route-chain depth `i + 1` (depth 0 = root layout, handled separately).
+  const byDepth = new Map<number, ClientSegmentBoundary>();
+  for (const segment of match.segmentBoundaries ?? []) {
+    byDepth.set(segment.depth, segment);
+  }
+
+  // Inside-out: at each layout level wrap the subtree with its same-depth
+  // boundary (so the boundary sits INSIDE the layout), then wrap with the
+  // layout itself.
   for (let i = layouts.length - 1; i >= 0; i--) {
+    element = wrapPageBoundaries(element, byDepth.get(i + 1), options);
     const Layout = layouts[i];
     if (Layout) {
       // biome-ignore lint/suspicious/noExplicitAny: spread loses `children` type info for createElement
       element = createElement(Layout, { ...data } as any, element);
     }
   }
+
+  // Depth 0 boundary wraps EVERYTHING below the root layout.
+  element = wrapPageBoundaries(element, byDepth.get(0), options);
 
   if (root?.layout) {
     // biome-ignore lint/suspicious/noExplicitAny: spread loses `children` type info for createElement
@@ -465,6 +731,46 @@ function restoreScrollPosition(key: string, token: number, version: { current: n
 
 // ── Path helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Returns `true` when the server reports a different build-id from the one
+ * embedded in the initial HTML (`<meta name="furin-build-id">`). The client
+ * bundle is then stale and SPA navigation would mount wrong components, so
+ * the caller must force a full-page reload to pick up the new deploy.
+ */
+function isStaleDeployResponse(res: Response): boolean {
+  const serverBuildId = res.headers.get("x-furin-build-id");
+  if (!serverBuildId) {
+    return false;
+  }
+  const metaEl =
+    typeof document === "undefined"
+      ? null
+      : document.querySelector<HTMLMetaElement>('meta[name="furin-build-id"]');
+  const clientBuildId = metaEl?.content;
+  return Boolean(clientBuildId && serverBuildId !== clientBuildId);
+}
+
+/**
+ * Parses the HTML payload of a page response into the pieces `fetchPageState`
+ * cares about: the document (for title), the __FURIN_DATA__ loader payload,
+ * and the logical `finalHref` after any server-side redirect.
+ */
+async function parsePageResponse(
+  res: Response,
+  basePath: string
+): Promise<{ data: Record<string, unknown> | null; finalHref: string | undefined; title: string }> {
+  let finalHref: string | undefined;
+  if (res.redirected) {
+    const final = new URL(res.url);
+    finalHref = toLogical(final.pathname, basePath) + final.search;
+  }
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const dataEl = doc.getElementById("__FURIN_DATA__");
+  const data = dataEl ? JSON.parse(dataEl.textContent || "{}") : null;
+  return { data, finalHref, title: doc.title };
+}
+
 /** Strips basePath prefix from a physical pathname, returning the logical path. */
 function toLogical(physicalPathname: string, basePath: string): string {
   if (
@@ -483,6 +789,7 @@ export function RouterProvider({
   root,
   initialMatch,
   initialData,
+  initialDigest,
   autoRefresh = true,
   basePath = "",
   defaultPreload = "intent",
@@ -528,41 +835,23 @@ export function RouterProvider({
         // Stale-deploy detection: if the server reports a different buildId, the client
         // bundle is outdated and SPA navigation would mount wrong components / stale code.
         // Force a full page reload to pick up the new bundle.
-        const serverBuildId = res.headers.get("x-furin-build-id");
-        if (serverBuildId) {
-          const metaEl =
-            typeof document === "undefined"
-              ? null
-              : document.querySelector<HTMLMetaElement>('meta[name="furin-build-id"]');
-          const clientBuildId = metaEl?.content;
-          if (clientBuildId && serverBuildId !== clientBuildId) {
-            window.location.href = physicalHref;
-            return null;
-          }
-        }
-
-        // Server error — bail out so we don't render with incomplete/missing data.
-        // The `navigate` fallback will do a full-page load to show the proper error page.
-        if (!res.ok) {
-          log.warn({ action: "navigate_server_error", href: physicalHref, status: res.status });
+        if (isStaleDeployResponse(res)) {
+          window.location.href = physicalHref;
           return null;
         }
 
-        // Detect server-side redirects (e.g. query-default redirect /?→/?city=Paris).
-        // fetch() follows 302 automatically; res.url is the final URL, res.redirected is true.
-        // Detect server-side redirects (e.g. query-default redirect /?→/?city=Paris).
-        // Convert the physical redirect URL back to a logical href (basePath stripped).
-        let finalHref: string | undefined;
-        if (res.redirected) {
-          const final = new URL(res.url);
-          finalHref = toLogical(final.pathname, basePath) + final.search;
+        // Parse the HTML payload BEFORE deciding whether to bail on !res.ok.
+        // Slice 8: a 404 response still carries a valid __FURIN_DATA__ with a
+        // `__furinStatus: 404` signal, which lets us render the not-found UI
+        // inline instead of doing a jarring full-page reload. Any other
+        // non-2xx still bails out (see `classifySpaResponse`).
+        const { data, finalHref, title } = await parsePageResponse(res, basePath);
+
+        const kind = classifySpaResponse(res.status, data);
+        if (kind.kind === "bail") {
+          log.warn({ action: "navigate_server_error", href: physicalHref, status: res.status });
+          return null;
         }
-
-        const html = await res.text();
-        const doc = new DOMParser().parseFromString(html, "text/html");
-
-        const dataEl = doc.getElementById("__FURIN_DATA__");
-        const data = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 
         const loadedMatch: LoadedClientRoute = {
           ...match,
@@ -570,7 +859,23 @@ export function RouterProvider({
           pageRoute: loadedMod.default._route,
         };
 
-        return { match: loadedMatch, data, title: doc.title, finalHref };
+        if (kind.kind === "not-found") {
+          // Strip the server-injected signals from `data` before handing it to
+          // the component — the NotFound payload is surfaced via `state.notFound`
+          // instead, and leaking __furinStatus into component props would be
+          // noise. The caller (RouterProvider render) ignores `data` when
+          // `notFound` is set anyway, but we keep it tidy for devtools.
+          const { __furinStatus, __furinNotFound, ...cleanData } = data ?? {};
+          return {
+            match: loadedMatch,
+            data: cleanData,
+            title,
+            finalHref,
+            notFound: kind.error,
+          };
+        }
+
+        return { match: loadedMatch, data: data ?? {}, title, finalHref };
       } catch (err: unknown) {
         log.error({ action: "navigate_failed", href: basePath + logicalHref, error: String(err) });
         return null;
@@ -815,24 +1120,47 @@ export function RouterProvider({
     };
   }, [invalidatePrefetch, refresh, autoRefresh]);
 
-  return createElement(
-    RouterContext.Provider,
+  // Slice 8 — when a prior SPA navigation hit a loader-thrown 404, render
+  // the bare not-found element (mirrors server's `buildNotFoundElement`).
+  // Otherwise render the normal layout+page+boundaries tree.
+  const pageElement = state.notFound
+    ? buildNotFoundPageElement(state.match, state.notFound)
+    : buildPageElement(state.match, root, state.data, {
+        // User's `reset()` prop → clear local boundary state (handled by the
+        // boundary itself) → re-run loaders for the current route so transient
+        // errors (bad state, expired data) can recover without a full reload.
+        onReset: refresh,
+        // Auto-clear latched errors when navigating between routes that share
+        // a boundary instance — otherwise the new route would render INSIDE
+        // the previous route's error fallback.
+        resetKey: currentHref,
+      });
+
+  // Slice 9 + 10 — wrap the entire tree in a root FurinErrorBoundary that
+  // catches anything per-segment boundaries missed (root layout crash,
+  // hydration mismatch, scaffolding errors). `digest` is seeded from the
+  // server's __FURIN_DATA__.__furinError.digest so client fallback UIs show
+  // the same id the server already logged.
+  return buildRouterTree(
     {
-      value: {
-        basePath,
-        currentHref,
-        navigate,
-        prefetch,
-        refresh,
-        invalidatePrefetch,
-        isNavigating,
-        defaultPreload,
-        defaultPreloadDelay,
-        defaultPreloadStaleTime,
-      },
+      basePath,
+      currentHref,
+      navigate,
+      prefetch,
+      refresh,
+      invalidatePrefetch,
+      isNavigating,
+      defaultPreload,
+      defaultPreloadDelay,
+      defaultPreloadStaleTime,
     },
-    buildPageElement(state.match, root, state.data)
-  ) as React.ReactElement;
+    pageElement,
+    {
+      digest: initialDigest,
+      onReset: refresh,
+      resetKey: currentHref,
+    }
+  );
 }
 
 // ── Link ───────────────────────────────────────────────────────────────────────
