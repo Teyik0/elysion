@@ -17,6 +17,33 @@ import {
   validateRouteChain,
 } from "./utils.ts";
 
+/**
+ * A single directory-scoped boundary declaration.
+ *
+ * Each entry represents ONE directory on the path from `pagesDir` to the page
+ * file. `error` / `notFound` hold the components defined IN THAT DIRECTORY
+ * only — never inherited from a parent. This 1:1 tie between directory and
+ * entry is what lets the render layer insert React error boundaries at the
+ * exact nesting level where the user authored them (Next.js app-router model).
+ */
+export interface SegmentBoundary {
+  /** 0 = `pagesDir`; increments with each nested subdirectory. */
+  depth: number;
+  error?: ErrorComponent;
+  /**
+   * Absolute path to the `error.tsx` module, when present. Carried alongside
+   * the component so the client hydrate entry can emit a static `import`
+   * statement for each unique convention file — a component reference alone
+   * can't survive the server→client boundary.
+   */
+  errorPath?: string;
+  notFound?: NotFoundComponent;
+  /** Absolute path to the `not-found.tsx` module, when present. */
+  notFoundPath?: string;
+  /** Absolute directory path. */
+  path: string;
+}
+
 export interface ResolvedRoute {
   error?: ErrorComponent;
   isrCache?: { html: string; generatedAt: number; revalidate: number };
@@ -26,6 +53,13 @@ export interface ResolvedRoute {
   path: string;
   pattern: string;
   routeChain: RuntimeRoute[];
+  /**
+   * Per-directory boundary chain, ordered shallow → deep. Only directories
+   * that DECLARE at least one of `error.tsx` / `not-found.tsx` are included;
+   * directories without conventions are skipped. Empty when no conventions
+   * exist anywhere in the path.
+   */
+  segmentBoundaries: SegmentBoundary[];
   ssgHtml?: string;
 }
 
@@ -56,7 +90,11 @@ export function loadProdRoutes(ctx: CompileContext): {
     }
     const routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
     validateRouteChain(routeChain, root.route, path);
-    routes.push({ pattern, page, path, routeChain, mode });
+    // loadProdRoutes runs from a precompiled CompileContext that doesn't
+    // carry per-directory boundary discovery. The boundary chain is still
+    // populated live via scanPages() in the dev path and will be embedded
+    // in the compile context in a follow-up slice.
+    routes.push({ pattern, page, path, routeChain, mode, segmentBoundaries: [] });
   }
 
   return { root, routes };
@@ -88,9 +126,14 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
     throw new Error("[furin] root.tsx: createRoute() has no layout.");
   }
 
-  const notFound = await loadConventionComponent<NotFoundComponent>(pagesDir, "not-found");
-  const errorComponent = await loadConventionComponent<ErrorComponent>(pagesDir, "error");
-  return { path: rootPath, route: rootExport, notFound, error: errorComponent };
+  const notFoundEntry = await loadConventionComponent<NotFoundComponent>(pagesDir, "not-found");
+  const errorEntry = await loadConventionComponent<ErrorComponent>(pagesDir, "error");
+  return {
+    path: rootPath,
+    route: rootExport,
+    notFound: notFoundEntry?.component,
+    error: errorEntry?.component,
+  };
 }
 
 const CONVENTION_FILE_NAMES = ["not-found", "error"] as const;
@@ -99,7 +142,20 @@ function isConventionFileName(name: string): boolean {
   return (CONVENTION_FILE_NAMES as readonly string[]).includes(name);
 }
 
-async function loadConventionComponent<T>(dir: string, name: string): Promise<T | undefined> {
+/**
+ * Result of a convention-file lookup. The `path` is the absolute module path
+ * — callers that only care about the component discard it, but the hydrate
+ * emission pipeline needs it to generate static `import` statements.
+ */
+interface ConventionLookup<T> {
+  component: T;
+  path: string;
+}
+
+async function loadConventionComponent<T>(
+  dir: string,
+  name: string
+): Promise<ConventionLookup<T> | undefined> {
   const ctx = getCompileContext();
   for (const ext of [".tsx", ".ts", ".jsx", ".js"]) {
     const filePath = `${dir}/${name}${ext}`;
@@ -108,7 +164,7 @@ async function loadConventionComponent<T>(dir: string, name: string): Promise<T 
         default?: T;
       };
       if (mod.default) {
-        return mod.default;
+        return { component: mod.default, path: filePath };
       }
     }
   }
@@ -117,8 +173,8 @@ async function loadConventionComponent<T>(dir: string, name: string): Promise<T 
 
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
-  const notFoundCache = new Map<string, NotFoundComponent | undefined>();
-  const errorCache = new Map<string, ErrorComponent | undefined>();
+  const notFoundCache = new Map<string, ConventionLookup<NotFoundComponent> | undefined>();
+  const errorCache = new Map<string, ConventionLookup<ErrorComponent> | undefined>();
 
   for (const absolutePath of await collectPageFilePaths(pagesDir)) {
     if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
@@ -149,10 +205,18 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       root.error
     );
 
+    const segmentBoundaries = await collectSegmentBoundaries(
+      absolutePath,
+      pagesDir,
+      notFoundCache,
+      errorCache
+    );
+
     if (IS_DEV) {
       const devRoute = await buildDevRoute(absolutePath, relativePath, root);
       devRoute.notFound = notFound;
       devRoute.error = errorComponent;
+      devRoute.segmentBoundaries = segmentBoundaries;
       routes.push(devRoute);
       continue;
     }
@@ -178,17 +242,76 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       mode: resolveMode(page, routeChain),
       notFound,
       error: errorComponent,
+      segmentBoundaries,
     });
   }
 
   return routes;
 }
 
+/**
+ * Walks every directory from `pagesDir` down to the directory containing
+ * `pageAbsolutePath` and records the OWN (not inherited) error.tsx /
+ * not-found.tsx declared there. Directories without any convention file are
+ * omitted so consumers can treat each entry as "a place where the user
+ * authored a boundary on purpose".
+ *
+ * Uses the shared per-directory caches so sibling pages don't re-import the
+ * same convention modules.
+ */
+async function collectSegmentBoundaries(
+  pageAbsolutePath: string,
+  pagesDir: string,
+  notFoundCache: Map<string, ConventionLookup<NotFoundComponent> | undefined>,
+  errorCache: Map<string, ConventionLookup<ErrorComponent> | undefined>
+): Promise<SegmentBoundary[]> {
+  const pageDir = pageAbsolutePath.slice(0, pageAbsolutePath.lastIndexOf("/"));
+
+  // Accumulate directories from shallow → deep starting at pagesDir.
+  const dirs: string[] = [pagesDir];
+  if (pageDir.length > pagesDir.length) {
+    const relativeTail = pageDir.slice(pagesDir.length + 1); // skip leading "/"
+    const parts = relativeTail.split("/");
+    let acc = pagesDir;
+    for (const part of parts) {
+      acc = `${acc}/${part}`;
+      dirs.push(acc);
+    }
+  }
+
+  const boundaries: SegmentBoundary[] = [];
+  for (let depth = 0; depth < dirs.length; depth++) {
+    const dir = dirs[depth] as string;
+
+    if (!errorCache.has(dir)) {
+      errorCache.set(dir, await loadConventionComponent<ErrorComponent>(dir, "error"));
+    }
+    if (!notFoundCache.has(dir)) {
+      notFoundCache.set(dir, await loadConventionComponent<NotFoundComponent>(dir, "not-found"));
+    }
+
+    const errorEntry = errorCache.get(dir);
+    const notFoundEntry = notFoundCache.get(dir);
+    if (errorEntry || notFoundEntry) {
+      boundaries.push({
+        path: dir,
+        depth,
+        error: errorEntry?.component,
+        errorPath: errorEntry?.path,
+        notFound: notFoundEntry?.component,
+        notFoundPath: notFoundEntry?.path,
+      });
+    }
+  }
+
+  return boundaries;
+}
+
 async function resolveNearestConvention<T>(
   pageAbsolutePath: string,
   pagesDir: string,
   conventionName: string,
-  cache: Map<string, T | undefined>,
+  cache: Map<string, ConventionLookup<T> | undefined>,
   rootFallback: T | undefined
 ): Promise<T | undefined> {
   // Walk from the page's directory up to pagesDir looking for the convention file.
@@ -200,7 +323,7 @@ async function resolveNearestConvention<T>(
     }
     const found = cache.get(dir);
     if (found) {
-      return found;
+      return found.component;
     }
     if (dir === pagesDir) {
       break;
@@ -250,6 +373,9 @@ async function buildDevRoute(
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
     page: page ?? devStubPage,
     routeChain,
+    // scanPageFiles() overwrites this with the real chain before the route
+    // is pushed — present here to satisfy the ResolvedRoute required shape.
+    segmentBoundaries: [],
   };
 }
 

@@ -1,10 +1,18 @@
-# CLAUDE.md
+As an agent, you should help the user develop senor-grade features, as such you need to follow some guidance:
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+- Always load TDD skill from Matt Pocock
+- Always show architecture decision with alternative
+- Always give recommendation regarding the best approach
+- Always propose to eliminate / rebuild from scratch code that you think not enought flexible to integrate the new feature
+- Always rethink architecture and pattern to make the best maintainable choice
+- Always check how are the competitors doing (NextJS, Tanstack Start), compare and give the best answer
+- Avoid default values for function parameter
+- Avoid null | undefined for function parameter, they should exist (i.e string | undefined)
+- Always run git hook when commiting or pushing to github
 
 ## Project Overview
 
-**Furin** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, nested layouts, HMR with React Fast Refresh, and full TypeScript type inference — similar to Tanstack Start but built on Elysia + Bun.
+**Furin** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, nested layouts, HMR with React Fast Refresh, and full TypeScript type inference, similar to Tanstack Start but built on Elysia + Bun.
 
 ## Commands
 
@@ -54,26 +62,6 @@ export default defineConfig({
 
 - Always chain Elysia instances, using reduces for example.
 - Elysia order instances matter.
-
-## Coding best practices
-
-### Plan mode
-
-- Always show architecture decision with alternative
-- Always show the code you want to implement when architecture is validated
-- Always give recommendation regarding the best approach
-- Always propose to eliminate / rebuild from scratch code that you think not enought flexible to integrate the new feature
-- Always rethink architecture and pattern to make the best maintainable choice
-- Always check how is the competitor doing, compare and give the best answer
-- Always load TDD skill from Matt Pocock
-
-### Build mode
-
-- Avoid default values for function parameter
-- Avoid null | undefined for function parameter, they should exist (i.e string | undefined)
-- Always run bun fix && bun run test && bun run test:types when work is done
-- Always run git hook when commiting or pushing to github
-- Always fix any lint, type and tests error
 
 ### When features is done
 

@@ -12,6 +12,7 @@ import {
   setISRCache,
   setSSGCache,
 } from "./cache.ts";
+import { computeErrorDigest } from "./digest.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
 import { runLoaders } from "./loaders.ts";
 import { buildHeadInjection, safeJson } from "./shell.ts";
@@ -43,9 +44,19 @@ interface RenderResult {
 interface PreparedRender {
   componentProps: Record<string, unknown>;
   element: ReactNode;
+  /** Set when the prepared element is an error UI. Surfaced to the client via
+   * `__FURIN_DATA__.__furinError.digest` and logged server-side. */
+  errorDigest?: string;
   headData: string;
   headers: Record<string, string>;
   loader_ms: number;
+  /**
+   * Slice 8 — populated only when the loader threw `notFound()`. Mirrored into
+   * `__FURIN_DATA__.__furinNotFound` so the client-side `classifySpaResponse`
+   * can render the not-found UI inline on SPA navigation instead of falling
+   * back to a full-page reload.
+   */
+  notFoundError?: { data?: unknown; message?: string };
   status: number;
   template: string;
 }
@@ -103,11 +114,15 @@ async function prepareRender(
 
   let element: ReactNode;
   let status = 200;
+  let errorDigest: string | undefined;
+  let notFoundError: { data?: unknown; message?: string } | undefined;
   if (loaderResult.type === "not-found") {
     element = buildNotFoundElement(route.notFound ?? root.notFound, loaderResult.error);
     status = 404;
+    notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
   } else if (loaderResult.type === "error") {
-    element = buildErrorElement(route.error ?? root.error, loaderResult.error);
+    errorDigest = computeErrorDigest(loaderResult.error);
+    element = buildErrorElement(route.error ?? root.error, loaderResult.error, errorDigest);
     status = 500;
   } else {
     element = buildElement(route, componentProps, root.route);
@@ -136,7 +151,17 @@ async function prepareRender(
     element = createElement(RouterContext.Provider, { value: ssrContext }, element);
   }
 
-  return { componentProps, element, headData, headers, loader_ms, status, template };
+  return {
+    componentProps,
+    element,
+    errorDigest,
+    headData,
+    headers,
+    loader_ms,
+    notFoundError,
+    status,
+    template,
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -265,7 +290,12 @@ export async function renderSSR(
   }
 
   useLogger().set({
-    furin: { render: "ssr", route: route.pattern, loader_ms: prepared.loader_ms },
+    furin: {
+      render: "ssr",
+      route: route.pattern,
+      loader_ms: prepared.loader_ms,
+      ...(prepared.errorDigest ? { digest: prepared.errorDigest } : {}),
+    },
   });
 
   const { componentProps, element, headData, headers, template } = prepared;
@@ -279,27 +309,54 @@ export async function renderSSR(
   let reactStream: ReadableStream<Uint8Array>;
   let status = prepared.status;
   let shellErrored = false;
+  let finalDigest = prepared.errorDigest;
   try {
     reactStream = await renderToReadableStream(element);
   } catch (shellError) {
     shellErrored = true;
     status = 500;
+    finalDigest = computeErrorDigest(shellError);
+    // Log the shell-render error — prepared.errorDigest (if any) was for the
+    // loader-level error that never made it to the stream; this is a new one.
+    useLogger().set({
+      furin: { render: "ssr", route: route.pattern, digest: finalDigest, phase: "shell" },
+    });
     try {
       reactStream = await renderToReadableStream(
-        buildErrorElement(route.error ?? root.error, shellError)
+        buildErrorElement(route.error ?? root.error, shellError, finalDigest)
       );
     } catch {
       // User's error.tsx also threw — render the built-in default which is
       // pure markup and cannot crash.
-      reactStream = await renderToReadableStream(buildErrorElement(undefined, shellError));
+      reactStream = await renderToReadableStream(
+        buildErrorElement(undefined, shellError, finalDigest)
+      );
     }
   }
 
   // In error-recovery mode, don't inject loader data (it may contain the
   // failing state that caused the crash). Use an empty payload so rehydration
-  // is a no-op rather than repeating the error.
+  // is a no-op rather than repeating the error. When we DO have a digest
+  // (either from loader error or shell recovery), expose it under __furinError
+  // so the client-side ErrorBoundary can surface the same id on rehydrate.
+  const dataPayload: Record<string, unknown> = shellErrored ? {} : { ...componentProps };
+  if (finalDigest) {
+    dataPayload.__furinError = { digest: finalDigest };
+  }
+  // Slice 8 — SPA 404 signal. When the loader threw `notFound()`, the response
+  // status is 404 and the body contains the rendered not-found UI. We ALSO
+  // embed a machine-readable signal in __FURIN_DATA__ so that a mid-SPA-nav
+  // client can detect the case without guessing from the HTML, and render the
+  // not-found component inline instead of performing a jarring full-page
+  // reload. Mirrors the existing `__furinError.digest` channel for 500s.
+  if (status === 404 && !shellErrored) {
+    dataPayload.__furinStatus = 404;
+    if (prepared.notFoundError) {
+      dataPayload.__furinNotFound = prepared.notFoundError;
+    }
+  }
   const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
-    shellErrored ? {} : componentProps
+    dataPayload
   )}</script>`;
 
   // Pipe head + React stream + tail into a single ReadableStream

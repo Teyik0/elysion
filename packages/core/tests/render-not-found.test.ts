@@ -17,6 +17,9 @@ import { __setDevMode, IS_DEV } from "../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-not-found-nested");
 
+const FURIN_DATA_SCRIPT_RE =
+  /<script id="__FURIN_DATA__" type="application\/json">([\s\S]*?)<\/script>/;
+
 function createMockLoaderContext(overrides: Partial<Context> = {}) {
   return {
     params: {},
@@ -86,6 +89,41 @@ describe("renderToHTML — not-found handling", () => {
     expect(response.headers.get("Content-Type")).toContain("text/html");
     const body = await response.text();
     expect(body).toContain("Blog 404");
+  });
+
+  test("renderSSR injects __furinStatus=404 into __FURIN_DATA__ for SPA nav detection (Slice 8)", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const routeWithNotFound = {
+      ...blogRoute,
+      page: {
+        ...blogRoute.page,
+        loader: () => notFound({ message: "missing", data: { reason: "deleted" } }),
+      },
+    } as ResolvedRoute;
+
+    const response = await renderSSR(
+      routeWithNotFound,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.text();
+    // The payload MUST carry __furinStatus so the client's `classifySpaResponse`
+    // can distinguish a loader-thrown notFound() from a generic 5xx.
+    const match = body.match(FURIN_DATA_SCRIPT_RE);
+    expect(match).not.toBeNull();
+    const payload = JSON.parse(match?.[1] ?? "{}");
+    expect(payload.__furinStatus).toBe(404);
+    expect(payload.__furinNotFound).toMatchObject({
+      message: "missing",
+      data: { reason: "deleted" },
+    });
   });
 
   test("falls back to the built-in 404 component when no not-found.tsx exists", async () => {
