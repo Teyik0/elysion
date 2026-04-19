@@ -111,6 +111,54 @@ describe("FurinErrorBoundary", () => {
     boundary.reset();
     expect(called).toBe(1);
   });
+
+  // componentDidUpdate — resetKey-driven auto-clear (Slice 7).
+  // Direct lifecycle invocation mirrors what React does after a prop-triggered
+  // commit: the DOM is not involved, so we stub setState and call the method
+  // with the PREVIOUS props to exercise the diff branch.
+
+  test("componentDidUpdate clears latched error when resetKey changes", () => {
+    const boundary = makeErrorBoundaryInState(new Error("boom"), { resetKey: "a" });
+    expect(boundary.state.error).not.toBeNull();
+    // React commits new props onto this.props BEFORE invoking componentDidUpdate,
+    // so we simulate that same ordering here. `props` is readonly in the type
+    // system but the class mutates its own props at runtime — Object.assign is
+    // the idiomatic way to mirror that without fighting TS.
+    Object.assign(boundary.props, { resetKey: "b" });
+    boundary.componentDidUpdate({ children: null, resetKey: "a" });
+    expect(boundary.state.error).toBeNull();
+  });
+
+  test("componentDidUpdate calls onReset after clearing via resetKey change", () => {
+    let called = 0;
+    const boundary = makeErrorBoundaryInState(new Error("boom"), {
+      resetKey: 1,
+      onReset: () => {
+        called += 1;
+      },
+    });
+    Object.assign(boundary.props, { resetKey: 2 });
+    boundary.componentDidUpdate({ children: null, resetKey: 1 });
+    expect(called).toBe(1);
+  });
+
+  test("componentDidUpdate is a no-op when resetKey is unchanged", () => {
+    const originalError = new Error("boom");
+    const boundary = makeErrorBoundaryInState(originalError, { resetKey: "same" });
+    boundary.componentDidUpdate({ children: null, resetKey: "same" });
+    expect(boundary.state.error).toBe(originalError);
+  });
+
+  test("componentDidUpdate is a no-op when there is no latched error", () => {
+    const boundary = new FurinErrorBoundary({ children: null, resetKey: "a" });
+    let called = 0;
+    boundary.setState = (() => {
+      called += 1;
+    }) as typeof boundary.setState;
+    Object.assign(boundary.props, { resetKey: "b" });
+    boundary.componentDidUpdate({ children: null, resetKey: "a" });
+    expect(called).toBe(0);
+  });
 });
 
 // ── FurinNotFoundBoundary ─────────────────────────────────────────────────────
@@ -162,6 +210,38 @@ describe("FurinNotFoundBoundary", () => {
     expect(html).toContain("nf=poof");
     // JSON output is HTML-escaped by renderToStaticMarkup, so match the escaped form.
     expect(html).toContain("&quot;id&quot;:42");
+  });
+
+  // componentDidUpdate — resetKey-driven auto-clear (parallel with
+  // FurinErrorBoundary; NotFoundBoundary uses inline setState rather than
+  // a dedicated reset() method, but observable behaviour is the same).
+
+  test("componentDidUpdate clears latched notFound error when resetKey changes", () => {
+    const boundary = makeNotFoundBoundaryInState(new FurinNotFoundError({ message: "gone" }), {
+      resetKey: "a",
+    });
+    expect(boundary.state.error).not.toBeNull();
+    Object.assign(boundary.props, { resetKey: "b" });
+    boundary.componentDidUpdate({ children: null, resetKey: "a" });
+    expect(boundary.state.error).toBeNull();
+  });
+
+  test("componentDidUpdate is a no-op when resetKey is unchanged", () => {
+    const err = new FurinNotFoundError({ message: "gone" });
+    const boundary = makeNotFoundBoundaryInState(err, { resetKey: "same" });
+    boundary.componentDidUpdate({ children: null, resetKey: "same" });
+    expect(boundary.state.error).toBe(err);
+  });
+
+  test("componentDidUpdate is a no-op when there is no latched error", () => {
+    const boundary = new FurinNotFoundBoundary({ children: null, resetKey: "a" });
+    let called = 0;
+    boundary.setState = (() => {
+      called += 1;
+    }) as typeof boundary.setState;
+    Object.assign(boundary.props, { resetKey: "b" });
+    boundary.componentDidUpdate({ children: null, resetKey: "a" });
+    expect(called).toBe(0);
   });
 });
 
