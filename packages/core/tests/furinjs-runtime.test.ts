@@ -37,6 +37,10 @@ async function setCompileContext(
     },
     routes: [{ pattern: "/", path: indexPath, mode: "ssg" }],
     ...(embedded ? { embedded } : {}),
+    rootConventions: {},
+    routeMetadata: {
+      [indexPath]: { segmentBoundaries: [] },
+    },
   });
 }
 

@@ -1,5 +1,5 @@
 import { Component, Fragment, type ReactNode } from "react";
-import type { ErrorComponent } from "../error.ts";
+import { type ErrorComponent, getPublicErrorMessage } from "../error.ts";
 import { type FurinNotFoundError, isNotFoundError, type NotFoundComponent } from "../not-found.ts";
 import { DefaultErrorScreen, DefaultNotFoundScreen } from "./default-screens.tsx";
 import { computeErrorDigest } from "./digest.ts";
@@ -116,9 +116,10 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       //      (e.g. tests that inject state by hand).
       //   3. recompute on the spot — defensive, should never be reached.
       const finalDigest = digest ?? this.props.digest ?? computeErrorDigest(error);
+      const message = this.props.fallback ? error.message : getPublicErrorMessage(error);
       return (
         <Fallback
-          error={{ message: error.message, digest: finalDigest }}
+          error={{ message, digest: finalDigest }}
           reset={typeof window === "undefined" ? SERVER_RESET_NOOP : this.reset}
         />
       );

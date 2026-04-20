@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Elysia } from "elysia";
-import { furin } from "../src/furin.ts";
+import { furin } from "furin";
 import { __resetCompileContext } from "../src/internal.ts";
 import { setProductionTemplatePath } from "../src/render/template.ts";
 import { __setDevMode } from "../src/runtime-env.ts";

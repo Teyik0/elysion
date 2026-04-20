@@ -233,14 +233,15 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      ctx.set.headers["x-loader-ran"] = "true";
 
       const boom = new Error("kaboom");
       const customRoute = {
         ...withLoaderRoute,
         page: {
           ...withLoaderRoute.page,
-          loader: () => {
+          loader: (loaderCtx: Record<string, unknown>) => {
+            const set = loaderCtx.set as { headers: Record<string, string> };
+            set.headers["x-loader-ran"] = "true";
             throw boom;
           },
         },

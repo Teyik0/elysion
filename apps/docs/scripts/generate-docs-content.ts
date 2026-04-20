@@ -18,6 +18,7 @@ const SOURCE_PATHS = [
   "src/content/docs/routing.mdx",
   "src/content/docs/data-loading.mdx",
   "src/content/docs/rendering.mdx",
+  "src/content/docs/error-handling.mdx",
   "src/content/docs/layouts.mdx",
   "src/content/docs/api-routes.mdx",
   "src/content/docs/plugins.mdx",

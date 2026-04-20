@@ -137,13 +137,15 @@ const rootEl = document.getElementById("root") as HTMLElement;
     const _mod = await _match.load();
     const match = { ..._match, component: _mod.default.component, pageRoute: _mod.default._route };
 
+    const isNotFound = loaderData.__furinStatus === 404;
+
     app = createElement(RouterProvider, {
       routes,
       root,
       initialMatch: match,
       initialData: loaderData,
       initialDigest: loaderData.__furinError?.digest,
-      initialNotFound: undefined,${basePathProp}
+      initialNotFound: isNotFound ? (loaderData.__furinNotFound ?? loaderData) : undefined,${basePathProp}
     } as any);
     log.info({ action: "hydrate_complete", pathname });
   } else if (loaderData.__furinStatus === 404) {

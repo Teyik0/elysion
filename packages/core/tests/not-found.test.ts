@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { isNotFoundError, notFound } from "../src/not-found";
+import { isNotFoundError, notFound } from "furin";
 
 describe("notFound()", () => {
   test("throws an error identifiable via isNotFoundError", () => {
-    expect(() => notFound()).toThrow();
+    expect(() => notFound(undefined)).toThrow();
 
     try {
-      notFound();
+      notFound(undefined);
     } catch (err) {
       expect(isNotFoundError(err)).toBe(true);
       return;

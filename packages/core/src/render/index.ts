@@ -73,8 +73,8 @@ async function prepareRender(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
-  basePath?: string,
-  throwOnFailure = false
+  basePath: string | undefined,
+  throwOnFailure: boolean
 ): Promise<PreparedRender | Response> {
   const loaderStart = Date.now();
   const loaderResult = await runLoaders(route, ctx, root.route);
@@ -209,7 +209,7 @@ export async function renderToHTML(
   ctx: Context,
   root: RootLayout
 ): Promise<RenderResult> {
-  const prepared = await prepareRender(route, ctx, root);
+  const prepared = await prepareRender(route, ctx, root, undefined, false);
 
   // Redirect — re-throw so callers like prerenderSSG / handleISR can catch it
   if (prepared instanceof Response) {
@@ -282,7 +282,7 @@ export async function renderSSR(
   ctx: Context,
   root: RootLayout
 ): Promise<Response> {
-  const prepared = await prepareRender(route, ctx, root);
+  const prepared = await prepareRender(route, ctx, root, undefined, false);
 
   // Redirect — return directly as a Response
   if (prepared instanceof Response) {
@@ -435,7 +435,7 @@ export async function renderRootNotFound(
   } else {
     template = generateIndexHtml();
   }
-  const notFoundError = new FurinNotFoundError();
+  const notFoundError = new FurinNotFoundError(undefined);
 
   let reactStream: Awaited<ReturnType<typeof renderToReadableStream>>;
   try {
@@ -530,14 +530,42 @@ export async function handleISR(
   }
 
   const renderStart = Date.now();
-  const prepared = await prepareRender(route, ctx, root);
+  const prepared = await prepareRender(route, ctx, root, undefined, false);
 
   // Redirect — return directly
   if (prepared instanceof Response) {
     return prepared;
   }
 
-  const { componentProps, element, headData, template } = prepared;
+  const { componentProps, element, headData, template, status, errorDigest, notFoundError } =
+    prepared;
+
+  if (status !== 200) {
+    const fallbackProps: Record<string, unknown> = { ...componentProps };
+    if (status === 404) {
+      fallbackProps.__furinStatus = 404;
+      if (notFoundError) {
+        fallbackProps.__furinNotFound = notFoundError;
+      }
+    }
+    if (errorDigest) {
+      fallbackProps.__furinError = { digest: errorDigest };
+    }
+
+    const stream = await renderToReadableStream(element);
+    await stream.allReady;
+    const reactHtml = await streamToString(stream);
+    const html = assembleHTML(template, headData, reactHtml, fallbackProps);
+    const generatedAt = Date.now();
+
+    const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
+    ctx.set.headers["content-type"] = "text/html; charset=utf-8";
+    ctx.set.headers["cache-control"] = isrCacheControl(false, revalidate);
+    if (etag) {
+      ctx.set.headers.etag = etag;
+    }
+    return html;
+  }
 
   const stream = await renderToReadableStream(element);
   await stream.allReady;

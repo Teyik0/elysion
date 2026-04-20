@@ -74,6 +74,12 @@ export function loadProdRoutes(ctx: CompileContext): {
   root: RootLayout;
   routes: ResolvedRoute[];
 } {
+  if (!(ctx.rootConventions && ctx.routeMetadata)) {
+    throw new Error(
+      "[furin] Production routes require compiled boundary metadata. The CompileContext is missing rootConventions or routeMetadata. Ensure the build step generates these fields."
+    );
+  }
+
   const rootMod = ctx.modules[ctx.rootPath] as Record<string, unknown>;
   const rootExport = rootMod.route ?? rootMod.default;
   if (!(rootExport && isFurinRoute(rootExport) && rootExport.layout)) {
@@ -90,11 +96,15 @@ export function loadProdRoutes(ctx: CompileContext): {
     }
     const routeChain = collectRouteChainFromRoute(page._route as RuntimeRoute);
     validateRouteChain(routeChain, root.route, path);
-    // loadProdRoutes runs from a precompiled CompileContext that doesn't
-    // carry per-directory boundary discovery. The boundary chain is still
-    // populated live via scanPages() in the dev path and will be embedded
-    // in the compile context in a follow-up slice.
-    routes.push({ pattern, page, path, routeChain, mode, segmentBoundaries: [] });
+    const meta = ctx.routeMetadata[path];
+    routes.push({
+      pattern,
+      page,
+      path,
+      routeChain,
+      mode,
+      segmentBoundaries: (meta?.segmentBoundaries ?? []) as unknown as SegmentBoundary[],
+    });
   }
 
   return { root, routes };

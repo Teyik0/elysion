@@ -114,5 +114,6 @@ export function buildErrorElement(
   digest: string
 ): ReactNode {
   const ErrorView = component ?? DefaultErrorComponent;
-  return <ErrorView error={{ message: errorMessageOf(error), digest }} reset={SERVER_RESET_NOOP} />;
+  const message = component ? errorMessageOf(error) : "An unexpected error occurred.";
+  return <ErrorView error={{ message, digest }} reset={SERVER_RESET_NOOP} />;
 }

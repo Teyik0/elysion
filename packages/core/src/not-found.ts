@@ -20,13 +20,13 @@ export class FurinNotFoundError extends Error {
   readonly __furinBrand = NOT_FOUND_BRAND;
   readonly data: unknown;
 
-  constructor(options?: NotFoundOptions) {
+  constructor(options: NotFoundOptions | undefined) {
     super(options?.message ?? "");
     this.data = options?.data;
   }
 }
 
-export function notFound(options?: NotFoundOptions): never {
+export function notFound(options: NotFoundOptions | undefined): never {
   throw new FurinNotFoundError(options);
 }
 
