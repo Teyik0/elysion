@@ -3,12 +3,12 @@ As an agent, you should help the user develop senior-grade features, as such you
 - Always load TDD skill from Matt Pocock
 - Always show architecture decision with alternative
 - Always give recommendation regarding the best approach
-- Always propose to eliminate / rebuild from scratch code that you think not enought flexible to integrate the new feature
-- Always rethink architecture and pattern to make the best maintainable choice
-- Always check how are the competitors doing (NextJS, Tanstack Start), compare and give the best answer
-- Avoid default values for function parameter
-- Function parameters must always be passed explicitly by callers — never rely on implicit `undefined` from omitting an argument. Optional parameters must be typed with an explicit union (e.g. `string | undefined`) and the call site must pass the value (or pass `undefined` deliberately) so the intent is visible at every call site.
-- Always run git hook when commiting or pushing to github
+- Always propose to eliminate / rebuild from scratch code that you think not flexible enough to integrate the new feature
+- Always rethink architecture and patterns to make the most maintainable choice
+- Always check how competitors are doing (Next.js, TanStack Start), compare approaches, and recommend the best solution
+- Avoid default values for function parameters
+- Function parameters must always be passed explicitly by callers — never rely on implicit `undefined` from omitting an argument. Optional parameters must be typed with an explicit union (e.g. `string | undefined`) and call sites must pass the value (or pass `undefined` deliberately) so the intent is visible at every call site.
+- Always run git hooks when committing or pushing to GitHub
 
 ## Project Overview
 

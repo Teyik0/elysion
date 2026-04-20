@@ -68,7 +68,7 @@ describe("FurinErrorBoundary", () => {
     const html = renderToStaticMarkup(boundary.render() as ReactNode);
     expect(html).toContain(expected);
     expect(html).not.toContain("abcdef1234");
-    expect(html).toContain("boom");
+    expect(html).toContain("Something went wrong");
     expect(html).toContain("500");
   });
 

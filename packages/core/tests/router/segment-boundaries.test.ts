@@ -97,5 +97,18 @@ describe("segmentBoundaries — chain population", () => {
     }
     expect(home.segmentBoundaries).toHaveLength(1);
     expect(home.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_DIR);
+
+    // /blog/subpage lives under blog/subpage, where subpage has no conventions.
+    // The chain should include root and blog, but NOT subpage.
+    const subpage = routes.find((r) => r.pattern === "/blog/subpage");
+    if (!subpage) {
+      throw new Error("expected /blog/subpage fixture route");
+    }
+    expect(subpage.segmentBoundaries).toHaveLength(2);
+    expect(subpage.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_DIR);
+    expect(subpage.segmentBoundaries[1]?.path).toBe(join(ERROR_NESTED_DIR, "blog"));
+    expect(
+      subpage.segmentBoundaries.some((b) => b.path === join(ERROR_NESTED_DIR, "blog", "subpage"))
+    ).toBe(false);
   });
 });

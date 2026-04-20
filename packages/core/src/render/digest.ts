@@ -34,6 +34,17 @@ export function computeErrorDigest(err: unknown): string {
   }
 
   const input = `${message}\n${stack}`;
-  const hex = Bun.hash(input).toString(16);
+  const hex = fnv1a(input).toString(16);
   return hex.padStart(10, "0").slice(0, 10);
+}
+
+function fnv1a(input: string): number {
+  let hash = 0x81_1c_9d_c5;
+  for (let i = 0; i < input.length; i++) {
+    // biome-ignore lint/suspicious/noBitwiseOperators: FNV-1a requires XOR for the hash algorithm
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01_00_01_93);
+  }
+  // biome-ignore lint/suspicious/noBitwiseOperators: unsigned right-shift required to coerce to 32-bit unsigned integer
+  return hash >>> 0;
 }

@@ -74,6 +74,15 @@ export const DOCS_NAV: DocNavSection[] = [
         openIn: DEFAULT_OPEN_IN,
       },
       {
+        label: "Error Handling",
+        title: "Error Handling",
+        href: "/docs/error-handling",
+        description: "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+        sourcePath: "src/content/docs/error-handling.mdx",
+        githubPath: "apps/docs/src/content/docs/error-handling.mdx",
+        openIn: DEFAULT_OPEN_IN,
+      },
+      {
         label: "Nested Layouts",
         title: "Nested Layouts",
         href: "/docs/layouts",

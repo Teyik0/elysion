@@ -88,6 +88,11 @@ describe.serial("furin()", () => {
         { pattern: "/", path: indexPath, mode: "ssg" },
         { pattern: "/blog/:slug", path: blogSlugPath, mode: "ssg" },
       ],
+      rootConventions: {},
+      routeMetadata: {
+        [indexPath]: { segmentBoundaries: [] },
+        [blogSlugPath]: { segmentBoundaries: [] },
+      },
     });
 
     const plugin = await furin({
@@ -142,6 +147,11 @@ describe.serial("furin()", () => {
           "/_client/app.js": clientAssetPath,
           "/public/logo.png": publicAssetPath,
         },
+      },
+      rootConventions: {},
+      routeMetadata: {
+        [indexPath]: { segmentBoundaries: [] },
+        [blogSlugPath]: { segmentBoundaries: [] },
       },
     });
 

@@ -390,12 +390,142 @@
     "title": "Rendering Modes"
   },
   {
+    "content": "Furin handles errors and missing content at the route level with two conventions — error.tsx and not found.tsx — plus the notFound() helper for loaders. Errors are caught by segment level boundaries, surfaced with a safe message and a correlation digest, and gracefully degrade when boundaries themselves fail. Create an error.tsx in any directory under src/pages to declare an error boundary for every route that passes through that segment. The boundary catches: Loader errors — any throw from route.page().loader() or createRoute().loader() Render errors — any throw during React render inside that segment Nested boundary failures — if a deeper boundary fails to render, the parent boundary catches it Boundaries are scoped to their directory. src/pages/blog/error.tsx catches errors in /blog/ but not in /dashboard/ . | Prop | Type | Description | | | | | | error.message | string | Safe user facing message. Custom error components receive the raw message; the built in default shows a generic sanitized message for untrusted errors. | | error.digest | string | Opaque 10 hex char hash of the original error. The same digest appears in server logs next to the full stack trace so support can correlate a user report with server diagnostics. | | reset | () = void | Clears the boundary and re runs the route's loaders. On the server this is a no op. | When no error.tsx exists, Furin renders a built in error screen: Status 500 A generic message like \"Something went wrong\" The digest so users can report it A Go Home link and a Try again button Create a not found.tsx to handle missing content inside a route segment. Throw notFound() from a loader to render the nearest not found.tsx instead of the normal page: notFound(options) accepts: | Option | Type | Description | | | | | | message | string | Displayed in the not found component | | data | unknown | Any serialisable context you want to pass through | The response status is 404 . The nearest not found.tsx is rendered at the segment level that declared it — so src/pages/blog/not found.tsx renders for /blog/missing post , while the root src/pages/not found.tsx catches unmatched URLs across the entire app. When no not found.tsx exists, Furin renders a built in 404 screen with status 404 . Place error.tsx and not found.tsx directly in src/pages/ to catch anything that isn't handled by a deeper boundary: Every error caught by Furin receives a digest — a deterministic 10 character hex hash computed from the error message and stack trace. Purpose: support can correlate a user facing error ID with the full server side stack trace without leaking sensitive internals to the browser. Digests are identical across restarts for the same error, so they work reliably in serverless and containerised environments. When a user navigates client side to a URL that doesn't match any route: 1. The router fetches the HTML for that URL 2. The server returns the root not found.tsx with furinStatus: 404 embedded in the page data 3. The client detects the 404 signal via classifySpaResponse and renders the not found UI inline instead of doing a full page reload This means links and the \"Go Home\" button inside a 404 page stay within the SPA experience. ISR routes that hit a cache miss and then encounter a loader error or notFound() are not cached : The response is returned with the correct status ( 404 or 500 ) Cache Control is set to conservative no cache directives The in memory ISR cache is not populated The next request will re attempt the render This prevents transient failures from being cached and served to subsequent visitors. Furin sanitises what reaches the browser: Custom error.tsx components receive the raw error.message so you can choose what to display The built in default shows a generic message like \"Something went wrong\" for all non explicitly safe error types, preventing stack traces and internal details from leaking to users error.digest is always exposed so support can correlate issues | Convention | File name | When it runs | Status | | | | | | | error.tsx | error.tsx | Any throw in loader or render | 500 | | not found.tsx | not found.tsx | notFound() thrown from loader, or unmatched URL | 404 | | Root fallback | src/pages/error.tsx | Uncaught error anywhere | 500 | | Root 404 | src/pages/not found.tsx | Unmatched route | 404 |",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling",
+    "id": "/docs/error-handling::page",
+    "kind": "page",
+    "order": 51,
+    "section": "",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Create an error.tsx in any directory under src/pages to declare an error boundary for every route that passes through that segment. The boundary catches: Loader errors — any throw from route.page().loader() or createRoute().loader() Render errors — any throw during React render inside that segment Nested boundary failures — if a deeper boundary fails to render, the parent boundary catches it Boundaries are scoped to their directory. src/pages/blog/error.tsx catches errors in /blog/ but not in /dashboard/ . | Prop | Type | Description | | | | | | error.message | string | Safe user facing message. Custom error components receive the raw message; the built in default shows a generic sanitized message for untrusted errors. | | error.digest | string | Opaque 10 hex char hash of the original error. The same digest appears in server logs next to the full stack trace so support can correlate a user report with server diagnostics. | | reset | () = void | Clears the boundary and re runs the route's loaders. On the server this is a no op. | When no error.tsx exists, Furin renders a built in error screen: Status 500 A generic message like \"Something went wrong\" The digest so users can report it A Go Home link and a Try again button",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#errortsx-segment-error-boundaries",
+    "id": "/docs/error-handling#errortsx-segment-error-boundaries",
+    "kind": "section",
+    "order": 39,
+    "section": "error.tsx — Segment Error Boundaries",
+    "title": "Error Handling"
+  },
+  {
+    "content": "| Prop | Type | Description | | | | | | error.message | string | Safe user facing message. Custom error components receive the raw message; the built in default shows a generic sanitized message for untrusted errors. | | error.digest | string | Opaque 10 hex char hash of the original error. The same digest appears in server logs next to the full stack trace so support can correlate a user report with server diagnostics. | | reset | () = void | Clears the boundary and re runs the route's loaders. On the server this is a no op. |",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#error-props",
+    "id": "/docs/error-handling#error-props",
+    "kind": "section",
+    "order": 40,
+    "section": "Error props",
+    "title": "Error Handling"
+  },
+  {
+    "content": "When no error.tsx exists, Furin renders a built in error screen: Status 500 A generic message like \"Something went wrong\" The digest so users can report it A Go Home link and a Try again button",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#default-error-ui",
+    "id": "/docs/error-handling#default-error-ui",
+    "kind": "section",
+    "order": 41,
+    "section": "Default error UI",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Create a not found.tsx to handle missing content inside a route segment. Throw notFound() from a loader to render the nearest not found.tsx instead of the normal page: notFound(options) accepts: | Option | Type | Description | | | | | | message | string | Displayed in the not found component | | data | unknown | Any serialisable context you want to pass through | The response status is 404 . The nearest not found.tsx is rendered at the segment level that declared it — so src/pages/blog/not found.tsx renders for /blog/missing post , while the root src/pages/not found.tsx catches unmatched URLs across the entire app. When no not found.tsx exists, Furin renders a built in 404 screen with status 404 .",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#not-foundtsx-segment-not-found-boundaries",
+    "id": "/docs/error-handling#not-foundtsx-segment-not-found-boundaries",
+    "kind": "section",
+    "order": 42,
+    "section": "not found.tsx — Segment Not Found Boundaries",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Throw notFound() from a loader to render the nearest not found.tsx instead of the normal page: notFound(options) accepts: | Option | Type | Description | | | | | | message | string | Displayed in the not found component | | data | unknown | Any serialisable context you want to pass through | The response status is 404 . The nearest not found.tsx is rendered at the segment level that declared it — so src/pages/blog/not found.tsx renders for /blog/missing post , while the root src/pages/not found.tsx catches unmatched URLs across the entire app.",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#notfound-in-loaders",
+    "id": "/docs/error-handling#notfound-in-loaders",
+    "kind": "section",
+    "order": 43,
+    "section": "notFound() in loaders",
+    "title": "Error Handling"
+  },
+  {
+    "content": "When no not found.tsx exists, Furin renders a built in 404 screen with status 404 .",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#default-not-found-ui",
+    "id": "/docs/error-handling#default-not-found-ui",
+    "kind": "section",
+    "order": 44,
+    "section": "Default not found UI",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Place error.tsx and not found.tsx directly in src/pages/ to catch anything that isn't handled by a deeper boundary:",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#root-level-fallbacks",
+    "id": "/docs/error-handling#root-level-fallbacks",
+    "kind": "section",
+    "order": 45,
+    "section": "Root Level Fallbacks",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Every error caught by Furin receives a digest — a deterministic 10 character hex hash computed from the error message and stack trace. Purpose: support can correlate a user facing error ID with the full server side stack trace without leaking sensitive internals to the browser. Digests are identical across restarts for the same error, so they work reliably in serverless and containerised environments.",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#error-digests",
+    "id": "/docs/error-handling#error-digests",
+    "kind": "section",
+    "order": 46,
+    "section": "Error Digests",
+    "title": "Error Handling"
+  },
+  {
+    "content": "When a user navigates client side to a URL that doesn't match any route: 1. The router fetches the HTML for that URL 2. The server returns the root not found.tsx with furinStatus: 404 embedded in the page data 3. The client detects the 404 signal via classifySpaResponse and renders the not found UI inline instead of doing a full page reload This means links and the \"Go Home\" button inside a 404 page stay within the SPA experience.",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#spa-navigation-and-404",
+    "id": "/docs/error-handling#spa-navigation-and-404",
+    "kind": "section",
+    "order": 47,
+    "section": "SPA Navigation and 404",
+    "title": "Error Handling"
+  },
+  {
+    "content": "ISR routes that hit a cache miss and then encounter a loader error or notFound() are not cached : The response is returned with the correct status ( 404 or 500 ) Cache Control is set to conservative no cache directives The in memory ISR cache is not populated The next request will re attempt the render This prevents transient failures from being cached and served to subsequent visitors.",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#isr-error-fallback",
+    "id": "/docs/error-handling#isr-error-fallback",
+    "kind": "section",
+    "order": 48,
+    "section": "ISR Error Fallback",
+    "title": "Error Handling"
+  },
+  {
+    "content": "Furin sanitises what reaches the browser: Custom error.tsx components receive the raw error.message so you can choose what to display The built in default shows a generic message like \"Something went wrong\" for all non explicitly safe error types, preventing stack traces and internal details from leaking to users error.digest is always exposed so support can correlate issues",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#security-public-messages",
+    "id": "/docs/error-handling#security-public-messages",
+    "kind": "section",
+    "order": 49,
+    "section": "Security: Public Messages",
+    "title": "Error Handling"
+  },
+  {
+    "content": "| Convention | File name | When it runs | Status | | | | | | | error.tsx | error.tsx | Any throw in loader or render | 500 | | not found.tsx | not found.tsx | notFound() thrown from loader, or unmatched URL | 404 | | Root fallback | src/pages/error.tsx | Uncaught error anywhere | 500 | | Root 404 | src/pages/not found.tsx | Unmatched route | 404 |",
+    "description": "error.tsx, not-found.tsx, notFound(), digests, and SPA 404 handling.",
+    "href": "/docs/error-handling#comparison",
+    "id": "/docs/error-handling#comparison",
+    "kind": "section",
+    "order": 50,
+    "section": "Comparison",
+    "title": "Error Handling"
+  },
+  {
     "content": "Furin uses route.tsx files for directory level layouts and route config. Each route.tsx can point at a parent route, declare loaders, and wrap child pages. Pages inside that directory use the same route object: src/pages/root.tsx is required. It is the top level route and should render ` , , and `. Layout data flows into the layout itself and all child pages. The page below does not need to repeat the auth/session work:",
     "description": "Compose shared UI and loaders with _route.tsx files.",
     "href": "/docs/layouts",
     "id": "/docs/layouts::page",
     "kind": "page",
-    "order": 43,
+    "order": 56,
     "section": "",
     "title": "Nested Layouts"
   },
@@ -405,7 +535,7 @@
     "href": "/docs/layouts#basic-layout",
     "id": "/docs/layouts#basic-layout",
     "kind": "section",
-    "order": 39,
+    "order": 52,
     "section": "Basic Layout",
     "title": "Nested Layouts"
   },
@@ -415,7 +545,7 @@
     "href": "/docs/layouts#root-layout",
     "id": "/docs/layouts#root-layout",
     "kind": "section",
-    "order": 40,
+    "order": 53,
     "section": "Root Layout",
     "title": "Nested Layouts"
   },
@@ -425,7 +555,7 @@
     "href": "/docs/layouts#multi-level-nesting",
     "id": "/docs/layouts#multi-level-nesting",
     "kind": "section",
-    "order": 41,
+    "order": 54,
     "section": "Multi Level Nesting",
     "title": "Nested Layouts"
   },
@@ -435,7 +565,7 @@
     "href": "/docs/layouts#layout-loaders",
     "id": "/docs/layouts#layout-loaders",
     "kind": "section",
-    "order": 42,
+    "order": 55,
     "section": "Layout Loaders",
     "title": "Nested Layouts"
   },
@@ -445,7 +575,7 @@
     "href": "/docs/api-routes",
     "id": "/docs/api-routes::page",
     "kind": "page",
-    "order": 48,
+    "order": 61,
     "section": "",
     "title": "API Routes"
   },
@@ -455,7 +585,7 @@
     "href": "/docs/api-routes#define-an-api-plugin",
     "id": "/docs/api-routes#define-an-api-plugin",
     "kind": "section",
-    "order": 44,
+    "order": 57,
     "section": "Define An API Plugin",
     "title": "API Routes"
   },
@@ -465,7 +595,7 @@
     "href": "/docs/api-routes#mount-it-before-furin",
     "id": "/docs/api-routes#mount-it-before-furin",
     "kind": "section",
-    "order": 45,
+    "order": 58,
     "section": "Mount It Before Furin",
     "title": "API Routes"
   },
@@ -475,7 +605,7 @@
     "href": "/docs/api-routes#typed-client-access",
     "id": "/docs/api-routes#typed-client-access",
     "kind": "section",
-    "order": 46,
+    "order": 59,
     "section": "Typed Client Access",
     "title": "API Routes"
   },
@@ -485,7 +615,7 @@
     "href": "/docs/api-routes#middleware-and-guards",
     "id": "/docs/api-routes#middleware-and-guards",
     "kind": "section",
-    "order": 47,
+    "order": 60,
     "section": "Middleware And Guards",
     "title": "API Routes"
   },
@@ -495,7 +625,7 @@
     "href": "/docs/plugins",
     "id": "/docs/plugins::page",
     "kind": "page",
-    "order": 53,
+    "order": 66,
     "section": "",
     "title": "Plugins"
   },
@@ -505,7 +635,7 @@
     "href": "/docs/plugins#production-build-plugins",
     "id": "/docs/plugins#production-build-plugins",
     "kind": "section",
-    "order": 49,
+    "order": 62,
     "section": "Production Build Plugins",
     "title": "Plugins"
   },
@@ -515,7 +645,7 @@
     "href": "/docs/plugins#development-plugins",
     "id": "/docs/plugins#development-plugins",
     "kind": "section",
-    "order": 50,
+    "order": 63,
     "section": "Development Plugins",
     "title": "Plugins"
   },
@@ -525,7 +655,7 @@
     "href": "/docs/plugins#example-mdx",
     "id": "/docs/plugins#example-mdx",
     "kind": "section",
-    "order": 51,
+    "order": 64,
     "section": "Example: MDX",
     "title": "Plugins"
   },
@@ -535,7 +665,7 @@
     "href": "/docs/plugins#what-is-actually-exported-today",
     "id": "/docs/plugins#what-is-actually-exported-today",
     "kind": "section",
-    "order": 52,
+    "order": 65,
     "section": "What Is Actually Exported Today",
     "title": "Plugins"
   },
@@ -545,7 +675,7 @@
     "href": "/docs/caching",
     "id": "/docs/caching::page",
     "kind": "page",
-    "order": 70,
+    "order": 83,
     "section": "",
     "title": "Caching"
   },
@@ -555,7 +685,7 @@
     "href": "/docs/caching#render-modes-at-a-glance",
     "id": "/docs/caching#render-modes-at-a-glance",
     "kind": "section",
-    "order": 54,
+    "order": 67,
     "section": "Render modes at a glance",
     "title": "Caching"
   },
@@ -565,7 +695,7 @@
     "href": "/docs/caching#cache-control-headers",
     "id": "/docs/caching#cache-control-headers",
     "kind": "section",
-    "order": 55,
+    "order": 68,
     "section": "Cache Control headers",
     "title": "Caching"
   },
@@ -575,7 +705,7 @@
     "href": "/docs/caching#why-must-revalidate-max-age0-",
     "id": "/docs/caching#why-must-revalidate-max-age0-",
     "kind": "section",
-    "order": 56,
+    "order": 69,
     "section": "Why must revalidate + max age=0 ?",
     "title": "Caching"
   },
@@ -585,7 +715,7 @@
     "href": "/docs/caching#headers-by-mode",
     "id": "/docs/caching#headers-by-mode",
     "kind": "section",
-    "order": 57,
+    "order": 70,
     "section": "Headers by mode",
     "title": "Caching"
   },
@@ -595,7 +725,7 @@
     "href": "/docs/caching#etags-and-conditional-requests",
     "id": "/docs/caching#etags-and-conditional-requests",
     "kind": "section",
-    "order": 58,
+    "order": 71,
     "section": "ETags and conditional requests",
     "title": "Caching"
   },
@@ -605,7 +735,7 @@
     "href": "/docs/caching#revalidatepathpath-type",
     "id": "/docs/caching#revalidatepathpath-type",
     "kind": "section",
-    "order": 59,
+    "order": 72,
     "section": "revalidatePath(path, type?)",
     "title": "Caching"
   },
@@ -615,7 +745,7 @@
     "href": "/docs/caching#x-furin-revalidate-header",
     "id": "/docs/caching#x-furin-revalidate-header",
     "kind": "section",
-    "order": 60,
+    "order": 73,
     "section": "X Furin Revalidate header",
     "title": "Caching"
   },
@@ -625,7 +755,7 @@
     "href": "/docs/caching#stale-deploy-detection",
     "id": "/docs/caching#stale-deploy-detection",
     "kind": "section",
-    "order": 61,
+    "order": 74,
     "section": "Stale deploy detection",
     "title": "Caching"
   },
@@ -635,7 +765,7 @@
     "href": "/docs/caching#cdn-purging-with-setcachepurger",
     "id": "/docs/caching#cdn-purging-with-setcachepurger",
     "kind": "section",
-    "order": 62,
+    "order": 75,
     "section": "CDN purging with setCachePurger",
     "title": "Caching"
   },
@@ -645,7 +775,7 @@
     "href": "/docs/caching#future-edge-adapters",
     "id": "/docs/caching#future-edge-adapters",
     "kind": "section",
-    "order": 63,
+    "order": 76,
     "section": "Future edge adapters",
     "title": "Caching"
   },
@@ -655,7 +785,7 @@
     "href": "/docs/caching#cache-tag-header",
     "id": "/docs/caching#cache-tag-header",
     "kind": "section",
-    "order": 64,
+    "order": 77,
     "section": "Cache Tag header",
     "title": "Caching"
   },
@@ -665,7 +795,7 @@
     "href": "/docs/caching#deployment-scenarios",
     "id": "/docs/caching#deployment-scenarios",
     "kind": "section",
-    "order": 65,
+    "order": 78,
     "section": "Deployment scenarios",
     "title": "Caching"
   },
@@ -675,7 +805,7 @@
     "href": "/docs/caching#self-hosted-no-cdn",
     "id": "/docs/caching#self-hosted-no-cdn",
     "kind": "section",
-    "order": 66,
+    "order": 79,
     "section": "Self hosted (no CDN)",
     "title": "Caching"
   },
@@ -685,7 +815,7 @@
     "href": "/docs/caching#behind-a-cdn",
     "id": "/docs/caching#behind-a-cdn",
     "kind": "section",
-    "order": 67,
+    "order": 80,
     "section": "Behind a CDN",
     "title": "Caching"
   },
@@ -695,7 +825,7 @@
     "href": "/docs/caching#embedded-binary-compile-embed-",
     "id": "/docs/caching#embedded-binary-compile-embed-",
     "kind": "section",
-    "order": 68,
+    "order": 81,
     "section": "Embedded binary ( compile: \"embed\" )",
     "title": "Caching"
   },
@@ -705,7 +835,7 @@
     "href": "/docs/caching#applyrevalidateheader-client-utility",
     "id": "/docs/caching#applyrevalidateheader-client-utility",
     "kind": "section",
-    "order": 69,
+    "order": 82,
     "section": "applyRevalidateHeader (client utility)",
     "title": "Caching"
   },
@@ -715,7 +845,7 @@
     "href": "/docs/logging",
     "id": "/docs/logging::page",
     "kind": "page",
-    "order": 82,
+    "order": 95,
     "section": "",
     "title": "Logging"
   },
@@ -725,7 +855,7 @@
     "href": "/docs/logging#what-ships-by-default",
     "id": "/docs/logging#what-ships-by-default",
     "kind": "section",
-    "order": 71,
+    "order": 84,
     "section": "What Ships by Default",
     "title": "Logging"
   },
@@ -735,7 +865,7 @@
     "href": "/docs/logging#customising-the-logger",
     "id": "/docs/logging#customising-the-logger",
     "kind": "section",
-    "order": 72,
+    "order": 85,
     "section": "Customising the Logger",
     "title": "Logging"
   },
@@ -745,7 +875,7 @@
     "href": "/docs/logging#adding-fields-during-a-request",
     "id": "/docs/logging#adding-fields-during-a-request",
     "kind": "section",
-    "order": 73,
+    "order": 86,
     "section": "Adding Fields During a Request",
     "title": "Logging"
   },
@@ -755,7 +885,7 @@
     "href": "/docs/logging#drain-adapters",
     "id": "/docs/logging#drain-adapters",
     "kind": "section",
-    "order": 74,
+    "order": 87,
     "section": "Drain Adapters",
     "title": "Logging"
   },
@@ -765,7 +895,7 @@
     "href": "/docs/logging#datadog",
     "id": "/docs/logging#datadog",
     "kind": "section",
-    "order": 75,
+    "order": 88,
     "section": "Datadog",
     "title": "Logging"
   },
@@ -775,7 +905,7 @@
     "href": "/docs/logging#axiom",
     "id": "/docs/logging#axiom",
     "kind": "section",
-    "order": 76,
+    "order": 89,
     "section": "Axiom",
     "title": "Logging"
   },
@@ -785,7 +915,7 @@
     "href": "/docs/logging#otlp-opentelemetry",
     "id": "/docs/logging#otlp-opentelemetry",
     "kind": "section",
-    "order": 77,
+    "order": 90,
     "section": "OTLP (OpenTelemetry)",
     "title": "Logging"
   },
@@ -795,7 +925,7 @@
     "href": "/docs/logging#enriching-events",
     "id": "/docs/logging#enriching-events",
     "kind": "section",
-    "order": 78,
+    "order": 91,
     "section": "Enriching Events",
     "title": "Logging"
   },
@@ -805,7 +935,7 @@
     "href": "/docs/logging#pii-redaction",
     "id": "/docs/logging#pii-redaction",
     "kind": "section",
-    "order": 79,
+    "order": 92,
     "section": "PII Redaction",
     "title": "Logging"
   },
@@ -815,7 +945,7 @@
     "href": "/docs/logging#client-side-logging",
     "id": "/docs/logging#client-side-logging",
     "kind": "section",
-    "order": 80,
+    "order": 93,
     "section": "Client Side Logging",
     "title": "Logging"
   },
@@ -825,7 +955,7 @@
     "href": "/docs/logging#filesystem-drain-development",
     "id": "/docs/logging#filesystem-drain-development",
     "kind": "section",
-    "order": 81,
+    "order": 94,
     "section": "Filesystem Drain (Development)",
     "title": "Logging"
   },
@@ -835,7 +965,7 @@
     "href": "/docs/deployment",
     "id": "/docs/deployment::page",
     "kind": "page",
-    "order": 96,
+    "order": 109,
     "section": "",
     "title": "Deployment"
   },
@@ -845,7 +975,7 @@
     "href": "/docs/deployment#static-export-github-pages",
     "id": "/docs/deployment#static-export-github-pages",
     "kind": "section",
-    "order": 83,
+    "order": 96,
     "section": "Static Export — GitHub Pages",
     "title": "Deployment"
   },
@@ -855,7 +985,7 @@
     "href": "/docs/deployment#configuration",
     "id": "/docs/deployment#configuration",
     "kind": "section",
-    "order": 84,
+    "order": 97,
     "section": "Configuration",
     "title": "Deployment"
   },
@@ -865,7 +995,7 @@
     "href": "/docs/deployment#build-command",
     "id": "/docs/deployment#build-command",
     "kind": "section",
-    "order": 85,
+    "order": 98,
     "section": "Build Command",
     "title": "Deployment"
   },
@@ -875,7 +1005,7 @@
     "href": "/docs/deployment#output-layout",
     "id": "/docs/deployment#output-layout",
     "kind": "section",
-    "order": 86,
+    "order": 99,
     "section": "Output Layout",
     "title": "Deployment"
   },
@@ -885,7 +1015,7 @@
     "href": "/docs/deployment#ssr-isr-routes",
     "id": "/docs/deployment#ssr-isr-routes",
     "kind": "section",
-    "order": 87,
+    "order": 100,
     "section": "SSR / ISR Routes",
     "title": "Deployment"
   },
@@ -895,7 +1025,7 @@
     "href": "/docs/deployment#deploying-to-github-pages",
     "id": "/docs/deployment#deploying-to-github-pages",
     "kind": "section",
-    "order": 88,
+    "order": 101,
     "section": "Deploying to GitHub Pages",
     "title": "Deployment"
   },
@@ -905,7 +1035,7 @@
     "href": "/docs/deployment#bun-build-live-server",
     "id": "/docs/deployment#bun-build-live-server",
     "kind": "section",
-    "order": 89,
+    "order": 102,
     "section": "Bun Build (Live Server)",
     "title": "Deployment"
   },
@@ -915,7 +1045,7 @@
     "href": "/docs/deployment#output-layout-2",
     "id": "/docs/deployment#output-layout-2",
     "kind": "section",
-    "order": 90,
+    "order": 103,
     "section": "Output Layout",
     "title": "Deployment"
   },
@@ -925,7 +1055,7 @@
     "href": "/docs/deployment#compiled-binaries",
     "id": "/docs/deployment#compiled-binaries",
     "kind": "section",
-    "order": 91,
+    "order": 104,
     "section": "Compiled Binaries",
     "title": "Deployment"
   },
@@ -935,7 +1065,7 @@
     "href": "/docs/deployment#production-runtime",
     "id": "/docs/deployment#production-runtime",
     "kind": "section",
-    "order": 92,
+    "order": 105,
     "section": "Production Runtime",
     "title": "Deployment"
   },
@@ -945,7 +1075,7 @@
     "href": "/docs/deployment#planned-targets",
     "id": "/docs/deployment#planned-targets",
     "kind": "section",
-    "order": 93,
+    "order": 106,
     "section": "Planned Targets",
     "title": "Deployment"
   },
@@ -955,7 +1085,7 @@
     "href": "/docs/deployment#public-environment-variables",
     "id": "/docs/deployment#public-environment-variables",
     "kind": "section",
-    "order": 94,
+    "order": 107,
     "section": "Public Environment Variables",
     "title": "Deployment"
   },
@@ -965,7 +1095,7 @@
     "href": "/docs/deployment#giscus-in-the-docs-app",
     "id": "/docs/deployment#giscus-in-the-docs-app",
     "kind": "section",
-    "order": 95,
+    "order": 108,
     "section": "Giscus In The Docs App",
     "title": "Deployment"
   },
@@ -975,7 +1105,7 @@
     "href": "/docs/dev-hmr",
     "id": "/docs/dev-hmr::page",
     "kind": "page",
-    "order": 106,
+    "order": 119,
     "section": "",
     "title": "Dev Mode HMR"
   },
@@ -985,7 +1115,7 @@
     "href": "/docs/dev-hmr#how-it-works",
     "id": "/docs/dev-hmr#how-it-works",
     "kind": "section",
-    "order": 97,
+    "order": 110,
     "section": "How It Works",
     "title": "Dev Mode HMR"
   },
@@ -995,7 +1125,7 @@
     "href": "/docs/dev-hmr#request-flow",
     "id": "/docs/dev-hmr#request-flow",
     "kind": "section",
-    "order": 98,
+    "order": 111,
     "section": "Request Flow",
     "title": "Dev Mode HMR"
   },
@@ -1005,7 +1135,7 @@
     "href": "/docs/dev-hmr#edit-matrix",
     "id": "/docs/dev-hmr#edit-matrix",
     "kind": "section",
-    "order": 99,
+    "order": 112,
     "section": "Edit Matrix",
     "title": "Dev Mode HMR"
   },
@@ -1015,7 +1145,7 @@
     "href": "/docs/dev-hmr#internal-pieces",
     "id": "/docs/dev-hmr#internal-pieces",
     "kind": "section",
-    "order": 100,
+    "order": 113,
     "section": "Internal Pieces",
     "title": "Dev Mode HMR"
   },
@@ -1025,7 +1155,7 @@
     "href": "/docs/dev-hmr#why-react-must-stay-singleton",
     "id": "/docs/dev-hmr#why-react-must-stay-singleton",
     "kind": "section",
-    "order": 101,
+    "order": 114,
     "section": "Why React Must Stay Singleton",
     "title": "Dev Mode HMR"
   },
@@ -1035,7 +1165,7 @@
     "href": "/docs/dev-hmr#why-the-client-router-must-also-stay-singleton",
     "id": "/docs/dev-hmr#why-the-client-router-must-also-stay-singleton",
     "kind": "section",
-    "order": 102,
+    "order": 115,
     "section": "Why The Client Router Must Also Stay Singleton",
     "title": "Dev Mode HMR"
   },
@@ -1045,7 +1175,7 @@
     "href": "/docs/dev-hmr#why-the-timestamp-matters",
     "id": "/docs/dev-hmr#why-the-timestamp-matters",
     "kind": "section",
-    "order": 103,
+    "order": 116,
     "section": "Why The Timestamp Matters",
     "title": "Dev Mode HMR"
   },
@@ -1055,7 +1185,7 @@
     "href": "/docs/dev-hmr#why-the-template-is-never-cached",
     "id": "/docs/dev-hmr#why-the-template-is-never-cached",
     "kind": "section",
-    "order": 104,
+    "order": 117,
     "section": "Why The Template Is Never Cached",
     "title": "Dev Mode HMR"
   },
@@ -1065,7 +1195,7 @@
     "href": "/docs/dev-hmr#practical-outcome",
     "id": "/docs/dev-hmr#practical-outcome",
     "kind": "section",
-    "order": 105,
+    "order": 118,
     "section": "Practical Outcome",
     "title": "Dev Mode HMR"
   }

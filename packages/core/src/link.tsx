@@ -464,7 +464,7 @@ export function classifySpaResponse(
   if (!data) {
     return { kind: "bail" };
   }
-  if (data.__furinStatus === 404) {
+  if (((status >= 200 && status < 300) || status === 404) && data.__furinStatus === 404) {
     const notFound = data.__furinNotFound as { data?: unknown; message?: string } | undefined;
     return { kind: "not-found", error: notFound ?? {} };
   }

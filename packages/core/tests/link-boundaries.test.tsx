@@ -10,7 +10,13 @@
  * server-side `SegmentBoundary[]` derived from `collectSegmentBoundaries`.
  */
 import { describe, expect, test } from "bun:test";
-import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import React, {
+  Children,
+  createElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import type { RuntimeRoute } from "../src/client.ts";
 import type { ErrorComponent } from "../src/error.ts";
 import type { ClientSegmentBoundary, LoadedClientRoute } from "../src/link.tsx";
@@ -20,7 +26,7 @@ import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundar
 
 // ── Helpers (mirrors render-element-boundaries.test.tsx) ─────────────────────
 
-function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): RuntimeRoute {
+function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">>): RuntimeRoute {
   return { __type: "FURIN_ROUTE", ...opts };
 }
 
@@ -38,7 +44,7 @@ const ROOT_REGEX = /^\/$/;
 
 function makeMatch(
   pageRoute: RuntimeRoute,
-  segmentBoundaries?: ClientSegmentBoundary[]
+  segmentBoundaries: ClientSegmentBoundary[] | undefined
 ): LoadedClientRoute {
   return {
     component: Page,
@@ -84,7 +90,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
   test("no segmentBoundaries → current behavior preserved (no boundary wrappers)", () => {
     const rootRoute = makeRoute({ layout: namedLayout("Root") });
     const pageRoute = makeRoute({ layout: namedLayout("L1"), parent: rootRoute });
-    const match = makeMatch(pageRoute /* no boundaries */);
+    const match = makeMatch(pageRoute, undefined);
 
     const element = buildPageElement(match, rootRoute, {}, undefined);
     const chain = typeChain(element);

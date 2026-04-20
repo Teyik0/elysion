@@ -11,6 +11,7 @@ declare module "@teyik0/furin/link" {
     "/docs/data-loading": { search?: never };
     "/docs/deployment": { search?: never };
     "/docs/dev-hmr": { search?: never };
+    "/docs/error-handling": { search?: never };
     "/docs/getting-started": { search?: never };
     "/docs/layouts": { search?: never };
     "/docs/logging": { search?: never };

@@ -121,7 +121,7 @@ describe("renderToHTML — error handling", () => {
     );
 
     expect(rendered.html).toContain("500 — ERROR");
-    expect(rendered.html).toContain("kaboom");
+    expect(rendered.html).toContain("An unexpected error occurred.");
   });
 
   test("renders the built-in 500 component with a string error (no message)", async () => {
@@ -150,7 +150,7 @@ describe("renderToHTML — error handling", () => {
     );
 
     expect(rendered.html).toContain("500 — ERROR");
-    expect(rendered.html).toContain("plain string boom");
+    expect(rendered.html).toContain("An unexpected error occurred.");
   });
 
   test("renderSSR returns 500 with nearest error.tsx when shell render throws", async () => {
@@ -208,7 +208,7 @@ describe("renderToHTML — error handling", () => {
     expect(response.status).toBe(500);
     const body = await response.text();
     expect(body).toContain("500 — ERROR");
-    expect(body).toContain("shell-boom");
+    expect(body).toContain("An unexpected error occurred.");
   });
 
   test("renderSSR falls back to built-in 500 when user's error.tsx itself throws during shell recovery", async () => {
@@ -240,8 +240,8 @@ describe("renderToHTML — error handling", () => {
     expect(response.status).toBe(500);
     const body = await response.text();
     expect(body).toContain("500 — ERROR");
-    // Default error component rendered the original shell-render error message.
-    expect(body).toContain("primary-boom");
+    // Default error component shows a generic message instead of the raw error.
+    expect(body).toContain("An unexpected error occurred.");
   });
 
   test("renders the built-in 500 component with no message for non-Error, non-string throws", async () => {
@@ -271,11 +271,11 @@ describe("renderToHTML — error handling", () => {
 
     expect(rendered.html).toContain("500 — ERROR");
     // The thrown object's contents must NOT be surfaced to the client.
-    // errorMessageOf() returns "" for non-Error/non-string throws, so the
-    // built-in fallback shows its generic copy instead of the payload.
+    // buildErrorElement passes a generic public message to the default
+    // component instead of the raw payload.
     expect(rendered.html).not.toContain("leaked-payload");
     expect(rendered.html).not.toContain("[object Object]");
-    expect(rendered.html).toContain("We encountered an unexpected error");
+    expect(rendered.html).toContain("An unexpected error occurred.");
   });
 });
 

@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.0-alpha.10] — 2026-04-20
+
+### Added
+- **Segment-level error and not-found boundaries** — `error.tsx` and `not-found.tsx` conventions at any directory under `src/pages/` catch errors and missing content for every route that passes through that segment. Root-level `src/pages/error.tsx` and `src/pages/not-found.tsx` catch everything else.
+- **`FurinErrorBoundary` and `FurinNotFoundBoundary`** — React class-component boundaries that catch loader and render errors at the segment level. `FurinErrorBoundary` computes a digest at catch time, supports `onReset`/`resetKey`, and lets `FurinNotFoundError` bubble up to the nearest not-found boundary.
+- **`notFound(options)` helper** — throw `notFound({ message, data })` from any loader to render the nearest `not-found.tsx` with status `404`.
+- **Error digests** — every caught error receives a deterministic 10-hex-char digest (e.g. `00a3f2b9c1`). The same digest is logged server-side next to the full stack trace so support can correlate user reports without leaking internals to the browser.
+- **`ErrorProps` and `NotFoundProps` types** exported from `@teyik0/furin` for custom boundary components.
+- **Default styled fallback screens** — built-in `500 — ERROR` and `404 — NOT FOUND` pages with inline styles (no CSS dependency), a digest code display, and a "Try again" button that re-runs loaders.
+- **SPA 404 inline rendering** — when client-side navigation hits an unmatched URL, the router detects `__furinStatus: 404` in the fetched HTML and renders the not-found UI inline instead of forcing a full-page reload.
+- **Segment boundaries** — each `ResolvedRoute` carries a `segmentBoundaries` chain ordered shallow→deep, mirroring the Next.js app-router model. The client uses this chain to interleave `FurinErrorBoundary` / `FurinNotFoundBoundary` wrappers at the exact same nesting levels as the server.
+- **Client-side boundary interleaving** — `buildPageElement` (client) and `buildElement` (server) both wrap the page subtree with boundaries at the depths declared in `segmentBoundaries`, guaranteeing identical React trees for hydration.
+- **Prefetch cache with stale-while-revalidate** — `RouterProvider` maintains an in-memory prefetch cache keyed by logical href. Entries expire after `preloadStaleTime` (default 30 s). The `prefetch` function preloads both the HTML payload and the JS chunk in parallel.
+- **Stale-deploy detection** — each production build has a build ID injected into `index.html` and emitted as `X-Furin-Build-ID`. If the client detects a mismatch during SPA navigation, it triggers a full-page reload instead of mounting stale components.
+- **Scroll restoration** — manual scroll restoration with `history.state` keys. Scroll positions are saved to `sessionStorage` on navigation and restored on back/forward. Hash fragments scroll to the target element after React paint.
+- **`applyRevalidateHeader` and `shouldAutoRefreshPath`** — client utilities that process the `X-Furin-Revalidate` header to invalidate prefetch caches and optionally auto-refresh the current page.
+- **Error Handling documentation** — new `/docs/error-handling` page covering `error.tsx`, `not-found.tsx`, `notFound()`, digests, root fallbacks, SPA 404 handling, and ISR error behavior.
+
+### Changed
+- `computeErrorDigest` now uses a platform-neutral FNV-1a implementation instead of `Bun.hash`, so error digests work correctly in both server and client environments.
+- `prepareRender` now requires both `basePath` and `throwOnFailure` arguments explicitly — no optional or defaulted parameters.
+- `notFound(options)` and `FurinNotFoundError.constructor(options)` now accept `NotFoundOptions | undefined` explicitly. Callers must pass the value or `undefined` deliberately.
+- `loadProdRoutes` now requires `CompileContext` to include `rootConventions` and `routeMetadata`. Production builds fail fast with a clear error if boundary metadata is missing, preventing silent drops of error/not-found conventions.
+
+### Fixed
+- **Public error message sanitization** — the built-in default error screen shows a generic message (`"Something went wrong"`) for untrusted errors. Custom `error.tsx` components still receive the raw `error.message`. `error.digest` is always exposed for support correlation.
+- **ISR fallback renders are no longer cached** — when an ISR cache miss results in a loader error or `notFound()`, the response is returned with the correct status (`404`/`500`) and conservative `Cache-Control` headers. The in-memory ISR cache is not populated, so the next request re-attempts the render.
+- **`classifySpaResponse` misclassification** — server errors that happened to carry `__furinStatus` in the body are no longer incorrectly treated as not-found. The 404 branch is now guarded by the HTTP status being `2xx` or `404`.
+- **Hydration not-found mismatch** — when a matched route's loader throws `notFound()`, the hydration entry now passes the not-found payload into `initialNotFound` instead of `undefined`, so the client hydrates into the correct 404 state.
+- **`buildErrorElement` leak** — the default error component no longer receives raw error messages. Custom error components continue to receive raw messages via `errorMessageOf`.
+
 ## [0.1.0-alpha.9] — 2026-04-18
 
 ### Added
@@ -91,7 +122,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `writeRouteTypes()` generating `furin-env.d.ts` for per-route type inference
 - Bun-native HMR with React Fast Refresh — single process, no Vite
 
-[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.8...HEAD
+[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.10...HEAD
+[0.1.0-alpha.10]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
+[0.1.0-alpha.9]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.5...v0.1.0-alpha.6

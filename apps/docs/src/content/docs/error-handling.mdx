@@ -1,0 +1,165 @@
+# Error Handling
+
+Furin handles errors and missing content at the route level with two conventions — `error.tsx` and `not-found.tsx` — plus the `notFound()` helper for loaders. Errors are caught by segment-level boundaries, surfaced with a safe message and a correlation digest, and gracefully degrade when boundaries themselves fail.
+
+## `error.tsx` — Segment Error Boundaries
+
+Create an `error.tsx` in any directory under `src/pages` to declare an error boundary for every route that passes through that segment.
+
+```tsx
+// src/pages/blog/error.tsx
+import type { ErrorProps } from "@teyik0/furin"
+
+export default function BlogError({ error, reset }: ErrorProps) {
+  return (
+    <div>
+      <h1>Blog section error</h1>
+      <p>{error.message}</p>
+      <button onClick={reset}>Try again</button>
+    </div>
+  )
+}
+```
+
+The boundary catches:
+
+- **Loader errors** — any throw from `route.page().loader()` or `createRoute().loader()`
+- **Render errors** — any throw during React render inside that segment
+- **Nested boundary failures** — if a deeper boundary fails to render, the parent boundary catches it
+
+Boundaries are scoped to their directory. `src/pages/blog/error.tsx` catches errors in `/blog/*` but not in `/dashboard/*`.
+
+### Error props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `error.message` | `string` | Safe user-facing message. Custom error components receive the raw message; the built-in default shows a generic sanitized message for untrusted errors. |
+| `error.digest` | `string` | Opaque 10-hex-char hash of the original error. The same digest appears in server logs next to the full stack trace so support can correlate a user report with server diagnostics. |
+| `reset` | `() => void` | Clears the boundary and re-runs the route's loaders. On the server this is a no-op. |
+
+### Default error UI
+
+When no `error.tsx` exists, Furin renders a built-in error screen:
+
+- Status `500`
+- A generic message like **"Something went wrong"**
+- The **digest** so users can report it
+- A **Go Home** link and a **Try again** button
+
+## `not-found.tsx` — Segment Not-Found Boundaries
+
+Create a `not-found.tsx` to handle missing content inside a route segment.
+
+```tsx
+// src/pages/blog/not-found.tsx
+import type { NotFoundProps } from "@teyik0/furin"
+
+export default function BlogNotFound({ error }: NotFoundProps) {
+  return (
+    <div>
+      <h1>Post not found</h1>
+      <p>{error.message}</p>
+    </div>
+  )
+}
+```
+
+### `notFound()` in loaders
+
+Throw `notFound()` from a loader to render the nearest `not-found.tsx` instead of the normal page:
+
+```tsx
+// src/pages/blog/[slug].tsx
+import { notFound } from "@teyik0/furin"
+import { route } from "./_route"
+
+export default route.page({
+  loader: async ({ params }) => {
+    const post = await db.getPost(params.slug)
+    if (!post) {
+      notFound({ message: `Post "${params.slug}" does not exist.` })
+    }
+    return { post }
+  },
+  component: ({ post }) => <Post post={post} />,
+})
+```
+
+`notFound(options)` accepts:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `message` | `string` | Displayed in the not-found component |
+| `data` | `unknown` | Any serialisable context you want to pass through |
+
+The response status is `404`. The nearest `not-found.tsx` is rendered at the segment level that declared it — so `src/pages/blog/not-found.tsx` renders for `/blog/missing-post`, while the root `src/pages/not-found.tsx` catches unmatched URLs across the entire app.
+
+### Default not-found UI
+
+When no `not-found.tsx` exists, Furin renders a built-in 404 screen with status `404`.
+
+## Root-Level Fallbacks
+
+Place `error.tsx` and `not-found.tsx` directly in `src/pages/` to catch anything that isn't handled by a deeper boundary:
+
+```
+src/pages/
+  error.tsx      ← root error boundary
+  not-found.tsx  ← root 404 page
+  root.tsx
+  blog/
+    error.tsx      ← blog-only error boundary
+    not-found.tsx  ← blog-only 404
+    [slug].tsx
+```
+
+## Error Digests
+
+Every error caught by Furin receives a **digest** — a deterministic 10-character hex hash computed from the error message and stack trace.
+
+**Purpose:** support can correlate a user-facing error ID with the full server-side stack trace without leaking sensitive internals to the browser.
+
+```
+User sees:     "Error code: 00a3f2b9c1"
+Server logs:   "Error: database timeout (digest: 00a3f2b9c1)"
+```
+
+Digests are identical across restarts for the same error, so they work reliably in serverless and containerised environments.
+
+## SPA Navigation and 404
+
+When a user navigates client-side to a URL that doesn't match any route:
+
+1. The router fetches the HTML for that URL
+2. The server returns the root `not-found.tsx` with `__furinStatus: 404` embedded in the page data
+3. The client detects the 404 signal via `classifySpaResponse` and renders the not-found UI **inline** instead of doing a full-page reload
+
+This means links and the "Go Home" button inside a 404 page stay within the SPA experience.
+
+## ISR Error Fallback
+
+ISR routes that hit a cache miss and then encounter a loader error or `notFound()` are **not cached**:
+
+- The response is returned with the correct status (`404` or `500`)
+- `Cache-Control` is set to conservative no-cache directives
+- The in-memory ISR cache is **not** populated
+- The next request will re-attempt the render
+
+This prevents transient failures from being cached and served to subsequent visitors.
+
+## Security: Public Messages
+
+Furin sanitises what reaches the browser:
+
+- **Custom `error.tsx` components** receive the raw `error.message` so you can choose what to display
+- **The built-in default** shows a generic message like `"Something went wrong"` for all non-explicitly-safe error types, preventing stack traces and internal details from leaking to users
+- **`error.digest`** is always exposed so support can correlate issues
+
+## Comparison
+
+| Convention | File name | When it runs | Status |
+|------------|-----------|--------------|--------|
+| `error.tsx` | `error.tsx` | Any throw in loader or render | `500` |
+| `not-found.tsx` | `not-found.tsx` | `notFound()` thrown from loader, or unmatched URL | `404` |
+| Root fallback | `src/pages/error.tsx` | Uncaught error anywhere | `500` |
+| Root 404 | `src/pages/not-found.tsx` | Unmatched route | `404` |

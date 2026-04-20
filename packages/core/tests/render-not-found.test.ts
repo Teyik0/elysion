@@ -20,7 +20,7 @@ const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-not-found-nest
 const FURIN_DATA_SCRIPT_RE =
   /<script id="__FURIN_DATA__" type="application\/json">([\s\S]*?)<\/script>/;
 
-function createMockLoaderContext(overrides: Partial<Context> = {}) {
+function createMockLoaderContext(overrides: Partial<Context>) {
   return {
     params: {},
     query: {},
@@ -50,7 +50,7 @@ describe("renderToHTML — not-found handling", () => {
       ...blogRoute,
       page: {
         ...blogRoute.page,
-        loader: () => notFound(),
+        loader: () => notFound(undefined),
       },
     } as ResolvedRoute;
 
@@ -75,7 +75,7 @@ describe("renderToHTML — not-found handling", () => {
       ...blogRoute,
       page: {
         ...blogRoute.page,
-        loader: () => notFound(),
+        loader: () => notFound(undefined),
       },
     } as ResolvedRoute;
 
@@ -138,7 +138,7 @@ describe("renderToHTML — not-found handling", () => {
       ...loaderRoute,
       page: {
         ...loaderRoute.page,
-        loader: () => notFound(),
+        loader: () => notFound(undefined),
       },
     } as ResolvedRoute;
 

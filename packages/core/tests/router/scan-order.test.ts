@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { scanPages } from "../../src/router.ts";
@@ -40,8 +40,7 @@ describe("scanPages: route order is deterministic", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = join(tmpdir(), `furin-scan-order-${Date.now()}`);
-    mkdirSync(tempDir, { recursive: true });
+    tempDir = mkdtempSync(join(tmpdir(), "furin-scan-order-"));
     writeFileSync(join(tempDir, "root.tsx"), ROOT_MODULE);
   });
 

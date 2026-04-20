@@ -8,7 +8,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "fix": "ultracite fix",
-    "test": "bun run --parallel --filter '*' test",
+    "test": "bun run --parallel --filter '*' test --bail",
     "test:types": "bun run --parallel --filter '*' test:types",
     "build": "bun run --filter '@teyik0/furin' build && bun run --parallel --filter '!@teyik0/furin' build",
     "cache:clean": "rm -rf node_modules examples/*/node_modules packages/*/node_modules && bun pm cache rm",
