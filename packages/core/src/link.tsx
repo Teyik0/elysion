@@ -1106,6 +1106,20 @@ export function RouterProvider({
     [navigate, invalidatePrefetch, basePath]
   );
 
+  // Expose refresh() to the HMR handler in _hydrate.tsx so that after a hot
+  // reload of a loader-bearing route the client re-fetches fresh data instead
+  // of rendering with stale initialData from the initial SSR payload.
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // biome-ignore lint/suspicious/noExplicitAny: dev-only window hook
+      (window as any).__FURIN_HMR_REFRESH__ = refresh;
+      return () => {
+        // biome-ignore lint/suspicious/noExplicitAny: dev-only window hook
+        (window as any).__FURIN_HMR_REFRESH__ = undefined;
+      };
+    }
+  }, [refresh]);
+
   const handlePopState = useCallback(async () => {
     // Capture the destination key immediately — history.state is already the
     // destination entry when popstate fires, before any awaits.

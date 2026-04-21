@@ -450,6 +450,54 @@ export function queryDefaultRedirectHook({ request, query, status, set }: Contex
   return status("Found");
 }
 
+/**
+ * Re-imports intermediate layout _route.tsx files with cache-busting so that
+ * server-side renders reflect the latest code after an HMR edit.  Bun's ESM
+ * cache keeps the original module alive, so we import via ?furin-server and
+ * patch the layout/loader references on the existing route-chain objects.
+ *
+ * The optional `importFn` parameter exists only for unit testing. In production
+ * it defaults to the real `import()`.
+ */
+export async function refreshLayoutChain(
+  chain: RuntimeRoute[],
+  pagePath: string,
+  rootPath: string,
+  importFn: (specifier: string) => Promise<Record<string, unknown>> = (s) =>
+    import(s) as Promise<Record<string, unknown>>
+): Promise<void> {
+  const pageDir = pagePath.slice(0, pagePath.lastIndexOf("/"));
+  const pagesDir = rootPath.slice(0, rootPath.lastIndexOf("/"));
+  const layoutPaths: string[] = [];
+  let dir = pageDir;
+  while (dir.length > pagesDir.length) {
+    layoutPaths.unshift(`${dir}/_route.tsx`);
+    dir = dir.slice(0, dir.lastIndexOf("/"));
+  }
+
+  for (let i = 0; i < layoutPaths.length; i++) {
+    const layoutPath = layoutPaths[i];
+    const chainIdx = i + 1; // +1 because chain[0] is root
+    if (!chain[chainIdx]) {
+      continue;
+    }
+    try {
+      const freshMod = await importFn(`${layoutPath}?furin-server&t=${Date.now()}`);
+      const freshRoute = freshMod.route ?? freshMod.default;
+      if (freshRoute && isFurinRoute(freshRoute)) {
+        if (freshRoute.layout) {
+          chain[chainIdx].layout = freshRoute.layout;
+        }
+        if (freshRoute.loader) {
+          chain[chainIdx].loader = freshRoute.loader;
+        }
+      }
+    } catch {
+      // Layout file might not exist at this level
+    }
+  }
+}
+
 /** @internal Handles a request in dev mode — re-imports the page fresh on every request. */
 async function handleDevRequest(
   route: ResolvedRoute,
@@ -474,6 +522,7 @@ async function handleDevRequest(
     const page = pageMod.default;
     if (page && isFurinPage(page)) {
       const chain = collectRouteChainFromRoute(page._route as RuntimeRoute);
+      await refreshLayoutChain(chain, route.path, root.path);
       return renderSSR({ ...route, page, routeChain: chain }, ctx, currentRoot);
     }
   } catch (err) {
