@@ -147,7 +147,6 @@ const rootEl = document.getElementById("root") as HTMLElement;
       initialDigest: loaderData.__furinError?.digest,
       initialNotFound: isNotFound ? (loaderData.__furinNotFound ?? loaderData) : undefined,${basePathProp}
     } as any);
-    log.info({ action: "hydrate_complete", pathname });
   } else if (loaderData.__furinStatus === 404) {
     // Direct load to an unknown URL. The server sent the root not-found UI
     // already rendered into the DOM. Mount RouterProvider with a null match
@@ -165,7 +164,6 @@ const rootEl = document.getElementById("root") as HTMLElement;
       initialDigest: loaderData.__furinError?.digest,
       initialNotFound: loaderData.__furinNotFound ?? {},${basePathProp}
     } as any);
-    log.info({ action: "hydrate_not_found", pathname });
   } else {
     // No match and no 404 signal — either the client bundle is out of sync
     // with the server (stale deploy) or the server returned something we
@@ -175,23 +173,40 @@ const rootEl = document.getElementById("root") as HTMLElement;
   }
 
   if (import.meta.hot) {
-    if (import.meta.hot.data.root) {
-      // HMR re-render — update in place without remounting
-      import.meta.hot.data.root.render(app);
+    // Dev mode — preserve root across HMR using a window global.
+    // window is the only object that survives Bun's module re-evaluation.
+    // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
+    const existingRoot = (window as any).__FURIN_ROOT__;
+    if (existingRoot) {
+      // Already mounted — reconciliation, NOT hydration. React Fast Refresh
+      // patched the component in-place, now re-render with the new module.
+      existingRoot.render(app);
+      // The initialData embedded in the DOM is stale (from the original SSR).
+      // Trigger a loader-data refresh so the component renders with fresh
+      // server state, avoiding hydration mismatches after a _route.tsx edit.
+      const hmrRefresh = (window as any).__FURIN_HMR_REFRESH__;
+      if (hmrRefresh) {
+        requestAnimationFrame(() => hmrRefresh());
+      }
     } else if (rootEl.innerHTML.trim()) {
       // First load with SSR content — hydrateRoot renders on construction
-      import.meta.hot.data.root = hydrateRoot(rootEl, app);
+      const root = hydrateRoot(rootEl, app);
+      // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
+      (window as any).__FURIN_ROOT__ = root;
     } else {
       // First load without SSR content — createRoot requires explicit .render()
-      const freshRoot = createRoot(rootEl);
-      freshRoot.render(app);
-      import.meta.hot.data.root = freshRoot;
+      const root = createRoot(rootEl);
+      root.render(app);
+      // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
+      (window as any).__FURIN_ROOT__ = root;
     }
   } else if (rootEl.innerHTML.trim()) {
     hydrateRoot(rootEl, app);
   } else {
     createRoot(rootEl).render(app);
   }
+
+  log.info({ action: "hydrate_complete", pathname });
 })().catch((err: unknown) => {
   log.error({ action: "hydrate_failed", pathname, error: String(err) });
 });

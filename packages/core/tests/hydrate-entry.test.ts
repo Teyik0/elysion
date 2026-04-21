@@ -320,3 +320,47 @@ describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
     expect(code).toMatch(INITIAL_DIGEST_BOUND_RE);
   });
 });
+
+// ── HMR hardening — prevent hydration mismatches on loader-bearing routes ─────
+//
+// When a _route.tsx with a loader is edited, the server re-evaluates the
+// loader and returns fresh data, but the client DOM still carries the old
+// __FURIN_DATA__. Without these guards the client re-hydrates with stale
+// data and React throws a hydration mismatch.
+
+describe("generateHydrateEntry — HMR hardening", () => {
+  test("uses window.__FURIN_ROOT__ as the HMR root persistence mechanism", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    expect(code).toContain("(window as any).__FURIN_ROOT__");
+  });
+
+  test("reads window.__FURIN_ROOT__ before deciding to hydrate or reconcile", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    expect(code).toContain("const existingRoot = (window as any).__FURIN_ROOT__;");
+  });
+
+  test("stores the React root in window.__FURIN_ROOT__ after initial mount", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    expect(code).toContain("(window as any).__FURIN_ROOT__ = root;");
+  });
+
+  test("reconciles (not hydrates) when the root already exists", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    // When existingRoot is truthy: existingRoot.render(app) — no hydrateRoot call
+    expect(code).toContain("if (existingRoot) {");
+    expect(code).toContain("existingRoot.render(app);");
+  });
+
+  test("triggers a loader-data refresh via __FURIN_HMR_REFRESH__ on HMR", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    expect(code).toContain("__FURIN_HMR_REFRESH__");
+    expect(code).toContain("requestAnimationFrame(() => hmrRefresh());");
+  });
+
+  test("does NOT emit import.meta.hot.accept after the IIFE", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    // The accept handler was removed because Bun re-evaluates the entry module
+    // anyway, so the IIFE itself handles both mount and re-render paths.
+    expect(code).not.toContain("import.meta.hot.accept(() => {");
+  });
+});

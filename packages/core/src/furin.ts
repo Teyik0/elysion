@@ -135,19 +135,20 @@ async function setupProdTemplate(
 }
 
 /**
- * Wraps an Elysia app's `handle` method so that every request runs inside a
- * fresh `AsyncLocalStorage` scope. This isolates `pendingInvalidations` per
- * request, preventing concurrent requests from stealing each other's
- * `revalidatePath()` calls.
+ * Registers a HigherOrderFunction on the Elysia instance so that every request
+ * runs inside a fresh `AsyncLocalStorage` scope. This isolates
+ * `pendingInvalidations` per request, preventing concurrent requests from
+ * stealing each other's `revalidatePath()` calls.
  *
- * Note: this mutates `app.handle` directly. When the Furin plugin is
- * `.use()`-d by a parent Elysia instance, the parent should apply the same
- * wrapping or use Furin as the outermost app.
+ * Uses `app.wrap()` (Elysia HigherOrderFunction) instead of mutating
+ * `app.handle`, because handle mutations are lost when the Furin plugin is
+ * `.use()`-d by a parent Elysia instance. HigherOrderFunctions survive the
+ * plugin merge and wrap the entire composed `map` handler.
  */
 function wrapWithRequestScope(app: AnyElysia): Elysia {
-  const original = app.handle.bind(app);
-  app.handle = (request: Request) => _runWithRequestInvalidationScope(() => original(request));
-  return app;
+  return app.wrap(
+    (handler, _request) => (ctx: unknown) => _runWithRequestInvalidationScope(() => handler(ctx))
+  );
 }
 
 /**

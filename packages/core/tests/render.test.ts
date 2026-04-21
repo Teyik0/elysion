@@ -12,7 +12,9 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
+import { createElement } from "react";
 import type { RuntimeRoute } from "../src/client";
+import { Link } from "../src/link.tsx";
 import {
   buildElement,
   handleISR,
@@ -537,6 +539,39 @@ describe("render.tsx", () => {
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
       expect(html).toContain("<html");
+    });
+
+    test("Link active-state matches client hydration path (no SSR_FALLBACK mismatch)", async () => {
+      const root = await getRoot();
+      const ssrRoute = await getRoute("/ssr-page");
+
+      // Override the page component with one that renders a Link to "/".
+      // inactiveProps is applied when isActive === false.  If SSR used
+      // SSR_FALLBACK_ROUTER (currentHref = "/") the Link to "/" would
+      // incorrectly be marked active, so inactiveProps would NOT fire and
+      // aria-label would be absent — causing a hydration mismatch.
+      const routeWithLink: ResolvedRoute = {
+        ...ssrRoute,
+        page: {
+          ...ssrRoute.page,
+          component: () =>
+            createElement(Link, {
+              to: "/",
+              inactiveProps: () => ({ "aria-label": "inactive-home" }),
+              // biome-ignore lint/correctness/noChildrenProp: createElement accepts children as prop
+              children: "Home",
+            }),
+        },
+      };
+
+      const ctx = createMockLoaderContext({ path: "/ssr-page" });
+      const response = await renderSSR(routeWithLink, ctx, root);
+      const html = await response.text();
+
+      // On /ssr-page the Link to "/" must NOT be active, so inactiveProps
+      // fires and aria-label appears.  If SSR_FALLBACK_ROUTER were used
+      // (currentHref hardcoded to "/") inactiveProps would be skipped.
+      expect(html).toContain('aria-label="inactive-home"');
     });
 
     test("sets correct headers (no-cache)", async () => {

@@ -30,6 +30,7 @@ mock.module("evlog/elysia", () => ({
 
 import {
   __resetCacheState,
+  _runWithRequestInvalidationScope,
   consumePendingInvalidations,
   getBuildId,
   isrCache,
@@ -367,5 +368,26 @@ describe("setBuildId / getBuildId", () => {
     setBuildId("v1");
     setBuildId("v2");
     expect(getBuildId()).toBe("v2");
+  });
+});
+
+// ── Bullet 7: AsyncLocalStorage request scope isolation ───────────────────────
+
+describe("_runWithRequestInvalidationScope", () => {
+  test("isolates concurrent scopes so inner scope does not see outer pending invalidations", () => {
+    const result = _runWithRequestInvalidationScope(() => {
+      revalidatePath("/outer");
+      const inner = _runWithRequestInvalidationScope(() => {
+        revalidatePath("/inner");
+        return consumePendingInvalidations();
+      });
+      const outer = consumePendingInvalidations();
+      return { inner, outer };
+    });
+
+    expect(result.inner).toContain("/inner");
+    expect(result.inner).not.toContain("/outer");
+    expect(result.outer).toContain("/outer");
+    expect(result.outer).not.toContain("/inner");
   });
 });

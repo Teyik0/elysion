@@ -128,28 +128,28 @@ async function prepareRender(
     element = buildElement(route, componentProps, root.route);
   }
 
-  // During static pre-render, inject a RouterContext so Link components render
-  // hrefs with the correct basePath prefix and active-state detection works.
-  // Only injected when basePath is explicitly provided (opt-in, static adapter only).
-  if (basePath !== undefined) {
-    const ssrContext: RouterContextValue = {
-      basePath,
-      currentHref: ctx.path,
-      navigate: () => Promise.resolve(),
-      prefetch: () => {
-        /* noop */
-      },
-      invalidatePrefetch: () => {
-        /* noop */
-      },
-      refresh: () => Promise.resolve(),
-      isNavigating: false,
-      defaultPreload: "intent",
-      defaultPreloadDelay: 50,
-      defaultPreloadStaleTime: 30_000,
-    };
-    element = createElement(RouterContext.Provider, { value: ssrContext }, element);
-  }
+  // Inject RouterContext so Link components have the correct currentHref for
+  // active-state detection and basePath-aware href generation.  Previously this
+  // was only done for SSG (basePath !== undefined), which caused hydration
+  // mismatches in SSR/ISR because SSR_FALLBACK_ROUTER hardcodes currentHref "/"
+  // while the client hydrates with the real pathname.
+  const ssrContext: RouterContextValue = {
+    basePath: basePath ?? "",
+    currentHref: ctx.path,
+    navigate: () => Promise.resolve(),
+    prefetch: () => {
+      /* noop */
+    },
+    invalidatePrefetch: () => {
+      /* noop */
+    },
+    refresh: () => Promise.resolve(),
+    isNavigating: false,
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+  };
+  element = createElement(RouterContext.Provider, { value: ssrContext }, element);
 
   return {
     componentProps,
