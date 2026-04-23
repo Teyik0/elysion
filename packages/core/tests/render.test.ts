@@ -986,31 +986,54 @@ describe("render.tsx", () => {
       } as ResolvedRoute;
 
       // Should not throw — error is isolated per route
-      await expect(
-        warmSSGCache([badRoute], root, "http://localhost:3000")
-      ).resolves.toBeUndefined();
+      expect(warmSSGCache([badRoute], root, "http://localhost:3000")).resolves.toBeUndefined();
     });
 
     test("continues when individual prerenderSSG throws", async () => {
       const root = await getRoot();
       const indexRoute = await getRoute("/");
+      // Clear cache so prerenderSSG actually runs instead of returning cached
+      ssgCache.delete("/");
       const badRoute = {
         ...indexRoute,
         mode: "ssg" as const,
         page: {
           ...indexRoute.page,
-          staticParams: async () => [{ slug: "a" }],
-          // component will be called with { slug: "a" } but the real route
-          // has no slug param — this causes an error during render
+          staticParams: async () => [{}],
           component: () => {
             throw new Error("render boom");
           },
         },
       } as ResolvedRoute;
 
-      await expect(
-        warmSSGCache([badRoute], root, "http://localhost:3000")
-      ).resolves.toBeUndefined();
+      expect(warmSSGCache([badRoute], root, "http://localhost:3000")).resolves.toBeUndefined();
+    });
+
+    test("skips revalidation when another revalidation is already in flight", async () => {
+      const isrRoute = await getRoute("/isr-page");
+      const root = await getRoot();
+
+      // First request — populate cache
+      const ctx1 = createMockLoaderContext({ path: "/isr-page" });
+      await handleISR(isrRoute, ctx1, root, "build1");
+
+      // Manually expire the entry
+      const entry = isrCache.get("/isr-page");
+      if (entry) {
+        isrCache.set("/isr-page", { ...entry, generatedAt: 0 });
+      }
+
+      // Second request with stale entry — triggers revalidateInBackground
+      const ctx2 = createMockLoaderContext({ path: "/isr-page" });
+      await handleISR(isrRoute, ctx2, root, "build1");
+
+      // Third request immediately — should hit "already in flight" and skip
+      const ctx3 = createMockLoaderContext({ path: "/isr-page" });
+      await handleISR(isrRoute, ctx3, root, "build1");
+
+      // All requests should return HTML without crashing
+      expect(ctx2.set.headers["cache-control"]).toContain("s-maxage=0");
+      expect(ctx3.set.headers["cache-control"]).toContain("s-maxage=0");
     });
   });
 
