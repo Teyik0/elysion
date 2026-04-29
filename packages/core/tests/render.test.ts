@@ -589,7 +589,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, root);
+      const response = await renderSSR(ssrRoute, ctx, root, undefined);
 
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
@@ -620,7 +620,7 @@ describe("render.tsx", () => {
       };
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(routeWithLink, ctx, root);
+      const response = await renderSSR(routeWithLink, ctx, root, undefined);
       const html = await response.text();
 
       // On /ssr-page the Link to "/" must NOT be active, so inactiveProps
@@ -634,7 +634,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, root);
+      const response = await renderSSR(ssrRoute, ctx, root, undefined);
 
       expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
       expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
@@ -645,7 +645,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const response = await renderSSR(withLoaderRoute, ctx, root);
+      const response = await renderSSR(withLoaderRoute, ctx, root, undefined);
 
       expect(response.headers.get("x-loader-ran")).toBe("true");
     });
@@ -672,7 +672,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const response = await renderSSR(customRoute, ctx, root);
+      const response = await renderSSR(customRoute, ctx, root, undefined);
 
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/login");
@@ -684,7 +684,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root);
+        const response = await renderSSR(suspenseRoute, ctx, root, undefined);
 
         expect(response.body).toBeInstanceOf(ReadableStream);
       });
@@ -694,7 +694,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root);
+        const response = await renderSSR(suspenseRoute, ctx, root, undefined);
         const html = await response.text();
 
         // The resolved Suspense content must appear — either inline (if React
@@ -708,7 +708,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root);
+        const response = await renderSSR(suspenseRoute, ctx, root, undefined);
         const html = await response.text();
 
         expect(html).toContain("<html");

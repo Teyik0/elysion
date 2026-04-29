@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { transformForClient } from "../src/plugin/transform-client";
+import MagicString from "magic-string";
+import { deadCodeElimination, transformForClient } from "../src/plugin/transform-client";
 
 // ---------------------------------------------------------------------------
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
@@ -7,6 +8,7 @@ import { transformForClient } from "../src/plugin/transform-client";
 const LOADER_PROPERTY_RE = /\bloader\s*:/;
 const IMPORT_DB_RE = /from\s+["']\.\/db["']/;
 const IMPORT_RELATIVE_DB_RE = /from\s+["'][^"']*db["']/;
+const IMPORT_FROM_DB_RE = /from ["']\.\/db["']/;
 
 // ---------------------------------------------------------------------------
 // Basic transformation
@@ -186,5 +188,104 @@ describe("transformForClient — dead code elimination", () => {
     expect(result.code).toContain("formatDate");
     expect(result.code).toContain("component");
     expect(result.removedServerCode).toBe(true);
+  });
+
+  test("removes only unused specifiers when some are still referenced", () => {
+    // getUser only used in loader (removed) → should be stripped
+    // formatDate used in component (kept) → must survive
+    const input = `
+      import { getUser, formatDate } from "./db";
+      export default page({
+        loader: async () => ({ user: getUser() }),
+        component: (props) => formatDate(props.data),
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toContain("getUser");
+    expect(result.code).toContain("formatDate");
+    // Import statement kept but without getUser specifier
+    expect(result.code).toMatch(IMPORT_FROM_DB_RE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Computed and quoted property keys
+// ---------------------------------------------------------------------------
+
+describe("transformForClient — property key variants", () => {
+  test("does not remove computed property keys (computed: true)", () => {
+    // `{ [serverOnlyKey]: fn }` — AST marks this as computed, must be preserved
+    const input = `
+      const serverOnlyKey = "loader";
+      export default page({
+        [serverOnlyKey]: async () => ({ data: 1 }),
+        component: () => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    // Computed key is NOT a server-only identifier reference → not removed
+    expect(result.removedServerCode).toBe(false);
+  });
+
+  test("removes quoted string key 'loader'", () => {
+    const input = `
+      export default page({
+        "loader": async () => ({ data: 1 }),
+        component: () => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("component");
+  });
+
+  test("removes quoted string key 'query'", () => {
+    const input = `
+      export const route = createRoute({
+        "query": { type: "object" },
+        layout: ({ children }) => children,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toContain('"query"');
+    expect(result.code).toContain("layout");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Windows CRLF line endings
+// ---------------------------------------------------------------------------
+
+describe("transformForClient — Windows CRLF", () => {
+  test("removes loader from code with CRLF line endings", () => {
+    const input =
+      "export default page({\r\n  loader: async () => ({ data: 1 }),\r\n  component: () => null,\r\n});";
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("component");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deadCodeElimination — parse error guard
+// ---------------------------------------------------------------------------
+
+describe("deadCodeElimination — parse error recovery", () => {
+  test("returns input unchanged when transformed code is unparseable", () => {
+    // Feed deliberately invalid JS to DCE — it must not throw
+    const broken = new MagicString("import { x } from 'y'; <<<INVALID>>>");
+    const result = deadCodeElimination(broken);
+
+    // Returns the same string unchanged (not null, not throws)
+    expect(result.toString()).toBe("import { x } from 'y'; <<<INVALID>>>");
   });
 });

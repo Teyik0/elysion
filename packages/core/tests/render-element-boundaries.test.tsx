@@ -21,7 +21,7 @@ import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
 import type { ErrorComponent } from "../src/error.ts";
 import type { NotFoundComponent } from "../src/not-found.ts";
 import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundaries.tsx";
-import { buildElement } from "../src/render/element.tsx";
+import { buildElement, buildErrorElement } from "../src/render/element.tsx";
 import type { ResolvedRoute, SegmentBoundary } from "../src/router.ts";
 
 // ── Harness ──────────────────────────────────────────────────────────────────
@@ -219,5 +219,34 @@ describe("buildElement — boundary interleaving", () => {
     }
     expect(err?.props).toMatchObject({ fallback: E });
     expect(nf?.props).toMatchObject({ fallback: NF });
+  });
+});
+
+// ── buildErrorElement — errorMessageOf variants ──────────────────────────────
+
+describe("buildErrorElement — error message extraction", () => {
+  test("uses Error.message when error is an Error instance", () => {
+    const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
+    const el = buildErrorElement(E, new Error("something broke"), "d1") as ReactElement;
+    expect((el.props as { error: { message: string } }).error.message).toBe("something broke");
+  });
+
+  test("uses the raw string when error is a plain string", () => {
+    const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
+    const el = buildErrorElement(E, "plain string error", "d2") as ReactElement;
+    expect((el.props as { error: { message: string } }).error.message).toBe("plain string error");
+  });
+
+  test("returns empty string when error is neither Error nor string", () => {
+    const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
+    const el = buildErrorElement(E, 42, "d3") as ReactElement;
+    expect((el.props as { error: { message: string } }).error.message).toBe("");
+  });
+
+  test("uses default message when no component provided (DefaultErrorComponent)", () => {
+    const el = buildErrorElement(undefined, new Error("boom"), "d4") as ReactElement;
+    expect((el.props as { error: { message: string } }).error.message).toBe(
+      "An unexpected error occurred."
+    );
   });
 });

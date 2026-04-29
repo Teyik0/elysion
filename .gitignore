@@ -43,3 +43,5 @@ generated**
 **/*.db*
 **/.tmp/**
 .tmp*
+public/llms*
+public/search-entries.json

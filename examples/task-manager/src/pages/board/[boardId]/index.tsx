@@ -1,16 +1,19 @@
-import { Suspense, use, useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
-import { getBoardData } from "@/api/modules/boards/service";
+import { getBoardData, getBoardStats } from "@/api/modules/boards/service";
 import { apiClient } from "@/lib/api";
 import { Kanban, type KanbanCard } from "../../../components/ui/kanban";
 import { route } from "../_route";
 
 // ---------------------------------------------------------------------------
-// Stats fetch via Eden treaty — fully typed, same client as the rest of the app
-// Never rejects: resolves to null on error so Suspense never crashes.
+// Client-side stats refetch via Eden treaty — used after a card mutation to
+// pull fresh counts.  Never rejects: resolves to null on error.
+//
+// (Initial stats are computed server-side in the loader and shipped through
+// the SSR payload — no client fetch on first paint, no double work.)
 // ---------------------------------------------------------------------------
 
-async function fetchBoardStats(boardId: string): Promise<BoardStats | null> {
+async function refetchBoardStats(boardId: string): Promise<BoardStats | null> {
   try {
     const { data, error } = await apiClient.api.boards({ boardId }).stats.get();
     if (error) {
@@ -45,8 +48,8 @@ function StatsBarSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// StatsBar — suspends until the /stats endpoint responds.
-// Receives the promise as a prop for a stable reference across re-renders.
+// StatsBar — receives stats directly as a prop.  Stats are computed in the
+// loader (server-side, single round-trip, no double fetch on hydration).
 // ---------------------------------------------------------------------------
 
 const COLUMN_COLORS = {
@@ -56,18 +59,13 @@ const COLUMN_COLORS = {
   done: "text-emerald-400",
 } as const;
 
-function StatsBar({ statsPromise }: { statsPromise: Promise<BoardStats | null> }) {
-  const stats = use(statsPromise);
-  if (!stats) {
-    return null;
-  }
-
+function StatsBar({ stats }: { stats: BoardStats }) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-5 border-white/5 border-b bg-white/1 px-6">
-      {/* Streaming badge */}
-      <div className="flex items-center gap-1.5 rounded-full border border-purple-500/20 bg-purple-500/8 px-2.5 py-1">
-        <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-        <span className="font-medium text-purple-300 text-xs">Streamed</span>
+      {/* SSR badge — stats arrived in the loader payload, no client fetch on first paint */}
+      <div className="flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+        <span className="font-medium text-blue-300 text-xs">SSR</span>
       </div>
 
       <span className="h-3 w-px bg-white/8" />
@@ -88,9 +86,7 @@ function StatsBar({ statsPromise }: { statsPromise: Promise<BoardStats | null> }
       {/* Subtle label */}
       <span className="ml-auto text-slate-700 text-xs">
         via{" "}
-        <code className="rounded bg-white/5 px-1 font-mono text-violet-400 text-xs">
-          {"<Suspense>"}
-        </code>
+        <code className="rounded bg-white/5 px-1 font-mono text-violet-400 text-xs">loader</code>
       </span>
     </div>
   );
@@ -106,6 +102,10 @@ export default route.page({
     if (!data) {
       throw new Response("Board not found", { status: 404 });
     }
+    // Stats are computed server-side and shipped through __FURIN_DATA__.
+    // No client fetch on first paint — and no double-fetch since the promise
+    // doesn't have to be re-issued during hydration (cf. RSC payload model).
+    const initialStats = getBoardStats(params.boardId) ?? null;
     const renderedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
@@ -114,29 +114,34 @@ export default route.page({
     return {
       board: data.board,
       initialCards: data.cards as KanbanCard[],
+      initialStats,
       renderedAt,
     };
   },
   head: ({ board }) => ({
     meta: [{ title: `${board.name} | Task Manager` }],
   }),
-  component: ({ board, initialCards, renderedAt, params }) => {
-    // refreshKey bumps after each card mutation → new promise → Suspense
-    // re-shows the skeleton briefly while the new stats load (~800ms).
-    // Using plain setState (not startTransition) because useTransition +
-    // use() on an already-resolved Suspense boundary causes isPending to
-    // stay true indefinitely.
-    const [refreshKey, setRefreshKey] = useState(0);
+  component: ({ board, initialCards, initialStats, renderedAt, params }) => {
+    const [stats, setStats] = useState<BoardStats | null>(initialStats);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [prevBoardId, setPrevBoardId] = useState(params.boardId);
+    if (prevBoardId !== params.boardId) {
+      setPrevBoardId(params.boardId);
+      setStats(initialStats);
+      setIsRefreshing(false);
+    }
 
-    // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is an intentional cache-bust trigger
-    const statsPromise = useMemo(
-      () => fetchBoardStats(params.boardId),
-      [params.boardId, refreshKey]
-    );
-
-    const onMutation = useCallback(() => {
-      setRefreshKey((k) => k + 1);
-    }, []);
+    const onMutation = useCallback(async () => {
+      setIsRefreshing(true);
+      try {
+        const fresh = await refetchBoardStats(params.boardId);
+        if (fresh) {
+          setStats(fresh);
+        }
+      } finally {
+        setIsRefreshing(false);
+      }
+    }, [params.boardId]);
 
     return (
       <div className="flex h-screen flex-col">
@@ -158,11 +163,9 @@ export default route.page({
           </div>
         </header>
 
-        {/* Stats strip — streams on first load via SSR streaming, then
-            re-suspends briefly after each card mutation (refreshKey bump). */}
-        <Suspense fallback={<StatsBarSkeleton />}>
-          <StatsBar statsPromise={statsPromise} />
-        </Suspense>
+        {/* Stats strip — initial render uses server-computed stats; on each
+            mutation we briefly show the skeleton while refetching. */}
+        {isRefreshing || !stats ? <StatsBarSkeleton /> : <StatsBar stats={stats} />}
 
         {/* Kanban board — key forces remount when board changes so useState resets */}
         <div className="flex-1 overflow-hidden">

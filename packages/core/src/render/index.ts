@@ -14,7 +14,7 @@ import {
 } from "./cache.ts";
 import { computeErrorDigest } from "./digest.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
-import { runLoaders } from "./loaders.ts";
+import { type LoaderResult, runLoaders } from "./loaders.ts";
 import { buildHeadInjection, safeJson } from "./shell.ts";
 import { getDevTemplate, getProductionTemplate } from "./template.ts";
 
@@ -73,16 +73,22 @@ function withSSRRouterContext(element: ReactNode, contextValue: RouterContextVal
  *
  * Returns the redirect Response directly when a loader redirects, so callers
  * never need try/catch for redirect handling.
+ *
+ * `precomputedLoaderResult`: when provided (dev "Live ISR" cache hit), the
+ * loader chain is skipped entirely and the cached `LoaderResult` is used as
+ * if the loaders had just run.  Callers must pass `undefined` explicitly
+ * when no cached result is available.
  */
 async function prepareRender(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
   basePath: string | undefined,
-  throwOnFailure: boolean
+  throwOnFailure: boolean,
+  precomputedLoaderResult: LoaderResult | undefined
 ): Promise<PreparedRender | Response> {
   const loaderStart = Date.now();
-  const loaderResult = await runLoaders(route, ctx, root.route);
+  const loaderResult = precomputedLoaderResult ?? (await runLoaders(route, ctx, root.route));
   const loader_ms = Date.now() - loaderStart;
 
   if (loaderResult.type === "redirect") {
@@ -195,7 +201,7 @@ function renderForPath(
         path: resolvedPath,
       } as Context;
 
-      const prepared = await prepareRender(route, ctx, root, basePath, true);
+      const prepared = await prepareRender(route, ctx, root, basePath, true, undefined);
       if (prepared instanceof Response) {
         return prepared;
       }
@@ -231,7 +237,7 @@ export async function renderToHTML(
   ctx: Context,
   root: RootLayout
 ): Promise<RenderResult> {
-  const prepared = await prepareRender(route, ctx, root, undefined, false);
+  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined);
 
   // Redirect — re-throw so callers like prerenderSSG / handleISR can catch it
   if (prepared instanceof Response) {
@@ -258,7 +264,7 @@ export async function renderToStream(
   ctx: Context,
   root: RootLayout
 ): Promise<ReadableStream | Response> {
-  const response = await renderSSR(route, ctx, root);
+  const response = await renderSSR(route, ctx, root, undefined);
   if (!response.ok) {
     return response;
   }
@@ -294,9 +300,10 @@ export async function prerenderSSG(
 export async function renderSSR(
   route: ResolvedRoute,
   ctx: Context,
-  root: RootLayout
+  root: RootLayout,
+  precomputedLoaderResult: LoaderResult | undefined
 ): Promise<Response> {
-  const prepared = await prepareRender(route, ctx, root, undefined, false);
+  const prepared = await prepareRender(route, ctx, root, undefined, false, precomputedLoaderResult);
 
   // Redirect — return directly as a Response
   if (prepared instanceof Response) {
@@ -682,7 +689,7 @@ export async function handleISR(
   }
 
   const renderStart = Date.now();
-  const prepared = await prepareRender(route, ctx, root, undefined, false);
+  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined);
 
   // Redirect — return directly
   if (prepared instanceof Response) {
