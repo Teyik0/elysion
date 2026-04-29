@@ -237,8 +237,7 @@ export async function furin({
     const { registerDevPagePlugin } = await import("./dev-page-plugin.ts");
     registerDevPagePlugin();
 
-    const { watchPagesForInvalidation } = await import("./dev-cache-invalidator.ts");
-    watchPagesForInvalidation(resolvedPagesDir);
+    const { createDevInspectorPlugin } = await import("./dev-inspector.ts");
 
     const { scanPages } = await import("./router.ts");
     const { root, routes } = await scanPages(resolvedPagesDir);
@@ -277,6 +276,7 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
+      .use(createDevInspectorPlugin())
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root));

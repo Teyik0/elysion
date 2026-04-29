@@ -82,7 +82,8 @@ describe("renderToHTML — not-found handling", () => {
     const response = await renderSSR(
       routeWithNotFound,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(404);
@@ -109,7 +110,8 @@ describe("renderToHTML — not-found handling", () => {
     const response = await renderSSR(
       routeWithNotFound,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(404);

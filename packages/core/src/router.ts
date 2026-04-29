@@ -4,13 +4,25 @@ import { join, parse } from "node:path";
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
-import { registerRouteDependencies } from "./dev-cache-invalidator.ts";
 import type { ErrorComponent } from "./error.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
 import type { NotFoundComponent } from "./not-found.ts";
 import { resolvePath } from "./render/assemble.ts";
-import { getISRCache, getSSGCache } from "./render/cache.ts";
-import { handleISR, prerenderSSG, renderSSR } from "./render/index.ts";
+import {
+  type DevLoaderCacheEntry,
+  getDevISRLoaderCache,
+  getDevSSGLoaderCache,
+  isDevLoaderCacheFresh,
+  setDevISRLoaderCache,
+  setDevSSGLoaderCache,
+} from "./render/dev-cache.ts";
+import {
+  handleISR,
+  type LoaderResult,
+  prerenderSSG,
+  renderSSR,
+  runLoaders,
+} from "./render/index.ts";
 import { IS_DEV } from "./runtime-env.ts";
 import {
   collectRouteChainFromRoute,
@@ -644,7 +656,26 @@ async function handleDevRequest(
     if (page && isFurinPage(page)) {
       const chain = collectRouteChainFromRoute(page._route as RuntimeRoute);
       await refreshLayoutChain(chain, route.path, root.path, undefined);
-      return renderSSR({ ...route, page, routeChain: chain }, ctx, currentRoot);
+      const refreshedRoute: ResolvedRoute = { ...route, page, routeChain: chain };
+
+      // Live ISR — the loader chain is short-circuited by the dev cache when
+      // a fresh entry exists.  HTML re-assembles every time so the dev shell
+      // chunk URL is always current.
+      if (refreshedRoute.mode === "isr") {
+        return renderDevISRWithLoaderCache(refreshedRoute, ctx, currentRoot);
+      }
+
+      // Live SSG — same trick as Live ISR, but the cache entry is forever-fresh
+      // (revalidate: Infinity) so the loader runs ONCE per cache key until a
+      // source file in its dependency chain changes.  This matches production
+      // SSG semantics ("loader runs once") in dev, instead of re-running the
+      // loader on every refresh — which would make expensive loaders (DB
+      // queries, MDX parsing, sitemap reads) painful in dev.
+      if (refreshedRoute.mode === "ssg") {
+        return renderDevSSGWithLoaderCache(refreshedRoute, ctx, currentRoot);
+      }
+
+      return renderSSR(refreshedRoute, ctx, currentRoot, undefined);
     }
   } catch (err) {
     console.error(`[furin] Dev page load error for ${route.path}:`, err);
@@ -658,111 +689,97 @@ async function handleDevRequest(
 }
 
 /**
- * @internal Dev-mode SSG handler.
- *
- * On cache miss, re-imports the page + intermediate layouts with cache-busting
- * so that edits made since server start are reflected.  On cache hit, serves
- * the stored HTML directly (no re-import).  Entries are cleared by
- * `invalidateDevCache` whenever the source file underlying the page or any
- * parent layout is re-evaluated by Bun's workspace loader.
+ * @internal Dev "Live ISR" — caches loader output, not assembled HTML.  On a
+ * fresh cache hit the loader chain is skipped; the React render still runs so
+ * the response embeds the latest dev shell (chunk URL, HMR runtime, …).  On
+ * miss, runs loaders normally and stores the merged data record.
  */
-async function handleDevSSGRequest(
+async function renderDevISRWithLoaderCache(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout
-): Promise<unknown> {
-  const resolvedPath = resolvePath(route.pattern, ctx.params ?? {});
-  const cached = getSSGCache(resolvedPath);
-  if (cached) {
-    ctx.set.headers["content-type"] = "text/html; charset=utf-8";
-    ctx.set.headers["cache-tag"] = resolvedPath;
-    return cached.html;
+): Promise<Response> {
+  const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
+  const cached = getDevISRLoaderCache(cacheKey);
+
+  if (cached && isDevLoaderCacheFresh(cached)) {
+    const precomputed: LoaderResult = {
+      type: "data",
+      data: cached.loaderData,
+      headers: cached.headers,
+    };
+    return renderSSR(route, ctx, root, precomputed);
   }
 
-  const fresh = await importFreshRoute(route, root);
-  const response = await handleSSGRequest(fresh.route, ctx, fresh.root, "");
-  registerRouteDependencies(resolvedPath, computeRouteDependencies(route.path, root.path));
-  return response;
+  const result = await runLoaders(route, ctx, root.route);
+  if (result.type === "data") {
+    const revalidate = route.page._route.revalidate ?? 60;
+    const entry: DevLoaderCacheEntry = {
+      dependencies: computeRouteDependencies(route.path, root.path),
+      generatedAt: Date.now(),
+      headers: result.headers,
+      loaderData: result.data,
+      mode: "isr",
+      revalidate,
+    };
+    setDevISRLoaderCache(cacheKey, entry);
+  }
+  return renderSSR(route, ctx, root, result);
 }
 
 /**
- * @internal Dev-mode ISR handler.  Same pattern as {@link handleDevSSGRequest}
- * but hands off to {@link handleISR} so that stale-while-revalidate and
- * background refresh keep working.
+ * @internal Dev "Live SSG" — same shape as `renderDevISRWithLoaderCache`, but
+ * the cached entry is tagged forever-fresh (`revalidate: Infinity`) so it
+ * survives indefinitely until source-aware invalidation drops it.  This makes
+ * dev SSG behave like production SSG: the loader runs ONCE per cache key,
+ * not on every refresh.
  */
-async function handleDevISRRequest(
+async function renderDevSSGWithLoaderCache(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout
-): Promise<unknown> {
-  const resolvedPath = resolvePath(route.pattern, ctx.params ?? {});
-  const cached = getISRCache(resolvedPath);
-  if (cached) {
-    return handleISR(route, ctx, root, "");
+): Promise<Response> {
+  const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
+  const cached = getDevSSGLoaderCache(cacheKey);
+
+  if (cached && isDevLoaderCacheFresh(cached)) {
+    const precomputed: LoaderResult = {
+      type: "data",
+      data: cached.loaderData,
+      headers: cached.headers,
+    };
+    return renderSSR(route, ctx, root, precomputed);
   }
 
-  const fresh = await importFreshRoute(route, root);
-  const response = await handleISR(fresh.route, ctx, fresh.root, "");
-  registerRouteDependencies(resolvedPath, computeRouteDependencies(route.path, root.path));
-  return response;
+  const result = await runLoaders(route, ctx, root.route);
+  if (result.type === "data") {
+    const entry: DevLoaderCacheEntry = {
+      dependencies: computeRouteDependencies(route.path, root.path),
+      generatedAt: Date.now(),
+      headers: result.headers,
+      loaderData: result.data,
+      mode: "ssg",
+      // SSG entries are forever-fresh — only source-aware invalidation drops them.
+      revalidate: Number.POSITIVE_INFINITY,
+    };
+    setDevSSGLoaderCache(cacheKey, entry);
+  }
+  return renderSSR(route, ctx, root, result);
 }
 
 /**
  * @internal Lists every source file whose contents can affect the render
  * output for a given page: the page itself, every intermediate `_route.*`
- * between the page and the pages root, and `root.tsx`.  Non-existent gap
- * directories are harmless — the registry simply stores unused keys.
+ * between the page and the pages root, and `root.tsx`.  Non-existent
+ * candidate paths (extensions the user did not author) are still included
+ * so that adding a new `_route.tsx` later still triggers invalidation.
  */
 function computeRouteDependencies(pagePath: string, rootPath: string): string[] {
   const deps = [pagePath, rootPath];
-  const pagesDir = rootPath.slice(0, rootPath.lastIndexOf("/"));
-  let dir = pagePath.slice(0, pagePath.lastIndexOf("/"));
-  while (dir.length > pagesDir.length) {
+  for (const dir of collectIntermediateLayoutDirs(pagePath, rootPath)) {
     deps.push(...getSourceModuleCandidates(dir, "_route"));
-    dir = dir.slice(0, dir.lastIndexOf("/"));
   }
   return deps;
-}
-
-/**
- * @internal Re-imports page + intermediate layout + root modules with
- * cache-busting query params and returns a fresh route object suitable for
- * passing to any production render handler.  Mirrors the logic previously
- * inlined in `handleDevRequest`.
- */
-async function importFreshRoute(
-  route: ResolvedRoute,
-  root: RootLayout
-): Promise<{ root: RootLayout; route: ResolvedRoute }> {
-  let currentRoot = root;
-  try {
-    const rootMod = (await import(`${root.path}?furin-server&t=${Date.now()}`)) as Record<
-      string,
-      unknown
-    >;
-    const rootExport = rootMod.route ?? rootMod.default;
-    if (rootExport && isFurinRoute(rootExport) && rootExport.layout) {
-      currentRoot = { ...root, path: root.path, route: rootExport };
-    }
-  } catch {
-    // Fall back to the cached root.
-  }
-
-  try {
-    const pageMod = await import(`${route.path}?furin-server&t=${Date.now()}`);
-    const page = pageMod.default;
-    if (page && isFurinPage(page)) {
-      const chain = collectRouteChainFromRoute(page._route as RuntimeRoute);
-      await refreshLayoutChain(chain, route.path, root.path, undefined);
-      return {
-        root: currentRoot,
-        route: { ...route, page, routeChain: chain },
-      };
-    }
-  } catch (err) {
-    console.error(`[furin] Dev page load error for ${route.path}:`, err);
-  }
-  return { root: currentRoot, route };
 }
 
 /** @internal Handles a production SSG route — sets ETags, Cache-Control, and Cache-Tag. */
@@ -868,22 +885,27 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildI
       }
     }
 
-    if (route.mode === "ssg") {
-      return IS_DEV
-        ? handleDevSSGRequest(route, ctx, root)
-        : handleSSGRequest(route, ctx, root, buildId);
-    }
-
-    if (route.mode === "isr") {
-      ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
-      return IS_DEV ? handleDevISRRequest(route, ctx, root) : handleISR(route, ctx, root, buildId);
-    }
-
+    // Dev mode: every request renders fresh (re-imports page + layouts with
+    // cache-busting query params). ISR/SSG caching is a production-only
+    // optimization. Skipping the dev cache eliminates an entire class of
+    // stale-HTML bugs — most importantly, an ISR/SSG entry holding the OLD
+    // dev-shell chunk URL after Bun rebundles, which used to cause the
+    // browser's HMR client to enter an infinite reload loop. Matches
+    // TanStack Start / Remix dev behavior.
     if (IS_DEV) {
       return handleDevRequest(route, ctx, root);
     }
 
-    return renderSSR(route, ctx, root);
+    if (route.mode === "ssg") {
+      return handleSSGRequest(route, ctx, root, buildId);
+    }
+
+    if (route.mode === "isr") {
+      ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
+      return handleISR(route, ctx, root, buildId);
+    }
+
+    return renderSSR(route, ctx, root, undefined);
   });
 
   return plugin;

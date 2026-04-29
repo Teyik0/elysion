@@ -53,7 +53,7 @@
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { invalidateDevCache } from "./dev-cache-invalidator.ts";
+import { invalidateDevLoaderCacheBySource } from "./render/dev-cache.ts";
 
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
 const FURIN_SERVER_FILTER = /\?furin-server(?:&t=\d+)?$/;
@@ -365,11 +365,11 @@ export function registerDevPagePlugin(): void {
           throw new Error(`[furin] Unsupported source loader for ${args.path}`);
         }
 
-        // Every re-evaluation of a workspace source in dev is either the initial
-        // load (registry empty → no-op) or a post-edit HMR re-read.  Either way,
-        // clearing dependent cached entries is always correct — we'll re-register
-        // them on the next SSG/ISR cache miss.
-        invalidateDevCache(args.path);
+        // Every re-evaluation of a workspace source in dev is either the
+        // initial load (cache empty → no-op) or a post-edit HMR re-read.
+        // Both are correct moments to drop dependent dev loader cache
+        // entries — they will be re-populated on the next request.
+        invalidateDevLoaderCacheBySource(args.path);
 
         if (shouldSkipWorkspaceTransform(args.path)) {
           return {
