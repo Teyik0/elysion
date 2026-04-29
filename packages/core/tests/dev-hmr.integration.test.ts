@@ -15,6 +15,12 @@ function getFreePort(): Promise<number> {
   });
 }
 
+const DEV_CLIENT_CHUNK_RE = /\/_bun\/client\/index-[^"]+\.js/;
+
+function extractDevClientEntry(html: string): string | null {
+  return html.match(DEV_CLIENT_CHUNK_RE)?.[0] ?? null;
+}
+
 /**
  * Integration test for the dev-mode HMR pipeline.
  *
@@ -86,6 +92,20 @@ describe.serial("dev HMR", () => {
     ].join("\n")
   );
 
+  writeAppFile(
+    app.path,
+    "src/pages/index.tsx",
+    [
+      'import { route as rootRoute } from "./root";',
+      "",
+      "export default rootRoute.page({",
+      '  mode: "isr",',
+      "  revalidate: 60,",
+      "  component: () => <main>ISR home</main>,",
+      "});",
+    ].join("\n")
+  );
+
   beforeAll(async () => {
     port = await getFreePort();
   });
@@ -118,7 +138,7 @@ describe.serial("dev HMR", () => {
     expect(ready).toBe(true);
 
     const html = await (await fetch(`http://localhost:${port}/`)).text();
-    expect(html).toContain("Home page");
+    expect(html).toContain("ISR home");
     expect(html).toContain("__FURIN_DATA__");
     expect(html).toContain('id="root"');
   }, 30_000);
@@ -243,5 +263,64 @@ describe.serial("dev HMR", () => {
     expect(logs).not.toContain("dispatcher is null");
     expect(logs).not.toContain("resolveDispatcher().useState");
     expect(logs).not.toContain(" GET /docs 500 ");
+  }, 20_000);
+
+  test("editing an unrelated _route still serves the new dev shell from / (no infinite reload loop)", async () => {
+    // Regression: previously the dev ISR cache held the assembled HTML with the
+    // OLD client chunk URL embedded. Editing an unrelated _route.tsx rebundled
+    // the client (new chunk URL on /_bun_hmr_entry) but the cache kept serving
+    // the stale HTML, sending the browser into an infinite reload loop.
+    //
+    // Fix: dev mode now always renders fresh — no SSR/SSG/ISR cache. The home
+    // page response always embeds the latest chunk URL.
+    const warmHtml = await (await fetch(`http://localhost:${port}/`)).text();
+    const initialBundle = extractDevClientEntry(warmHtml);
+
+    expect(initialBundle).not.toBeNull();
+
+    writeAppFile(
+      app.path,
+      "src/pages/docs/_route.tsx",
+      [
+        'import { createRoute } from "@teyik0/furin/client";',
+        'import { MobileNav } from "../../components/mobile-nav";',
+        'import { route as rootRoute } from "../root";',
+        "",
+        "export const route = createRoute({",
+        "  parent: rootRoute,",
+        "  layout: ({ children }) => (",
+        '    <section data-docs-layout="docs-v2">',
+        "      <MobileNav />",
+        "      {children}",
+        "    </section>",
+        "  ),",
+        "});",
+      ].join("\n")
+    );
+
+    // Bun may rebundle multiple times in close succession; instead of pinning to
+    // a single intermediate chunk, just assert the served chunk eventually
+    // diverges from the stale one captured before the edit. The cache-stale bug
+    // would keep `/` pinned on `initialBundle` indefinitely.
+    let refreshedHomeChunk: string | null = null;
+    let latestHmrShell: string | null = initialBundle;
+    for (let i = 0; i < 40; i++) {
+      const hmrEntryHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
+      latestHmrShell = extractDevClientEntry(hmrEntryHtml);
+      const homeHtml = await (await fetch(`http://localhost:${port}/`)).text();
+      refreshedHomeChunk = extractDevClientEntry(homeHtml);
+      if (
+        latestHmrShell &&
+        latestHmrShell !== initialBundle &&
+        refreshedHomeChunk &&
+        refreshedHomeChunk !== initialBundle
+      ) {
+        break;
+      }
+      await Bun.sleep(250);
+    }
+
+    expect(latestHmrShell).not.toBe(initialBundle);
+    expect(refreshedHomeChunk).not.toBe(initialBundle);
   }, 20_000);
 });

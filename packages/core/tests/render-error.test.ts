@@ -87,7 +87,8 @@ describe("renderToHTML — error handling", () => {
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(500);
@@ -173,7 +174,8 @@ describe("renderToHTML — error handling", () => {
     const response = await renderSSR(
       routeWithShellError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(500);
@@ -202,7 +204,8 @@ describe("renderToHTML — error handling", () => {
     const response = await renderSSR(
       routeWithShellError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(500);
@@ -234,7 +237,8 @@ describe("renderToHTML — error handling", () => {
     const response = await renderSSR(
       routeWithDoubleFailure,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
 
     expect(response.status).toBe(500);
@@ -418,7 +422,8 @@ describe("renderSSR — digest", () => {
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
     const body = await response.text();
     expect(body).toContain("__furinError");
@@ -446,7 +451,8 @@ describe("renderSSR — digest", () => {
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      result.root,
+      undefined
     );
     await response.text(); // drain
 

@@ -33,6 +33,7 @@ import {
   _runWithRequestInvalidationScope,
   consumePendingInvalidations,
   getBuildId,
+  getISRCache,
   isrCache,
   revalidatePath,
   setBuildId,
@@ -368,6 +369,63 @@ describe("setBuildId / getBuildId", () => {
     setBuildId("v1");
     setBuildId("v2");
     expect(getBuildId()).toBe("v2");
+  });
+});
+
+// ── Bullet 8: LRU eviction at cache capacity ─────────────────────────────────
+
+describe("ISR LRU eviction", () => {
+  test("evicts the oldest entry when ISR cache exceeds 1000 entries", () => {
+    const count = 1001;
+    for (let i = 0; i < count; i++) {
+      setISRCache(`/page-${i}`, {
+        html: `<html>${i}</html>`,
+        generatedAt: Date.now(),
+        revalidate: 60,
+      });
+    }
+
+    // Entry inserted first must have been evicted
+    expect(isrCache.has("/page-0")).toBe(false);
+    // Most-recently inserted entry must still be present
+    expect(isrCache.has(`/page-${count - 1}`)).toBe(true);
+    // Cache must be capped at exactly 1000
+    expect(isrCache.size).toBe(1000);
+  });
+
+  test("evicts the oldest entry when SSG cache exceeds 1000 entries", () => {
+    const count = 1001;
+    for (let i = 0; i < count; i++) {
+      setSSGCache(`/page-${i}`, {
+        html: `<html>${i}</html>`,
+        cachedAt: Date.now(),
+        status: 200,
+      });
+    }
+
+    expect(ssgCache.has("/page-0")).toBe(false);
+    expect(ssgCache.has(`/page-${count - 1}`)).toBe(true);
+    expect(ssgCache.size).toBe(1000);
+  });
+
+  test("getISRCache re-inserts entry at the end so it is not evicted as oldest", () => {
+    // Insert 999 entries
+    for (let i = 0; i < 999; i++) {
+      setISRCache(`/page-${i}`, { html: "", generatedAt: Date.now(), revalidate: 60 });
+    }
+
+    // Promote /page-0 to most-recently-used by reading it
+    getISRCache("/page-0");
+
+    // Insert one more entry to push size to 1000 (no eviction yet)
+    setISRCache("/page-999", { html: "", generatedAt: Date.now(), revalidate: 60 });
+
+    // Insert the 1001st entry — oldest is now /page-1 (not /page-0)
+    setISRCache("/page-1000", { html: "", generatedAt: Date.now(), revalidate: 60 });
+
+    expect(isrCache.has("/page-0")).toBe(true); // promoted — still alive
+    expect(isrCache.has("/page-1")).toBe(false); // true oldest — evicted
+    expect(isrCache.has("/page-1000")).toBe(true);
   });
 });
 
