@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
 import { computeBoardStats, getBoardData } from "@/api/modules/boards/service";
 import { apiClient } from "@/lib/api";
@@ -122,7 +122,7 @@ export default route.page({
     meta: [{ title: `${board.name} | Task Manager` }],
   }),
   component: ({ board, initialCards, initialStats, renderedAt, params }) => {
-    const [stats, setStats] = useState<BoardStats | null>(initialStats);
+    const [stats, setStats] = useState<BoardStats>(initialStats);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [prevBoardId, setPrevBoardId] = useState(params.boardId);
     // Monotonic request token — bumped on board change AND at the start of
@@ -136,8 +136,17 @@ export default route.page({
       setPrevBoardId(params.boardId);
       setStats(initialStats);
       setIsRefreshing(false);
-      refetchTokenRef.current += 1;
     }
+
+    // Bump the token in a committed phase so discarded renders don't desync it.
+    const hasMountedRef = useRef(false);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: token must bump on board change
+    useEffect(() => {
+      if (hasMountedRef.current) {
+        refetchTokenRef.current += 1;
+      }
+      hasMountedRef.current = true;
+    }, [params.boardId]);
 
     const onMutation = useCallback(async () => {
       refetchTokenRef.current += 1;
@@ -182,7 +191,7 @@ export default route.page({
 
         {/* Stats strip — initial render uses server-computed stats; on each
             mutation we briefly show the skeleton while refetching. */}
-        {isRefreshing || !stats ? <StatsBarSkeleton /> : <StatsBar stats={stats} />}
+        {isRefreshing ? <StatsBarSkeleton /> : <StatsBar stats={stats} />}
 
         {/* Kanban board — key forces remount when board changes so useState resets */}
         <div className="flex-1 overflow-hidden">
