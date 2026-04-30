@@ -541,7 +541,14 @@ async function importFreshRouteModuleCandidate(
 
     return imported;
   } catch (err) {
-    if (isModuleNotFoundError(err)) {
+    // Distinguish "this layout file does not exist" (legitimate skip) from
+    // "this layout file's transitive imports failed" (real bug to surface).
+    // If the layoutPath itself is on disk or registered in the compile ctx,
+    // a ModuleNotFoundError must come from a sub-import — re-throw it so
+    // the developer sees the actual broken import instead of a silently
+    // ignored layout chain.
+    const layoutFileIsKnown = existsSync(layoutPath) || Boolean(ctx?.modules[layoutPath]);
+    if (!layoutFileIsKnown && isModuleNotFoundError(err)) {
       return;
     }
     throw err;
@@ -648,7 +655,14 @@ async function handleDevRequest(
     >;
     const rootExport = rootMod.route ?? rootMod.default;
     if (rootExport && isFurinRoute(rootExport) && rootExport.layout) {
-      currentRoot = { path: root.path, route: rootExport };
+      // Preserve the RootLayout-level convention fields (error, notFound,
+      // errorPath, notFoundPath) populated by `scanRootLayout` from
+      // `pages/error.tsx` and `pages/not-found.tsx`.  Replacing the whole
+      // RootLayout with just `{ path, route }` would silently drop these
+      // fallbacks — `route.error ?? root.error` would resolve to `undefined`
+      // in dev after the first request, making custom 404/500 screens
+      // disappear after a HMR refresh.
+      currentRoot = { ...currentRoot, route: rootExport };
     }
 
     const pageMod = await import(`${route.path}?furin-server&t=${Date.now()}`);
@@ -909,13 +923,18 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildI
       }
     }
 
-    // Dev mode: every request renders fresh (re-imports page + layouts with
-    // cache-busting query params). ISR/SSG caching is a production-only
-    // optimization. Skipping the dev cache eliminates an entire class of
-    // stale-HTML bugs — most importantly, an ISR/SSG entry holding the OLD
-    // dev-shell chunk URL after Bun rebundles, which used to cause the
-    // browser's HMR client to enter an infinite reload loop. Matches
-    // TanStack Start / Remix dev behavior.
+    // Dev mode: re-imports page + layouts on every request via the
+    // ?furin-server cache-buster, then dispatches into one of:
+    //   - renderDevISRWithLoaderCache  (mode === "isr")
+    //   - renderDevSSGWithLoaderCache  (mode === "ssg")
+    //   - renderSSR                    (otherwise)
+    //
+    // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
+    // fresh so the response always embeds the latest Bun client chunk URL.
+    // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
+    // HTML response held an OLD chunk URL after Bun rebundled.  The dev
+    // cache is invalidated source-aware via `isDevLoaderCacheValid`
+    // (mtime-checked dependency walk on every read).
     if (IS_DEV) {
       return handleDevRequest(route, ctx, root);
     }

@@ -6,9 +6,12 @@ import { deadCodeElimination, transformForClient } from "../src/plugin/transform
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
 // ---------------------------------------------------------------------------
 const LOADER_PROPERTY_RE = /\bloader\s*:/;
+/** Matches `from "./db"` or `from './db'` with any whitespace and quote style. */
 const IMPORT_DB_RE = /from\s+["']\.\/db["']/;
+/** Same as above but allows any non-quote prefix in the path (e.g. `../../db`). */
 const IMPORT_RELATIVE_DB_RE = /from\s+["'][^"']*db["']/;
-const IMPORT_FROM_DB_RE = /from ["']\.\/db["']/;
+/** Quoted form of a `loader` property key (`"loader":` or `'loader':`). */
+const QUOTED_LOADER_KEY_RE = /["']loader["']\s*:/;
 
 // ---------------------------------------------------------------------------
 // Basic transformation
@@ -206,7 +209,7 @@ describe("transformForClient — dead code elimination", () => {
     expect(result.code).not.toContain("getUser");
     expect(result.code).toContain("formatDate");
     // Import statement kept but without getUser specifier
-    expect(result.code).toMatch(IMPORT_FROM_DB_RE);
+    expect(result.code).toMatch(IMPORT_DB_RE);
   });
 });
 
@@ -241,6 +244,11 @@ describe("transformForClient — property key variants", () => {
 
     expect(result.removedServerCode).toBe(true);
     expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    // Belt-and-suspenders: explicitly assert the quoted form is also gone,
+    // independent of LOADER_PROPERTY_RE's word-boundary semantics.  A bug
+    // that only stripped bare `loader:` keys would leave `"loader":` behind.
+    expect(result.code).not.toMatch(QUOTED_LOADER_KEY_RE);
+    expect(result.code).not.toContain('"loader"');
     expect(result.code).toContain("component");
   });
 
