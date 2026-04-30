@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
-import { getBoardData, getBoardStats } from "@/api/modules/boards/service";
+import { computeBoardStats, getBoardData } from "@/api/modules/boards/service";
 import { apiClient } from "@/lib/api";
 import { Kanban, type KanbanCard } from "../../../components/ui/kanban";
 import { route } from "../_route";
@@ -102,10 +102,10 @@ export default route.page({
     if (!data) {
       throw new Response("Board not found", { status: 404 });
     }
-    // Stats are computed server-side and shipped through __FURIN_DATA__.
-    // No client fetch on first paint — and no double-fetch since the promise
-    // doesn't have to be re-issued during hydration (cf. RSC payload model).
-    const initialStats = getBoardStats(params.boardId) ?? null;
+    // Stats are computed server-side from the cards we already loaded —
+    // no second DB roundtrip — and shipped through __FURIN_DATA__.
+    // No client fetch on first paint, no double-fetch on hydration.
+    const initialStats = computeBoardStats(data.cards);
     const renderedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
@@ -125,21 +125,38 @@ export default route.page({
     const [stats, setStats] = useState<BoardStats | null>(initialStats);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [prevBoardId, setPrevBoardId] = useState(params.boardId);
+    // Monotonic request token — bumped on board change AND at the start of
+    // every mutation refetch.  Stale in-flight refetches (started against a
+    // previous board, or before another mutation kicked off) compare their
+    // captured token to the current one and discard their result if it has
+    // moved on.  Prevents a "Board A's stats land on Board B" race after fast
+    // SPA navigation — and a "stale mutation overwrites fresh mutation" race.
+    const refetchTokenRef = useRef(0);
     if (prevBoardId !== params.boardId) {
       setPrevBoardId(params.boardId);
       setStats(initialStats);
       setIsRefreshing(false);
+      refetchTokenRef.current += 1;
     }
 
     const onMutation = useCallback(async () => {
+      refetchTokenRef.current += 1;
+      const myToken = refetchTokenRef.current;
       setIsRefreshing(true);
       try {
         const fresh = await refetchBoardStats(params.boardId);
+        // Discard the result if the user has navigated away or another
+        // mutation has fired in the meantime — the latest token wins.
+        if (myToken !== refetchTokenRef.current) {
+          return;
+        }
         if (fresh) {
           setStats(fresh);
         }
       } finally {
-        setIsRefreshing(false);
+        if (myToken === refetchTokenRef.current) {
+          setIsRefreshing(false);
+        }
       }
     }, [params.boardId]);
 

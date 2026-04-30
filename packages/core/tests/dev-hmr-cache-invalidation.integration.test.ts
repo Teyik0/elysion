@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createServer } from "node:net";
 import { join } from "node:path";
+import { extractDevClientEntry, getFreePort } from "./helpers/hmr.ts";
 import { startProcess } from "./helpers/run-cli.ts";
 import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
@@ -21,23 +21,6 @@ import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
  *   3. Bun rebundles; the `_bun_hmr_entry` chunk URL flips.
  *   4. On the next visit to `/`, the served HTML MUST embed the new chunk URL.
  */
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, () => {
-      const addr = srv.address();
-      srv.close(() => resolve((addr as { port: number }).port));
-    });
-    srv.on("error", reject);
-  });
-}
-
-const DEV_CLIENT_CHUNK_RE = /\/_bun\/client\/index-[^"]+\.js/;
-
-function extractDevClientEntry(html: string): string | null {
-  return html.match(DEV_CLIENT_CHUNK_RE)?.[0] ?? null;
-}
 
 describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
   const app = createTmpApp("cli-app");

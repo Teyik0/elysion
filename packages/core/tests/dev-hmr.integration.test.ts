@@ -1,25 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createServer } from "node:net";
 import { join } from "node:path";
+import { extractDevClientEntry, getFreePort } from "./helpers/hmr.ts";
 import { startProcess } from "./helpers/run-cli.ts";
 import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, () => {
-      const addr = srv.address();
-      srv.close(() => resolve((addr as { port: number }).port));
-    });
-    srv.on("error", reject);
-  });
-}
-
-const DEV_CLIENT_CHUNK_RE = /\/_bun\/client\/index-[^"]+\.js/;
-
-function extractDevClientEntry(html: string): string | null {
-  return html.match(DEV_CLIENT_CHUNK_RE)?.[0] ?? null;
-}
 
 /**
  * Integration test for the dev-mode HMR pipeline.
@@ -271,8 +254,13 @@ describe.serial("dev HMR", () => {
     // the client (new chunk URL on /_bun_hmr_entry) but the cache kept serving
     // the stale HTML, sending the browser into an infinite reload loop.
     //
-    // Fix: dev mode now always renders fresh — no SSR/SSG/ISR cache. The home
-    // page response always embeds the latest chunk URL.
+    // Fix: dev mode caches loader output (so expensive loaders don't re-run
+    // on every refresh) but ALWAYS re-assembles HTML fresh.  The shell
+    // template embedded in each response carries the latest Bun client
+    // chunk URL, and the loader cache is invalidated source-aware via
+    // `isDevLoaderCacheValid` (mtime-checked dependency walk on every
+    // read), so a sibling _route.tsx edit drops dependent entries on the
+    // very next request.
     const warmHtml = await (await fetch(`http://localhost:${port}/`)).text();
     const initialBundle = extractDevClientEntry(warmHtml);
 

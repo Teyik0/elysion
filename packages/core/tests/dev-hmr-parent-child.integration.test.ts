@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createServer } from "node:net";
 import { join } from "node:path";
+import { getFreePort } from "./helpers/hmr.ts";
 import { startProcess } from "./helpers/run-cli.ts";
 import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
@@ -43,17 +43,6 @@ const HELLO_ATTR_RE = /data-hello="([^"]+)"/;
  *   #8 (P2): Hot-adding a brand-new page file at runtime — `scanPages` runs
  *     once at startup; the server must be restarted to discover new routes.
  */
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, () => {
-      const addr = srv.address();
-      srv.close(() => resolve((addr as { port: number }).port));
-    });
-    srv.on("error", reject);
-  });
-}
 
 async function pollUntil(
   fn: () => Promise<boolean>,

@@ -8,7 +8,7 @@ import {
 
 export type { Board, BoardData, Card, ColumnType } from "@/db/schema";
 
-import type { Board, BoardData } from "@/db/schema";
+import type { Board, BoardData, Card } from "@/db/schema";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -226,6 +226,23 @@ export interface BoardStats {
   total: number;
 }
 
+/**
+ * Pure aggregator — derives `BoardStats` from an already-loaded card list.
+ * Use this when the caller already holds the cards (e.g. the SSR loader
+ * that just called `getBoardData`) to avoid a redundant DB roundtrip.
+ */
+export function computeBoardStats(boardCards: Card[]): BoardStats {
+  const byColumn = { backlog: 0, todo: 0, doing: 0, done: 0 };
+  for (const card of boardCards) {
+    byColumn[card.column as keyof typeof byColumn]++;
+  }
+
+  const total = boardCards.length;
+  const completionRate = total > 0 ? Math.round((byColumn.done / total) * 100) : 0;
+
+  return { total, byColumn, completionRate };
+}
+
 export function getBoardStats(boardId: string): BoardStats | undefined {
   const board = db.select().from(boards).where(eq(boards.id, boardId)).get();
   if (!board) {
@@ -239,13 +256,5 @@ export function getBoardStats(boardId: string): BoardStats | undefined {
     .orderBy(asc(cards.position))
     .all();
 
-  const byColumn = { backlog: 0, todo: 0, doing: 0, done: 0 };
-  for (const card of boardCards) {
-    byColumn[card.column as keyof typeof byColumn]++;
-  }
-
-  const total = boardCards.length;
-  const completionRate = total > 0 ? Math.round((byColumn.done / total) * 100) : 0;
-
-  return { total, byColumn, completionRate };
+  return computeBoardStats(boardCards);
 }
