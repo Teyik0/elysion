@@ -1,9 +1,29 @@
+import { Link } from "@teyik0/furin/link";
 import type { ComponentType } from "react";
 import type { DocNavItem } from "@/lib/docs";
 import { CodeTab, CodeTabs } from "./code-tabs";
 import { DocsActions } from "./docs-actions";
 
-const MDX_COMPONENTS = { CodeTabs, CodeTab };
+export function MdxLink({
+  href,
+  children,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  if (href?.startsWith("/") && !href.startsWith("//")) {
+    return (
+      <Link to={href} {...props}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={href} rel="noopener noreferrer" target="_blank" {...props}>
+      {children}
+    </a>
+  );
+}
+
+const MDX_COMPONENTS = { a: MdxLink, CodeTabs, CodeTab };
 
 interface DocPageProps {
   Content: ComponentType<{ components?: Record<string, unknown> }>;

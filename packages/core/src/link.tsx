@@ -43,7 +43,7 @@ export interface RouteManifest {}
  */
 export type RouteTo = keyof RouteManifest extends never
   ? string
-  : keyof RouteManifest | `https://${string}` | `http://${string}`;
+  : string | keyof RouteManifest | `https://${string}` | `http://${string}`;
 
 /**
  * The typed search params for a given `to` pathname.
@@ -428,6 +428,15 @@ function stripHashFromHref(href: string): string {
   return href.replace(HASH_FRAGMENT_RE, "");
 }
 
+/** Strips trailing slashes from a pathname or href. Root `/` is preserved. */
+export function normalizeHref(href: string): string {
+  if (href === "/") {
+    return "/";
+  }
+  // Strip trailing slashes before query string or hash, and at end of string
+  return href.replace(/\/+(\?|#|$)/g, "$1");
+}
+
 // ── Slice 8 helpers — SPA 404 inline rendering ─────────────────────────────────
 
 /**
@@ -472,6 +481,59 @@ export function classifySpaResponse(
     return { kind: "ok" };
   }
   return { kind: "bail" };
+}
+
+/**
+ * Decides whether a native `<a>` click should be intercepted and converted
+ * to an SPA navigation. Returns the logical href to navigate to, or `null`
+ * when the browser should handle the click normally.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function shouldInterceptClick(
+  anchor: HTMLAnchorElement,
+  event: MouseEvent,
+  basePath: string
+): string | null {
+  // Respect modifier keys (new tab, etc.)
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return null;
+  }
+
+  // Respect explicit target
+  if (anchor.target && anchor.target !== "_self") {
+    return null;
+  }
+
+  // Respect download attribute
+  if (anchor.hasAttribute("download")) {
+    return null;
+  }
+
+  const href = anchor.href;
+  if (!href) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(href, window.location.origin);
+  } catch {
+    return null;
+  }
+
+  // External link — let the browser handle it
+  if (url.origin !== window.location.origin) {
+    return null;
+  }
+
+  // Hash-only navigation on the same page — let the browser handle scrolling
+  if (url.pathname === window.location.pathname && url.hash) {
+    return null;
+  }
+
+  const logicalPath = normalizeHref(toLogical(url.pathname, basePath));
+  return logicalPath + url.search + url.hash;
 }
 
 /**
@@ -811,7 +873,7 @@ async function parsePageResponse(
 }
 
 /** Strips basePath prefix from a physical pathname, returning the logical path. */
-function toLogical(physicalPathname: string, basePath: string): string {
+export function toLogical(physicalPathname: string, basePath: string): string {
   if (
     basePath &&
     physicalPathname.startsWith(basePath) &&
@@ -884,7 +946,11 @@ export function RouterProvider({
   }, [routes]);
 
   const fetchPageState = useCallback(
-    async (logicalHref: string): Promise<RouterState | null> => {
+    async (rawLogicalHref: string): Promise<RouterState | null> => {
+      // Normalize trailing slashes so "/docs/routing/" matches the route
+      // pattern "/docs/routing" — static hosts (GitHub Pages, Netlify) often
+      // redirect to or serve URLs with a trailing slash.
+      const logicalHref = normalizeHref(rawLogicalHref);
       try {
         // Physical href: what the browser/server actually receives.
         // For basePath deployments: fetch("/furin/docs/routing") not fetch("/docs/routing").
@@ -1028,7 +1094,10 @@ export function RouterProvider({
   );
 
   const navigate = useCallback(
-    async (logicalHref: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
+    async (rawLogicalHref: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
+      // Normalize trailing slashes so the prefetch cache key and route
+      // matching stay consistent regardless of how the href was formed.
+      const logicalHref = normalizeHref(rawLogicalHref);
       // logicalHref is the route-relative path (no basePath).
       // The prefetch cache is keyed by logical hrefs.
       prefetch(logicalHref);
@@ -1125,7 +1194,9 @@ export function RouterProvider({
     // destination entry when popstate fires, before any awaits.
     const destKey = getHistoryKey(history.state);
     // Convert physical browser URL to logical href for cache lookup + fetchPageState.
-    const logicalPath = toLogical(window.location.pathname, basePath);
+    // Normalize trailing slashes so "/docs/routing/" back-button navigations
+    // still match the route pattern "/docs/routing".
+    const logicalPath = normalizeHref(toLogical(window.location.pathname, basePath));
     const logicalHref = logicalPath + window.location.search;
     const myVersion = ++navVersion.current;
     setIsNavigating(true);
@@ -1198,6 +1269,29 @@ export function RouterProvider({
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [handlePopState]);
+
+  // Intercept clicks on native <a> tags so that internal links (including
+  // those rendered by MDX, CMS content, or third-party components) participate
+  // in SPA navigation instead of triggering full-page reloads.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handler = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest("a");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+      const logicalHref = shouldInterceptClick(anchor, e, basePath);
+      if (logicalHref === null) {
+        return;
+      }
+      e.preventDefault();
+      navigate(logicalHref, { resetScroll: !logicalHref.includes("#") });
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [navigate, basePath]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   // This ensures that API routes calling revalidatePath() automatically bust the
