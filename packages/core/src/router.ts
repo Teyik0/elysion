@@ -784,14 +784,24 @@ async function renderDevSSGWithLoaderCache(
 /**
  * @internal Lists every source file whose contents can affect the render
  * output for a given page: the page itself, every intermediate `_route.*`
- * between the page and the pages root, and `root.tsx`.  Non-existent
- * candidate paths (extensions the user did not author) are still included
- * so that adding a new `_route.tsx` later still triggers invalidation.
+ * between the page and the pages root, and `root.tsx`.
+ *
+ * Only paths that EXIST on disk are returned.  `isDevLoaderCacheValid` treats
+ * a `statSync` throw as "invalid" (conservative on missing files), so listing
+ * non-authored extension candidates here would force a permanent cache MISS
+ * for every nested route — silently disabling the dev ISR/SSG cache for any
+ * page in a subdirectory.  Renames and deletions of TRACKED deps are still
+ * detected: the path that previously existed will then `statSync`-throw on
+ * the next read and yield the same conservative miss.
  */
-function computeRouteDependencies(pagePath: string, rootPath: string): string[] {
+export function computeRouteDependencies(pagePath: string, rootPath: string): string[] {
   const deps = [pagePath, rootPath];
   for (const dir of collectIntermediateLayoutDirs(pagePath, rootPath)) {
-    deps.push(...getSourceModuleCandidates(dir, "_route"));
+    for (const candidate of getSourceModuleCandidates(dir, "_route")) {
+      if (existsSync(candidate)) {
+        deps.push(candidate);
+      }
+    }
   }
   return deps;
 }

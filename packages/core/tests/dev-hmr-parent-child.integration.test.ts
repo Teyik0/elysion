@@ -460,19 +460,19 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       ].join("\n")
     );
 
-    // Step 4: request #2 — the page file's mtime has changed since the
-    // previous onLoad invocation, so the namespace handler MUST call
-    // `invalidateDevLoaderCacheBySource` before this request reaches the
-    // cache lookup.  The next loader run produces stamp2 = Date.now() + 99999,
-    // which is unambiguously ≥ stamp1 + 99999.
+    // Step 4: request #2 — at cache-read time, `isDevLoaderCacheValid`
+    // stat-checks every dependency in the entry against `entry.generatedAt`.
+    // The page file's mtime is now newer than `generatedAt` (we just edited
+    // it), so the entry is treated as invalid and the loader chain re-runs.
+    // The new loader returns `Date.now() + 99999`, unambiguously ≥ stamp1 + 99999.
     const res2 = await fetch(`http://localhost:${port}/blog/isr-stamp`);
     expect(res2.status).toBe(200);
     const html2 = await res2.text();
     const stamp2 = html2.match(STAMP_ATTR_RE)?.[1];
     expect(stamp2).toBeDefined();
 
-    // Cache hit would produce stamp2 === stamp1.  The mtime-driven
-    // invalidation forces a miss, so stamp2 must reflect the bumped loader.
+    // Cache hit would produce stamp2 === stamp1.  The mtime-driven validity
+    // check forces a miss, so stamp2 must reflect the bumped loader.
     expect(Number(stamp2)).toBeGreaterThanOrEqual(Number(stamp1) + 99_999);
   }, 25_000);
 

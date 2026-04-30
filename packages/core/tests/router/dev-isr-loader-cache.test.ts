@@ -630,3 +630,47 @@ describe("isDevLoaderCacheValid", () => {
     expect(typeof tmpDir).toBe("string");
   });
 });
+
+/**
+ * `computeRouteDependencies` must not produce phantom entries.  Each candidate
+ * extension (`_route.tsx`, `_route.ts`, `_route.jsx`, `_route.js`) is checked,
+ * but only the ones that actually exist on disk get into the dependency list.
+ *
+ * Why this matters: `isDevLoaderCacheValid` treats `statSync` failures as a
+ * conservative "invalid" verdict.  If a non-existent path were stored as a
+ * dependency, every cache read would throw on it and force a miss — silently
+ * killing the dev ISR/SSG cache for every page in a subdirectory.  This test
+ * is the regression guard for that footgun.
+ */
+import { existsSync as fileExistsSync } from "node:fs";
+
+import { computeRouteDependencies } from "../../src/router";
+
+describe("computeRouteDependencies", () => {
+  test("only returns paths that exist on disk for nested routes", () => {
+    // The `nested/deep` fixture has exactly ONE `_route.tsx` per intermediate
+    // directory — the .ts / .jsx / .js variants are absent.  The current
+    // implementation pushes ALL four candidates which would invalidate the
+    // cache permanently; this test pins down "only existing files".
+    const pagesDir = join(import.meta.dirname, "../fixtures/pages");
+    const pagePath = join(pagesDir, "nested/deep/index.tsx");
+    const rootPath = join(pagesDir, "root.tsx");
+
+    const deps = computeRouteDependencies(pagePath, rootPath);
+
+    for (const dep of deps) {
+      expect(fileExistsSync(dep)).toBe(true);
+    }
+    // Sanity: page + root + 2 intermediate _route.tsx (nested + nested/deep).
+    expect(deps).toHaveLength(4);
+  });
+
+  test("page at the pages root has only the page and root files as deps", () => {
+    const pagesDir = join(import.meta.dirname, "../fixtures/pages");
+    const pagePath = join(pagesDir, "isr-page.tsx");
+    const rootPath = join(pagesDir, "root.tsx");
+
+    const deps = computeRouteDependencies(pagePath, rootPath);
+    expect(deps).toEqual([pagePath, rootPath]);
+  });
+});
