@@ -123,7 +123,8 @@ describe("dev ISR loader cache", () => {
 
       // The cache entry must record the page file as a dependency so an edit
       // to that file can invalidate it.  Root.tsx is also part of the chain.
-      const cached = getDevISRLoaderCache("/isr-page");
+      const isrCacheKey = `${result.root.path}:/isr-page`;
+      const cached = getDevISRLoaderCache(isrCacheKey);
       expect(cached).toBeDefined();
       expect(cached?.dependencies).toContain(isrRoute.path);
       expect(cached?.dependencies).toContain(result.root.path);
@@ -131,7 +132,7 @@ describe("dev ISR loader cache", () => {
       // Simulate the dev-page-plugin re-evaluating the page file.  The cache
       // must drop the dependent entry — no entry should remain for the key.
       invalidateDevLoaderCacheBySource(isrRoute.path);
-      expect(getDevISRLoaderCache("/isr-page")).toBeUndefined();
+      expect(getDevISRLoaderCache(isrCacheKey)).toBeUndefined();
 
       // Sleep so a fresh loader call produces a strictly greater timestamp.
       await Bun.sleep(20);
@@ -169,13 +170,14 @@ describe("dev ISR loader cache", () => {
       const html1 = await res1.text();
       const ts1 = html1.match(TIMESTAMP_RE)?.[1];
       expect(ts1).toBeDefined();
-      expect(getDevISRLoaderCache("/isr-page")).toBeDefined();
+      const isrCacheKey = `${result.root.path}:/isr-page`;
+      expect(getDevISRLoaderCache(isrCacheKey)).toBeDefined();
 
       // Pretend an unrelated file in the same `pages` directory was edited.
       // It is NOT part of the /isr-page dependency chain, so the entry must
       // survive.
       invalidateDevLoaderCacheBySource("/some/unrelated/file.tsx");
-      expect(getDevISRLoaderCache("/isr-page")).toBeDefined();
+      expect(getDevISRLoaderCache(isrCacheKey)).toBeDefined();
 
       await Bun.sleep(20);
 
@@ -232,7 +234,7 @@ describe("dev ISR loader cache", () => {
       expect(body).toHaveLength(1);
 
       const [entry] = body;
-      expect(entry?.key).toBe("/isr-page");
+      expect(entry?.key).toBe(`${result.root.path}:/isr-page`);
       expect(entry?.mode).toBe("isr");
       expect(entry?.isFresh).toBe(true);
       expect(entry?.revalidate).toBe(60);
@@ -295,7 +297,8 @@ describe("dev SSG loader cache", () => {
 
       // The cache entry MUST be tagged as ssg (not isr) so the inspector and
       // invalidation paths surface the right kind.
-      const cached = getDevSSGLoaderCache("/ssg-loader-page");
+      const ssgCacheKey = `${result.root.path}:/ssg-loader-page`;
+      const cached = getDevSSGLoaderCache(ssgCacheKey);
       expect(cached?.mode).toBe("ssg");
       // SSG entries are forever-fresh (until source invalidation).
       expect(cached?.revalidate).toBe(Number.POSITIVE_INFINITY);
@@ -331,7 +334,8 @@ describe("dev SSG loader cache", () => {
 
       // Dependency chain must include the page file and root.tsx so an edit
       // to either invalidates the entry.
-      const cached = getDevSSGLoaderCache("/ssg-loader-page");
+      const ssgCacheKey = `${result.root.path}:/ssg-loader-page`;
+      const cached = getDevSSGLoaderCache(ssgCacheKey);
       expect(cached).toBeDefined();
       expect(cached?.dependencies).toContain(ssgRoute.path);
       expect(cached?.dependencies).toContain(result.root.path);
@@ -339,7 +343,7 @@ describe("dev SSG loader cache", () => {
       // Simulate the dev-page-plugin re-evaluating the page file.
       const outcome = invalidateDevLoaderCacheBySource(ssgRoute.path);
       expect(outcome.ssg).toBe(1);
-      expect(getDevSSGLoaderCache("/ssg-loader-page")).toBeUndefined();
+      expect(getDevSSGLoaderCache(ssgCacheKey)).toBeUndefined();
 
       // Sleep so a fresh loader call produces a strictly greater timestamp.
       await Bun.sleep(20);
