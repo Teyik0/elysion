@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
 import { computeBoardStats, getBoardData } from "@/api/modules/boards/service";
 import { apiClient } from "@/lib/api";
@@ -136,17 +136,8 @@ export default route.page({
       setPrevBoardId(params.boardId);
       setStats(initialStats);
       setIsRefreshing(false);
+      refetchTokenRef.current += 1;
     }
-
-    // Bump the token in a committed phase so discarded renders don't desync it.
-    const hasMountedRef = useRef(false);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: token must bump on board change
-    useEffect(() => {
-      if (hasMountedRef.current) {
-        refetchTokenRef.current += 1;
-      }
-      hasMountedRef.current = true;
-    }, [params.boardId]);
 
     const onMutation = useCallback(async () => {
       refetchTokenRef.current += 1;
