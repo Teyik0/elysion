@@ -520,7 +520,7 @@ function isResolvedRouteModuleCandidate(
   imported: Record<string, unknown>,
   ctx: CompileContext | null
 ): boolean {
-  if (existsSync(layoutPath) || Boolean(ctx?.modules[layoutPath])) {
+  if (existsSync(layoutPath) || ctx?.modules[layoutPath]) {
     return true;
   }
 
