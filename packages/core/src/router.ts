@@ -727,7 +727,7 @@ async function renderDevISRWithLoaderCache(
   ctx: Context,
   root: RootLayout
 ): Promise<Response> {
-  const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
+  const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
   const cached = getDevISRLoaderCache(cacheKey);
 
   if (cached && isDevLoaderCacheValid(cached)) {
@@ -767,7 +767,7 @@ async function renderDevSSGWithLoaderCache(
   ctx: Context,
   root: RootLayout
 ): Promise<Response> {
-  const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
+  const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
   const cached = getDevSSGLoaderCache(cacheKey);
 
   if (cached && isDevLoaderCacheValid(cached)) {

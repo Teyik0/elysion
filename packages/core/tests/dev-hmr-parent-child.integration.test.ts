@@ -511,6 +511,13 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       );
     };
 
+    // Rewarm the ISR cache so the entry is fresh for the mtime-check
+    // code path we want to exercise.  Without this, the 60 s TTL from
+    // test #7 may have expired by the time this test runs, turning the
+    // intended cache-hit-into-mtime-invalidation into a plain miss.
+    const warmRes = await fetch(`http://localhost:${port}/blog/isr-stamp`);
+    expect(warmRes.status).toBe(200);
+
     // Step 1: bump root.tsx to v1.  Bun --hot picks the change up
     // asynchronously; we poll the next request until the new layout
     // (with `data-hello`) shows up.
