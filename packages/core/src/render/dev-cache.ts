@@ -16,6 +16,8 @@
  * surface both modes uniformly without union juggling.
  */
 
+import { statSync } from "node:fs";
+
 export interface DevLoaderCacheEntry {
   /**
    * Source files this entry depends on (absolute paths).  Editing any of
@@ -159,6 +161,48 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
  */
 export function isDevLoaderCacheFresh(entry: DevLoaderCacheEntry): boolean {
   return Date.now() - entry.generatedAt < entry.revalidate * 1000;
+}
+
+/**
+ * Pre-read validity check used by `renderDevISRWithLoaderCache` and
+ * `renderDevSSGWithLoaderCache`.  Combines two distinct invariants:
+ *
+ *   1. Time-based   — `isDevLoaderCacheFresh(entry)`
+ *   2. Source-based — every file in `entry.dependencies` must have an mtime
+ *                     less than or equal to `entry.generatedAt`
+ *
+ * The mtime check is what closes the gap left by the previous "invalidate in
+ * `onLoad`" approach: a `root.tsx` edit that does NOT trigger Bun's plugin
+ * hooks (because, say, `--hot` decided not to re-evaluate it before the next
+ * page request) is still detected at cache read time.  A fresh `statSync` is
+ * the source of truth — no shared map, no bootstrap problem, no dependency
+ * on plugin invocation order.
+ *
+ * Cost: O(deps) `statSync` per cache hit candidate.  Typical chain is
+ * 2–3 files (page + root + maybe `_route.tsx`), each stat ≈ 5–10 µs on APFS,
+ * so ≈ 15–30 µs per ISR/SSG dev request — negligible vs the 100 ms+ loaders
+ * the cache exists to skip.
+ *
+ * Errors are conservative: if a dep file is missing or unreadable we treat
+ * the entry as invalid and force a re-run.  This handles file deletion,
+ * rename, and transient I/O issues uniformly.
+ */
+export function isDevLoaderCacheValid(entry: DevLoaderCacheEntry): boolean {
+  if (!isDevLoaderCacheFresh(entry)) {
+    return false;
+  }
+  for (const dep of entry.dependencies) {
+    let mtimeMs: number;
+    try {
+      mtimeMs = statSync(dep).mtimeMs;
+    } catch {
+      return false;
+    }
+    if (mtimeMs > entry.generatedAt) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** @internal — exposed for the inspector endpoint. */

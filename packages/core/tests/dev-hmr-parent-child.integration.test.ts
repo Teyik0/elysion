@@ -6,6 +6,8 @@ import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
 /** Matches `data-stamp="<digits>"` in ISR-rendered HTML. */
 const STAMP_ATTR_RE = /data-stamp="(\d+)"/;
+/** Matches `data-hello="<word>"` — used by test #9 to assert root-loader propagation. */
+const HELLO_ATTR_RE = /data-hello="([^"]+)"/;
 
 /**
  * Integration tests for HMR parent-child dependency edge cases.
@@ -24,16 +26,15 @@ const STAMP_ATTR_RE = /data-stamp="(\d+)"/;
  *   BOTH the parent route (`/blog`) AND the child route (`/blog/hello`) on their
  *   respective next SSR cycles — without a server restart.
  *
- * #7 (P2 — Known Limitation): Editing the loader code inside a child ISR page
- *   file does NOT immediately invalidate the dev ISR loader cache for that page.
- *   Page files are imported via the `?furin-server&t=<ts>` virtual namespace;
- *   Bun's workspace `onLoad` hook does NOT fire for this namespace, so
- *   `invalidateDevLoaderCacheBySource` is never called when a page file changes.
- *   The ISR loader cache entry survives until the `revalidate` window expires.
- *   The component markup DOES update (fresh module evaluation via `?t=<ts>`),
- *   but the loader-derived data remains stale.
- *   Fix: wire `fs.watch` on the pages directory to call
- *   `invalidateDevLoaderCacheBySource` when a page file changes.
+ * #7 (P0): Editing the loader code inside a child ISR page file MUST
+ *   invalidate the dev ISR loader cache for that page on the next request.
+ *   Mechanism: `isDevLoaderCacheValid` stat-checks every entry dependency
+ *   against `entry.generatedAt` at cache-read time.  No fs watcher needed.
+ *
+ * #9 (P0): Editing the LOADER in `root.tsx` MUST be reflected on the next
+ *   request to any page whose data depends on the root loader.  This is the
+ *   same mechanism as #7 but exercises the depth-0 (root) edge of the
+ *   dependency chain — the case where the user's actual bug surfaced.
  *
  * Out of scope:
  *   #6 (P1): Client-side SPA prefetch cache invalidation — requires browser
@@ -385,27 +386,28 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     expect(listenCountAfter).toBe(listenCountBefore);
   }, 20_000);
 
-  // ── #7 (P2 — Known Limitation) ────────────────────────────────────────────
+  // ── #7 (P0) ───────────────────────────────────────────────────────────────
 
   /**
-   * KNOWN LIMITATION: editing the loader inside an ISR page file does NOT
-   * immediately invalidate the dev ISR loader cache for that page.
+   * Editing the loader inside an ISR page file MUST invalidate the dev ISR
+   * loader cache before the next request reads it.
    *
-   * Page files travel through the `?furin-server&t=<ts>` virtual namespace.
-   * Bun's workspace `onLoad` hook is scoped to the `furin-server` namespace
-   * and does NOT fire when a page file is modified on disk.  Therefore
-   * `invalidateDevLoaderCacheBySource` is never called, and the cache entry
-   * survives until the `revalidate` window (60 s in this fixture) expires.
+   * Mechanism — pre-read dependency mtime check (`isDevLoaderCacheValid`):
+   *   • Each cache entry stores `dependencies: string[]` (page + every
+   *     `_route.tsx` between page and pages root + `root.tsx`).
+   *   • At cache-read time, every dep is `statSync`-ed and its `mtimeMs` is
+   *     compared to `entry.generatedAt`.  If any dep has been edited since
+   *     the entry was written, the entry is considered invalid and the
+   *     loader chain re-runs.
    *
-   * Observable symptoms:
-   * — The component markup DOES update immediately (fresh `?t=<ts>` evaluation).
-   * — The loader-derived `data-stamp` value stays identical to the first request.
+   * No fs watcher, no shared mtime map, no reliance on plugin onLoad order —
+   * a fresh `statSync` on the request hot path is the source of truth.
    *
-   * Expected fix: add `fs.watch` on the pages directory and call
-   * `invalidateDevLoaderCacheBySource(filePath)` when a page file changes.
-   * At that point the expectation here should change to `Number(stamp2) > Number(stamp1)`.
+   * Public-interface assertion: after editing the loader to return a stamp
+   * bumped by 99999, the next request MUST embed a stamp ≥ stamp1 + 99999.
+   * A cache hit would give stamp2 === stamp1 (the old value).
    */
-  test("#7 (known limitation) — ISR loader cache is NOT immediately invalidated when an ISR page file is edited", async () => {
+  test("#7 — editing an ISR page file invalidates the dev loader cache via mtime check", async () => {
     // Step 1: warm the ISR loader cache for /blog/isr-stamp.
     let html1 = "";
     const ready = await pollUntil(
@@ -458,17 +460,131 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       ].join("\n")
     );
 
-    // Step 4: request #2 — within the revalidate window, so the cache should
-    // still be live. Because workspace.onLoad never fired for this page file,
-    // invalidateDevLoaderCacheBySource was not called, and the entry survives.
+    // Step 4: request #2 — the page file's mtime has changed since the
+    // previous onLoad invocation, so the namespace handler MUST call
+    // `invalidateDevLoaderCacheBySource` before this request reaches the
+    // cache lookup.  The next loader run produces stamp2 = Date.now() + 99999,
+    // which is unambiguously ≥ stamp1 + 99999.
     const res2 = await fetch(`http://localhost:${port}/blog/isr-stamp`);
     expect(res2.status).toBe(200);
     const html2 = await res2.text();
     const stamp2 = html2.match(STAMP_ATTR_RE)?.[1];
     expect(stamp2).toBeDefined();
 
-    // Known limitation: stamp2 equals stamp1 — the cache hit serves the stale
-    // loader data. A cache miss would produce stamp2 ≥ stamp1 + 99999.
-    expect(stamp2).toBe(stamp1);
+    // Cache hit would produce stamp2 === stamp1.  The mtime-driven
+    // invalidation forces a miss, so stamp2 must reflect the bumped loader.
+    expect(Number(stamp2)).toBeGreaterThanOrEqual(Number(stamp1) + 99_999);
+  }, 25_000);
+
+  // ── #9 (P0) — root.tsx loader edits propagate ─────────────────────────────
+
+  /**
+   * Editing the LOADER in `root.tsx` MUST be reflected on the next request
+   * to any page whose data depends on the root loader.  This is the
+   * exact scenario that surfaced the user's bug:
+   *
+   *   1. `root.tsx` exports `loader: () => ({ hello: "v1" })`.
+   *   2. Page renders `<div data-hello={hello}>` from props.
+   *   3. First request → cache populated with `{ hello: "v1" }`.
+   *   4. User edits `root.tsx` → loader returns `{ hello: "v2" }`.
+   *   5. Second request → MUST embed `data-hello="v2"`.
+   *
+   * Without `isDevLoaderCacheValid`, step 5 served stale data because
+   * `root.tsx` is at depth 0 of the dependency chain — neither the page
+   * file's `?furin-server` namespace `onLoad` nor `--hot`'s eager
+   * invalidation reliably flushed the cache before the next read.
+   *
+   * Public-interface assertion: `data-hello` swaps from "v1" → "v2"
+   * across the edit, with the same page URL.  No restart, no reload of
+   * the dev server.
+   */
+  test("#9 — editing root.tsx loader propagates to ISR pages on next request", async () => {
+    // Helper — build a root.tsx whose loader contributes `hello: <value>`.
+    // The layout renders `data-hello` on every response so we can assert
+    // against any registered page.  Adding a new page at runtime would not
+    // work (cf. limitation #8 — `scanPages` runs once at startup).
+    const writeRoot = (helloValue: string): void => {
+      writeAppFile(
+        app.path,
+        "src/pages/root.tsx",
+        [
+          'import { createRoute } from "@teyik0/furin/client";',
+          "",
+          "export const route = createRoute({",
+          `  loader: () => ({ hello: "${helloValue}" }),`,
+          "  layout: ({ children, hello }) => (",
+          '    <div data-root="true" data-hello={hello as string}>',
+          "      {children}",
+          "    </div>",
+          "  ),",
+          "});",
+        ].join("\n")
+      );
+    };
+
+    // Step 1: bump root.tsx to v1.  Bun --hot picks the change up
+    // asynchronously; we poll the next request until the new layout
+    // (with `data-hello`) shows up.
+    writeRoot("v1");
+
+    let html1 = "";
+    const ready = await pollUntil(
+      async () => {
+        try {
+          // /blog/isr-stamp is registered at startup, has mode: "isr", and
+          // its existing cache from test #7 forces the dependency-mtime
+          // check (`isDevLoaderCacheValid`) to fire — the exact code path
+          // we want to exercise.
+          const r = await fetch(`http://localhost:${port}/blog/isr-stamp`);
+          if (!r.ok) {
+            return false;
+          }
+          html1 = await r.text();
+          return html1.match(HELLO_ATTR_RE)?.[1] === "v1";
+        } catch {
+          return false;
+        }
+      },
+      40,
+      250
+    );
+    expect(ready).toBe(true);
+
+    const hello1 = html1.match(HELLO_ATTR_RE)?.[1];
+    expect(hello1).toBe("v1");
+
+    // Sleep so the next mtime is strictly greater than the current
+    // entry's `generatedAt` — APFS sub-millisecond resolution makes this
+    // virtually instant, but we want zero timing ambiguity.
+    await Bun.sleep(20);
+
+    // Step 2: edit root.tsx — loader now returns hello: "v2".
+    writeRoot("v2");
+
+    // Step 3: the next request MUST observe `data-hello="v2"`.
+    // Failure mode (= the user's bug) is a cache hit serving stale data,
+    // so `data-hello` would stay "v1".  We poll briefly to give Bun --hot
+    // time to settle the workspace re-evaluation, but the assertion is
+    // unconditional: `v2` is the only acceptable result.
+    let html2 = "";
+    await pollUntil(
+      async () => {
+        try {
+          const r = await fetch(`http://localhost:${port}/blog/isr-stamp`);
+          if (!r.ok) {
+            return false;
+          }
+          html2 = await r.text();
+          return html2.match(HELLO_ATTR_RE)?.[1] === "v2";
+        } catch {
+          return false;
+        }
+      },
+      20,
+      250
+    );
+
+    const hello2 = html2.match(HELLO_ATTR_RE)?.[1];
+    expect(hello2).toBe("v2");
   }, 25_000);
 });

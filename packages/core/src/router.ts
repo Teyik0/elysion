@@ -12,7 +12,7 @@ import {
   type DevLoaderCacheEntry,
   getDevISRLoaderCache,
   getDevSSGLoaderCache,
-  isDevLoaderCacheFresh,
+  isDevLoaderCacheValid,
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "./render/dev-cache.ts";
@@ -656,6 +656,20 @@ async function handleDevRequest(
     if (page && isFurinPage(page)) {
       const chain = collectRouteChainFromRoute(page._route as RuntimeRoute);
       await refreshLayoutChain(chain, route.path, root.path, undefined);
+
+      // Patch chain[0] (the root) with the freshly-imported root's loader
+      // and layout.  `refreshLayoutChain` deliberately starts at chainIdx=1
+      // because the root is already loaded separately above; without this
+      // patch, chain[0] points to whatever object `_route.parent` captured
+      // at _route's first evaluation — a STALE reference if Bun --hot
+      // re-evaluated root.tsx without propagating the re-evaluation to
+      // _route.tsx (the standard ESM behaviour).  Mirroring the pattern
+      // used by patchRouteEntryFromFreshModule.
+      if (chain[0] && currentRoot.route) {
+        chain[0].layout = currentRoot.route.layout;
+        chain[0].loader = currentRoot.route.loader;
+      }
+
       const refreshedRoute: ResolvedRoute = { ...route, page, routeChain: chain };
 
       // Live ISR — the loader chain is short-circuited by the dev cache when
@@ -702,7 +716,7 @@ async function renderDevISRWithLoaderCache(
   const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
   const cached = getDevISRLoaderCache(cacheKey);
 
-  if (cached && isDevLoaderCacheFresh(cached)) {
+  if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
       data: cached.loaderData,
@@ -742,7 +756,7 @@ async function renderDevSSGWithLoaderCache(
   const cacheKey = resolvePath(route.pattern, ctx.params ?? {});
   const cached = getDevSSGLoaderCache(cacheKey);
 
-  if (cached && isDevLoaderCacheFresh(cached)) {
+  if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
       data: cached.loaderData,
