@@ -217,7 +217,7 @@ registerCacheInvalidator(ssgRouteCache);
  * revalidatePath("/blog", "layout");          // invalidate /blog + all children
  * ```
  */
-export function revalidatePath(path: string, type: RevalidateType): boolean {
+export function revalidatePath(path: string, type: RevalidateType = "page"): boolean {
   // Queue for client-side notification via X-Furin-Revalidate header
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
