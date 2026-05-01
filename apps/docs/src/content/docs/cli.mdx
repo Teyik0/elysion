@@ -1,0 +1,125 @@
+# CLI Reference
+
+Furin ships with a minimal CLI for production builds. In development you use `bun dev` (Bun's built-in dev server) — no separate Furin CLI needed.
+
+---
+
+## `furin build`
+
+Build the app for production.
+
+```bash
+bunx furin build [options]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--target` | `"bun" \| "static" \| "node" \| "vercel" \| "cloudflare" \| "all"` | `"bun"` | Build target |
+| `--pagesDir` | `string` | from config | Override pages directory |
+| `--config` | `string` | `furin.config.ts` | Config file path |
+| `--compile` | `"server" \| "embed"` | from config | Compile to native binary |
+
+### Examples
+
+```bash
+# Default Bun target
+bunx furin build
+
+# Static export for GitHub Pages
+bunx furin build --target static
+
+# Self-contained binary
+bunx furin build --compile embed
+
+# Multiple targets
+bunx furin build --target all
+
+# Custom config
+bunx furin build --config ./furin.production.config.ts
+```
+
+### Target details
+
+#### `bun` (default)
+
+Produces a server bundle and client assets under `.furin/build/bun/`.
+
+```
+.furin/build/bun/
+├── server.js          # Server entry
+└── client/
+    ├── _hydrate-*.js  # Hydration bundle (content-hashed)
+    └── index-*.js     # Page chunks (content-hashed)
+```
+
+Run with:
+
+```bash
+bun .furin/build/bun/server.js
+```
+
+#### `static`
+
+Pre-renders every SSG-compatible route to HTML files.
+
+```
+.furin/build/static/
+└── dist/
+    ├── index.html
+    ├── blog/
+    │   └── hello-world/
+    │       └── index.html
+    └── 404.html
+```
+
+SSR and ISR routes cause a build error by default (use `static.onSSR: "skip"` to omit them).
+
+#### `node`, `vercel`, `cloudflare`
+
+Planned targets. Config types exist but builders are not yet wired.
+
+---
+
+## `furin help`
+
+Show usage information.
+
+```bash
+bunx furin help
+```
+
+---
+
+## Package scripts
+
+The recommended `package.json` setup:
+
+```json
+{
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "build": "bunx furin build",
+    "build:static": "bunx furin build --target static",
+    "start": "bun .furin/build/bun/server.js"
+  }
+}
+```
+
+---
+
+## Dev command
+
+Development does **not** use the Furin CLI. Use Bun's native dev server:
+
+```bash
+bun dev
+```
+
+This runs your `src/server.ts` with Bun's `--hot` flag, giving you:
+- React Fast Refresh
+- Server-side hot reload
+- File-system based routing updates
+
+See [Dev Mode HMR](/docs/dev-hmr) for the full internals.

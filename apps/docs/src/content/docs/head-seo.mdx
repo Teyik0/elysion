@@ -1,0 +1,181 @@
+# Head & SEO
+
+Furin's `head()` API lets you control `<head>` content per page and route. It runs on the server during SSR/SSG/ISR and is re-evaluated during SPA navigation so the document title and meta tags stay correct.
+
+---
+
+## Basic usage
+
+Define `head()` on a page or route:
+
+```tsx
+// src/pages/blog/[slug].tsx
+export default route.page({
+  head: ({ post }) => ({
+    meta: [
+      { title: post.title },
+      { name: "description", content: post.excerpt },
+    ],
+  }),
+  component: ({ post }) => <article>{post.title}</article>,
+});
+```
+
+The `head()` function receives the same props as the page component (loader data, params, query).
+
+---
+
+## `MetaDescriptor`
+
+The `meta` array accepts the following descriptor shapes:
+
+### Title
+
+```ts
+{ title: "My Page" }
+```
+
+Renders `<title>My Page</title>`.
+
+### Charset
+
+```ts
+{ charSet: "utf-8" }
+```
+
+Renders `<meta charset="utf-8" />`.
+
+### Standard meta tag
+
+```ts
+{ name: "description", content: "A great page" }
+```
+
+Renders `<meta name="description" content="A great page" />`.
+
+### Open Graph / Twitter Cards
+
+```ts
+{ property: "og:title", content: "My Page" }
+```
+
+Renders `<meta property="og:title" content="My Page" />`.
+
+### HTTP equiv
+
+```ts
+{ httpEquiv: "refresh", content: "30" }
+```
+
+Renders `<meta http-equiv="refresh" content="30" />`.
+
+### JSON-LD
+
+```ts
+{ "script:ld+json": {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "My Page",
+  }}
+```
+
+Renders `<script type="application/ld+json">{...}</script>` with safe JSON encoding.
+
+### Custom tags
+
+```ts
+{ tagName: "meta", "data-custom": "value" }
+```
+
+Renders `<meta data-custom="value" />`.
+
+---
+
+## Links
+
+Add `<link>` tags for stylesheets, canonical URLs, favicons, or preload hints:
+
+```ts
+head: () => ({
+  links: [
+    { rel: "canonical", href: "https://example.com/blog/my-post" },
+    { rel: "stylesheet", href: "/custom.css" },
+    { rel: "icon", href: "/favicon.ico" },
+  ],
+});
+```
+
+---
+
+## Inline scripts and styles
+
+You can inject inline scripts and styles. **Security warning:** `children` is injected as raw HTML — never pass user-controlled or loader-derived data without sanitisation.
+
+```ts
+head: () => ({
+  scripts: [
+    { type: "module", children: `console.log("page loaded");` },
+  ],
+  styles: [
+    { children: `body { background: #fafafa; }` },
+  ],
+});
+```
+
+---
+
+## SPA navigation
+
+During client-side navigation, Furin extracts the new `head()` result, updates `document.title`, and re-renders the `<head>` content. This ensures:
+
+- Title changes reflect in the browser tab
+- Meta tags update for social sharing previews
+- Analytics scripts fire correctly
+
+```tsx
+// src/pages/root.tsx
+export const route = createRoute({
+  layout: ({ children }) => (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Page-specific head is injected here automatically */}
+      </head>
+      <body>{children}</body>
+    </html>
+  ),
+});
+```
+
+---
+
+## SEO checklist
+
+A complete SEO setup for a blog post:
+
+```tsx
+export default route.page({
+  head: ({ post }) => ({
+    meta: [
+      { title: post.title },
+      { name: "description", content: post.excerpt },
+      { property: "og:title", content: post.title },
+      { property: "og:description", content: post.excerpt },
+      { property: "og:type", content: "article" },
+      { property: "og:url", content: `https://example.com/blog/${post.slug}` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { "script:ld+json": {
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          headline: post.title,
+          datePublished: post.publishedAt,
+        }},
+    ],
+    links: [
+      { rel: "canonical", href: `https://example.com/blog/${post.slug}` },
+    ],
+  }),
+  // ...
+});
+```

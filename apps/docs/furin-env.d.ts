@@ -8,13 +8,17 @@ declare module "@teyik0/furin/link" {
     "/docs": { search?: never };
     "/docs/api-routes": { search?: never };
     "/docs/caching": { search?: never };
+    "/docs/cli": { search?: never };
     "/docs/comparison": { search?: never };
+    "/docs/configuration": { search?: never };
     "/docs/data-loading": { search?: never };
     "/docs/deployment": { search?: never };
     "/docs/dev-hmr": { search?: never };
     "/docs/error-handling": { search?: never };
     "/docs/getting-started": { search?: never };
+    "/docs/head-seo": { search?: never };
     "/docs/layouts": { search?: never };
+    "/docs/link-navigation": { search?: never };
     "/docs/logging": { search?: never };
     "/docs/plugins": { search?: never };
     "/docs/rendering": { search?: never };

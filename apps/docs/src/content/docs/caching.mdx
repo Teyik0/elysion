@@ -248,3 +248,17 @@ applyRevalidateHeader(res.headers, (path, type) => {
 ```
 
 This is the same function used internally by `RouterProvider`'s `window.fetch` interceptor.
+
+---
+
+## Client-side auto-refresh
+
+`RouterProvider` intercepts **all** `window.fetch` calls. When any response includes `X-Furin-Revalidate` and the current page is targeted, the router can automatically re-fetch the current page — even for non-navigation fetches like form submissions or API calls.
+
+This is controlled by the `autoRefresh` prop (default `true`):
+
+```tsx
+<RouterProvider autoRefresh={true} />
+```
+
+Set to `false` to opt out and call `router.refresh()` manually instead.
