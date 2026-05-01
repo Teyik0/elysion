@@ -9,6 +9,7 @@ export const boardPlugin = new Elysia()
     ({ body }) => {
       const board = createBoard(body.name);
       revalidatePath("/", "page");
+      revalidatePath("/board", "layout");
       return board; // Return the created board as JSON; the client navigates via SPA
     },
     { body: t.Object({ name: t.String({ minLength: 1 }) }) }
@@ -19,6 +20,7 @@ export const boardPlugin = new Elysia()
       return status("Not Found", "Not found");
     }
     revalidatePath("/", "page");
+    revalidatePath("/board", "layout");
     return { ok: true };
   })
   .get("/boards/:boardId", ({ params, status }) => {

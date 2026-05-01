@@ -1,3 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createLogger } from "../context-logger.ts";
+import { type Cache, createRouteCache, type RevalidateType } from "./route-cache.ts";
+
+export type { Cache, CacheInvalidationResult, RevalidateType } from "./route-cache.ts";
+
 export interface ISRCacheEntry {
   generatedAt: number;
   html: string;
@@ -15,21 +21,17 @@ const MAX_ISR_CACHE_SIZE = 1000;
 /** Maximum number of SSG cache entries before LRU eviction kicks in. */
 const MAX_SSG_CACHE_SIZE = 1000;
 
-export const isrCache = new Map<string, ISRCacheEntry>();
-export const ssgCache = new Map<string, SsgCacheEntry>();
+const isrRouteCache = createRouteCache<ISRCacheEntry>({
+  maxSize: MAX_ISR_CACHE_SIZE,
+  name: "render:isr-html",
+});
+const ssgRouteCache = createRouteCache<SsgCacheEntry>({
+  maxSize: MAX_SSG_CACHE_SIZE,
+  name: "render:ssg-html",
+});
 
-/**
- * Evicts the oldest entry from a Map when its size exceeds the given limit.
- * JS Maps maintain insertion order, so the first key is always the oldest.
- */
-function evictOldest<V>(map: Map<string, V>, maxSize: number): void {
-  if (map.size > maxSize) {
-    const oldest = map.keys().next().value;
-    if (oldest !== undefined) {
-      map.delete(oldest);
-    }
-  }
-}
+export const isrCache = isrRouteCache.store;
+export const ssgCache = ssgRouteCache.store;
 
 /**
  * Gets an ISR cache entry and refreshes its recency so it is treated as
@@ -37,13 +39,7 @@ function evictOldest<V>(map: Map<string, V>, maxSize: number): void {
  * was written early would be evicted before a cold entry written later.
  */
 export function getISRCache(key: string): ISRCacheEntry | undefined {
-  const entry = isrCache.get(key);
-  if (entry !== undefined) {
-    // Re-insert at the end to mark as most-recently used
-    isrCache.delete(key);
-    isrCache.set(key, entry);
-  }
-  return entry;
+  return isrRouteCache.get(key);
 }
 
 /**
@@ -51,27 +47,17 @@ export function getISRCache(key: string): ISRCacheEntry | undefined {
  * recently used by the LRU eviction policy.
  */
 export function getSSGCache(key: string): SsgCacheEntry | undefined {
-  const entry = ssgCache.get(key);
-  if (entry !== undefined) {
-    ssgCache.delete(key);
-    ssgCache.set(key, entry);
-  }
-  return entry;
+  return ssgRouteCache.get(key);
 }
 
 /** Sets an ISR cache entry with LRU eviction. */
 export function setISRCache(key: string, entry: ISRCacheEntry): void {
-  // Delete first to re-insert at the end (refresh insertion order for LRU)
-  isrCache.delete(key);
-  isrCache.set(key, entry);
-  evictOldest(isrCache, MAX_ISR_CACHE_SIZE);
+  isrRouteCache.set(key, entry);
 }
 
 /** Sets an SSG cache entry with LRU eviction. */
 export function setSSGCache(key: string, entry: SsgCacheEntry): void {
-  ssgCache.delete(key);
-  ssgCache.set(key, entry);
-  evictOldest(ssgCache, MAX_SSG_CACHE_SIZE);
+  ssgRouteCache.set(key, entry);
 }
 
 // ── Build ID ─────────────────────────────────────────────────────────────────
@@ -88,7 +74,6 @@ export function getBuildId(): string {
   return _buildId;
 }
 
-import { AsyncLocalStorage } from "node:async_hooks";
 // ── Pending invalidations (server → client bridge) ───────────────────────────
 //
 // Per-request scoping via AsyncLocalStorage: furin wraps each request's full
@@ -96,7 +81,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // that `revalidatePath()` and `consumePendingInvalidations()` share an isolated
 // Set per request. The global `_globalPendingInvalidations` is a fallback for
 // calls made outside a request context (e.g. scripts, tests, warmup code).
-import { createLogger } from "../context-logger.ts";
 
 const _requestInvalidationScope = new AsyncLocalStorage<Set<string>>();
 const _globalPendingInvalidations = new Set<string>();
@@ -177,6 +161,36 @@ export function callCachePurger(paths: string[]): void {
   });
 }
 
+// ── Path cache invalidators ──────────────────────────────────────────────────
+
+export type CacheInvalidator = Pick<Cache<unknown>, "invalidatePath" | "name">;
+
+const _cacheInvalidators = new Map<string, CacheInvalidator>();
+
+/**
+ * Register a cache invalidator that participates in `revalidatePath()`.
+ *
+ * Internal extension point for render caches that are not backed by the
+ * production HTML maps. The returned function unregisters the same instance.
+ *
+ * @internal
+ */
+export function registerCacheInvalidator(invalidator: CacheInvalidator): () => void {
+  _cacheInvalidators.set(invalidator.name, invalidator);
+  return () => {
+    if (_cacheInvalidators.get(invalidator.name) === invalidator) {
+      _cacheInvalidators.delete(invalidator.name);
+    }
+  };
+}
+
+function dedupePaths(paths: string[]): string[] {
+  return [...new Set(paths)];
+}
+
+registerCacheInvalidator(isrRouteCache);
+registerCacheInvalidator(ssgRouteCache);
+
 // ── revalidatePath ───────────────────────────────────────────────────────────
 
 /**
@@ -203,41 +217,19 @@ export function callCachePurger(paths: string[]): void {
  * revalidatePath("/blog", "layout");          // invalidate /blog + all children
  * ```
  */
-export function revalidatePath(path: string, type: "page" | "layout" = "page"): boolean {
+export function revalidatePath(path: string, type: RevalidateType = "page"): boolean {
   // Queue for client-side notification via X-Furin-Revalidate header
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
   let deleted = false;
-
-  if (type === "page") {
-    deleted = isrCache.delete(path) || deleted;
-    deleted = ssgCache.delete(path) || deleted;
-    callCachePurger([path]);
-    return deleted;
-  }
-
-  // layout: prefix match — invalidate the path itself + all nested children
-  const prefix = path === "/" || path.endsWith("/") ? path : `${path}/`;
   const purgedPaths: string[] = [];
-
-  for (const key of isrCache.keys()) {
-    if (key === path || key.startsWith(prefix)) {
-      isrCache.delete(key);
-      deleted = true;
-      purgedPaths.push(key);
-    }
-  }
-  for (const key of ssgCache.keys()) {
-    if (key === path || key.startsWith(prefix)) {
-      ssgCache.delete(key);
-      deleted = true;
-      if (!purgedPaths.includes(key)) {
-        purgedPaths.push(key);
-      }
-    }
+  for (const invalidator of _cacheInvalidators.values()) {
+    const result = invalidator.invalidatePath(path, type);
+    deleted = result.deleted || deleted;
+    purgedPaths.push(...result.purgedPaths);
   }
 
-  callCachePurger(purgedPaths.length > 0 ? purgedPaths : [path]);
+  callCachePurger(purgedPaths.length > 0 ? dedupePaths(purgedPaths) : [path]);
   return deleted;
 }
 

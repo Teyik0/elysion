@@ -42,7 +42,29 @@ import {
   setSSGCache,
   ssgCache,
 } from "../src/render/cache";
+import {
+  __resetDevLoaderCacheState,
+  type DevLoaderCacheEntry,
+  getDevISRLoaderCache,
+  getDevSSGLoaderCache,
+  invalidateDevLoaderCacheByPath,
+  invalidateDevLoaderCacheBySource,
+  setDevISRLoaderCache,
+  setDevSSGLoaderCache,
+} from "../src/render/dev-cache";
 import { __setDevMode } from "../src/runtime-env";
+
+function devEntry(overrides: Partial<DevLoaderCacheEntry>): DevLoaderCacheEntry {
+  return {
+    dependencies: [],
+    generatedAt: Date.now(),
+    headers: {},
+    loaderData: {},
+    mode: "isr",
+    revalidate: 60,
+    ...overrides,
+  };
+}
 
 const _originalDevMode = process.env.NODE_ENV !== "production";
 
@@ -56,6 +78,7 @@ afterAll(() => {
 
 afterEach(() => {
   __resetCacheState();
+  __resetDevLoaderCacheState();
 });
 
 // ── Bullet 1: revalidatePath("page") evicts ISR cache ─────────────────────────
@@ -447,5 +470,103 @@ describe("_runWithRequestInvalidationScope", () => {
     expect(result.inner).not.toContain("/outer");
     expect(result.outer).toContain("/outer");
     expect(result.outer).not.toContain("/inner");
+  });
+});
+
+// ── Bullet 8: revalidatePath also clears the dev loader cache ────────────────
+//
+// In dev mode, ISR/SSG do NOT use the production html caches (`isrCache` /
+// `ssgCache`). They use the loader-data caches in dev-cache.ts, keyed by
+// `${rootPath}:${urlPath}`. revalidatePath() must invalidate THOSE entries too,
+// otherwise dev users see stale data after mutations until the revalidate
+// window expires naturally — making `revalidatePath` look broken in dev.
+
+describe("revalidatePath dev loader cache eviction", () => {
+  test("revalidatePath('/', 'page') drops dev ISR entries with matching URL path", () => {
+    const rootPath = "/Users/me/app/src/pages";
+    const key = `${rootPath}:/`;
+    setDevISRLoaderCache(key, devEntry({ loaderData: { boards: [] } }));
+    expect(getDevISRLoaderCache(key)).toBeDefined();
+
+    revalidatePath("/", "page");
+
+    expect(getDevISRLoaderCache(key)).toBeUndefined();
+  });
+
+  test("revalidatePath('/blog/post', 'page') leaves unrelated dev entries intact", () => {
+    const rootPath = "/Users/me/app/src/pages";
+    setDevISRLoaderCache(`${rootPath}:/blog/post`, devEntry({}));
+    setDevISRLoaderCache(`${rootPath}:/`, devEntry({}));
+    setDevISRLoaderCache(`${rootPath}:/blog/other`, devEntry({}));
+
+    revalidatePath("/blog/post", "page");
+
+    expect(getDevISRLoaderCache(`${rootPath}:/blog/post`)).toBeUndefined();
+    expect(getDevISRLoaderCache(`${rootPath}:/`)).toBeDefined();
+    expect(getDevISRLoaderCache(`${rootPath}:/blog/other`)).toBeDefined();
+  });
+
+  test("revalidatePath('/blog', 'layout') drops the path itself and every descendant", () => {
+    const rootPath = "/Users/me/app/src/pages";
+    setDevISRLoaderCache(`${rootPath}:/blog`, devEntry({}));
+    setDevISRLoaderCache(`${rootPath}:/blog/post-1`, devEntry({}));
+    setDevISRLoaderCache(`${rootPath}:/blog/post-2`, devEntry({}));
+    setDevISRLoaderCache(`${rootPath}:/other`, devEntry({}));
+
+    revalidatePath("/blog", "layout");
+
+    expect(getDevISRLoaderCache(`${rootPath}:/blog`)).toBeUndefined();
+    expect(getDevISRLoaderCache(`${rootPath}:/blog/post-1`)).toBeUndefined();
+    expect(getDevISRLoaderCache(`${rootPath}:/blog/post-2`)).toBeUndefined();
+    expect(getDevISRLoaderCache(`${rootPath}:/other`)).toBeDefined();
+  });
+
+  test("revalidatePath also clears matching dev SSG entries (symmetry with ISR)", () => {
+    const rootPath = "/Users/me/app/src/pages";
+    setDevSSGLoaderCache(`${rootPath}:/about`, devEntry({ mode: "ssg" }));
+    setDevSSGLoaderCache(`${rootPath}:/contact`, devEntry({ mode: "ssg" }));
+
+    revalidatePath("/about", "page");
+
+    expect(getDevSSGLoaderCache(`${rootPath}:/about`)).toBeUndefined();
+    expect(getDevSSGLoaderCache(`${rootPath}:/contact`)).toBeDefined();
+  });
+
+  test("handles Windows-style rootPath (contains 'C:/' early in the key)", () => {
+    // Cache keys are `${rootPath}:${urlPath}`. On Windows the rootPath itself
+    // contains `:/` after the drive letter. The extractor must use the LAST
+    // ":/" as the boundary to find the URL path correctly.
+    const winRootPath = "C:/Users/me/app/src/pages";
+    const key = `${winRootPath}:/blog/post`;
+    setDevISRLoaderCache(key, devEntry({}));
+    setDevISRLoaderCache(`${winRootPath}:/other`, devEntry({}));
+
+    revalidatePath("/blog/post", "page");
+
+    expect(getDevISRLoaderCache(key)).toBeUndefined();
+    expect(getDevISRLoaderCache(`${winRootPath}:/other`)).toBeDefined();
+  });
+
+  test("direct dev path invalidation reports cleared cache keys and cleans dependency indexes", () => {
+    const rootPath = "/Users/me/app/src/pages";
+    const dep = "/Users/me/app/src/pages/blog/post.tsx";
+    const isrKey = `${rootPath}:/blog/post`;
+    const ssgKey = `${rootPath}:/blog/post-static`;
+    setDevISRLoaderCache(isrKey, devEntry({ dependencies: [dep] }));
+    setDevSSGLoaderCache(ssgKey, devEntry({ dependencies: [dep], mode: "ssg" }));
+
+    const result = invalidateDevLoaderCacheByPath("/blog", "layout");
+
+    expect(result).toEqual({ cleared: [isrKey, ssgKey], isr: 1, ssg: 1 });
+    expect(invalidateDevLoaderCacheBySource(dep)).toEqual({ cleared: [], isr: 0, ssg: 0 });
+  });
+
+  test("direct dev path invalidation ignores malformed cache keys defensively", () => {
+    setDevISRLoaderCache("not-a-route-key", devEntry({}));
+
+    const result = invalidateDevLoaderCacheByPath("/blog/post", "page");
+
+    expect(result).toEqual({ cleared: [], isr: 0, ssg: 0 });
+    expect(getDevISRLoaderCache("not-a-route-key")).toBeDefined();
   });
 });
