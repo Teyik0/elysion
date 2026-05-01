@@ -213,11 +213,11 @@ registerCacheInvalidator(ssgRouteCache);
  * // In an API route or webhook handler:
  * import { revalidatePath } from "@teyik0/furin";
  *
- * revalidatePath("/blog/my-post");            // invalidate a single page
+ * revalidatePath("/blog/my-post", "page");    // invalidate a single page
  * revalidatePath("/blog", "layout");          // invalidate /blog + all children
  * ```
  */
-export function revalidatePath(path: string, type: RevalidateType = "page"): boolean {
+export function revalidatePath(path: string, type: RevalidateType): boolean {
   // Queue for client-side notification via X-Furin-Revalidate header
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
@@ -240,4 +240,7 @@ export function __resetCacheState(): void {
   _buildId = "";
   _globalPendingInvalidations.clear();
   _cachePurger = null;
+  _cacheInvalidators.clear();
+  registerCacheInvalidator(isrRouteCache);
+  registerCacheInvalidator(ssgRouteCache);
 }

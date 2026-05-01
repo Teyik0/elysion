@@ -24,8 +24,8 @@ export const route = createRoute({
         </div>
 
         <div className="grid gap-10 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_15rem]">
-          <aside className="hidden lg:block">
-            <nav className="sticky top-24 space-y-6">
+          <aside className="sticky top-24 hidden max-h-[calc(100vh-6rem)] overflow-y-auto [scrollbar-width:none] lg:block [&::-webkit-scrollbar]:hidden">
+            <nav className="space-y-6">
               {DOCS_NAV.map((section) => (
                 <div key={section.title}>
                   <p className="mb-2 font-semibold text-foreground text-xs uppercase tracking-[0.24em]">
@@ -35,11 +35,19 @@ export const route = createRoute({
                     {section.items.map((item) => (
                       <li key={item.href}>
                         <Link
-                          activeProps={({ isActive }) => ({
-                            className: isActive
-                              ? "block rounded-lg px-3 py-2 text-sm transition-colors bg-accent text-foreground"
-                              : "block rounded-lg px-3 py-2 text-sm transition-colors text-muted-foreground hover:bg-muted hover:text-foreground",
-                          })}
+                          activeProps={({
+                            isActive,
+                          }: {
+                            isActive: boolean;
+                          }): React.AnchorHTMLAttributes<HTMLAnchorElement> =>
+                            isActive
+                              ? {
+                                  className:
+                                    "block rounded-lg px-3 py-2 text-sm transition-colors bg-accent text-foreground",
+                                }
+                              : {}
+                          }
+                          className="block rounded-lg px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
                           to={item.href}
                         >
                           {item.label}

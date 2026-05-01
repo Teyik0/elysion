@@ -99,9 +99,9 @@ The recommended `package.json` setup:
 ```json
 {
   "scripts": {
-    "dev": "bun run src/server.ts",
-    "build": "bunx furin build",
-    "build:static": "bunx furin build --target static",
+    "dev": "bun --hot src/server.ts",
+    "build": "furin build",
+    "build:static": "furin build --target static",
     "start": "bun .furin/build/bun/server.js"
   }
 }
@@ -120,6 +120,6 @@ bun dev
 This runs your `src/server.ts` with Bun's `--hot` flag, giving you:
 - React Fast Refresh
 - Server-side hot reload
-- File-system based routing updates
+- File-system-based routing updates
 
 See [Dev Mode HMR](/docs/dev-hmr) for the full internals.

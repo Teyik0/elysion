@@ -297,6 +297,49 @@ describe("Link SSR path", () => {
       globalThis.window = originalWindow;
     }
   });
+
+  test("SSR: ignores spurious href prop so basePath is preserved", () => {
+    const originalWindow = globalThis.window;
+    // @ts-expect-error: intentionally removing window for SSR branch coverage
+    globalThis.window = undefined;
+
+    try {
+      const html = renderToStaticMarkup(
+        createElement(
+          RouterContext.Provider,
+          {
+            value: {
+              basePath: "/furin",
+              currentHref: "/",
+              navigate: () => Promise.resolve(),
+              prefetch: () => {
+                /* noop */
+              },
+              invalidatePrefetch: () => {
+                /* noop */
+              },
+              refresh: () => Promise.resolve(),
+              isNavigating: false,
+              defaultPreload: "intent",
+              defaultPreloadDelay: 50,
+              defaultPreloadStaleTime: 30_000,
+            },
+          },
+          createElement(
+            Link,
+            {
+              to: "/blog",
+              href: "/blog",
+            } as any,
+            "Blog"
+          )
+        )
+      );
+      expect(html).toBe('<a href="/furin/blog">Blog</a>');
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
 });
 
 // ── LinkInteractive (client) ──────────────────────────────────────────────────

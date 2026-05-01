@@ -309,4 +309,6 @@ export function __resetDevLoaderCacheState(): void {
   devISRLoaderCache.clear();
   devSSGLoaderCache.clear();
   sourceFileToCacheKeys.clear();
+  registerCacheInvalidator(devISRLoaderCache);
+  registerCacheInvalidator(devSSGLoaderCache);
 }

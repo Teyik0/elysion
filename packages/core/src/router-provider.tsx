@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -324,7 +325,7 @@ export interface RouterProviderProps {
    *
    * Set to `false` to opt out and call `router.refresh()` manually instead.
    */
-  autoRefresh?: boolean;
+  autoRefresh: boolean;
   /**
    * Sub-path prefix for static deployments (e.g. "/furin").
    * Must start with "/" and have no trailing slash.
@@ -335,10 +336,10 @@ export interface RouterProviderProps {
    * - `navigate(logicalHref)` pushes `basePath + logicalHref` to browser history.
    * - `fetch` calls use the physical path `basePath + logicalHref`.
    */
-  basePath?: string;
-  defaultPreload?: PreloadStrategy;
-  defaultPreloadDelay?: number;
-  defaultPreloadStaleTime?: number;
+  basePath: string;
+  defaultPreload: PreloadStrategy;
+  defaultPreloadDelay: number;
+  defaultPreloadStaleTime: number;
   initialData: Record<string, unknown>;
   /**
    * Slice 10 — server-logged error digest threaded from
@@ -370,7 +371,7 @@ export interface RouterProviderProps {
    */
   initialNotFound: { data?: unknown; message?: string } | undefined;
   /** Maximum number of prefetch cache entries. Oldest entry is evicted when exceeded. Default: 50. */
-  prefetchCacheSize?: number;
+  prefetchCacheSize: number;
   root: RuntimeRoute | null;
   routes: ClientRoute[];
 }
@@ -547,6 +548,9 @@ export function shouldInterceptClick(
   }
 
   const logicalPath = normalizeHref(toLogical(url.pathname, basePath));
+  if (!normalizePath(url.pathname).startsWith(normalizePath(basePath))) {
+    return null;
+  }
   return logicalPath + url.search + url.hash;
 }
 
@@ -764,41 +768,6 @@ export function buildPageElement(
   return element;
 }
 
-/** Scrolls to a hash target or the top of the page after SPA navigation. */
-function handleScrollRestoration(
-  href: string,
-  navigationToken: number,
-  navVersion: { current: number }
-): void {
-  const destUrl = new URL(href, window.location.origin);
-  if (destUrl.hash) {
-    const id = decodeURIComponent(destUrl.hash.slice(1));
-    const scrollToHashTarget = () => {
-      if (navVersion.current !== navigationToken) {
-        return;
-      }
-
-      const element = document.getElementById(id);
-      if (element) {
-        element.scrollIntoView({ behavior: "instant", block: "start" });
-      }
-    };
-
-    window.requestAnimationFrame(() => {
-      scrollToHashTarget();
-      if (document.getElementById(id)) {
-        return;
-      }
-
-      window.requestAnimationFrame(() => {
-        scrollToHashTarget();
-      });
-    });
-  } else {
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }
-}
-
 // ── Scroll restoration helpers ─────────────────────────────────────────────────
 
 const SCROLL_STORAGE_KEY = "__furin_scroll__";
@@ -823,24 +792,6 @@ function saveScrollPosition(key: string): void {
     sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify(positions));
   } catch {
     // sessionStorage unavailable (private mode, quota exceeded, etc.)
-  }
-}
-
-function restoreScrollPosition(key: string, token: number, version: { current: number }): void {
-  try {
-    const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
-    const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
-    const y = positions[key] ?? 0;
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        if (version.current !== token) {
-          return;
-        }
-        window.scrollTo({ top: y, behavior: "instant" });
-      });
-    });
-  } catch {
-    window.scrollTo({ top: 0, behavior: "instant" });
   }
 }
 
@@ -906,13 +857,19 @@ export function RouterProvider({
   initialData,
   initialDigest,
   initialNotFound,
-  autoRefresh = true,
-  basePath = "",
-  defaultPreload = "intent",
-  defaultPreloadDelay = 50,
-  defaultPreloadStaleTime = 30_000,
-  prefetchCacheSize = 50,
+  autoRefresh,
+  basePath,
+  defaultPreload,
+  defaultPreloadDelay,
+  defaultPreloadStaleTime,
+  prefetchCacheSize,
 }: RouterProviderProps): React.ReactElement {
+  const _autoRefresh = autoRefresh ?? true;
+  const _basePath = basePath ?? "";
+  const _defaultPreload = defaultPreload ?? "intent";
+  const _defaultPreloadDelay = defaultPreloadDelay ?? 50;
+  const _defaultPreloadStaleTime = defaultPreloadStaleTime ?? 30_000;
+  const _prefetchCacheSize = prefetchCacheSize ?? 50;
   // Initial state. When `initialMatch` is `null`, `initialNotFound` MUST be set —
   // the provider boots into the inline not-found UI (see `initialNotFound` JSDoc).
   // `notFoundBoundaries` is left undefined so the render path can fall through to
@@ -929,11 +886,19 @@ export function RouterProvider({
     if (typeof window === "undefined") {
       return "/";
     }
-    return toLogical(window.location.pathname, basePath) + window.location.search;
+    return toLogical(window.location.pathname, _basePath) + window.location.search;
   });
   const prefetchCache = useRef(new Map<string, CacheEntry>());
   /** Monotonic counter to discard stale navigations (race condition guard). */
   const navVersion = useRef(0);
+  /**
+   * Deferred scroll instruction consumed by the layout effect tied to `currentHref`.
+   * This replaces the fragile double-requestAnimationFrame pattern with a render-
+   * synchronous scroll that fires immediately after React commits the new route.
+   */
+  const pendingScrollRef = useRef<
+    { type: "restore"; key: string } | { type: "reset"; href: string } | null
+  >(null);
   /**
    * Tracks the last successfully rendered match for use in the no-route 404 path.
    * `null` on the initial render when the URL didn't match any route and the
@@ -968,10 +933,10 @@ export function RouterProvider({
       try {
         // Physical href: what the browser/server actually receives.
         // For basePath deployments: fetch("/furin/docs/routing") not fetch("/docs/routing").
-        const physicalHref = basePath + logicalHref;
+        const physicalHref = _basePath + logicalHref;
         const url = new URL(physicalHref, window.location.origin);
         // Route matching always uses the LOGICAL pathname (basePath stripped).
-        const logicalPathname = toLogical(url.pathname, basePath);
+        const logicalPathname = toLogical(url.pathname, _basePath);
         const match = routes.find((r) => r.regex.test(logicalPathname));
         if (!match) {
           // No client-side route matched — the server will call renderRootNotFound.
@@ -983,7 +948,7 @@ export function RouterProvider({
             window.location.href = physicalHref;
             return null;
           }
-          const { data, finalHref, title } = await parsePageResponse(res, basePath);
+          const { data, finalHref, title } = await parsePageResponse(res, _basePath);
           const kind = classifySpaResponse(res.status, data);
           if (kind.kind !== "not-found") {
             // Non-404 server response for an unmatched URL (e.g. 5xx) — bail to
@@ -1022,7 +987,7 @@ export function RouterProvider({
         // `__furinStatus: 404` signal, which lets us render the not-found UI
         // inline instead of doing a jarring full-page reload. Any other
         // non-2xx still bails out (see `classifySpaResponse`).
-        const { data, finalHref, title } = await parsePageResponse(res, basePath);
+        const { data, finalHref, title } = await parsePageResponse(res, _basePath);
 
         const kind = classifySpaResponse(res.status, data);
         if (kind.kind === "bail") {
@@ -1054,11 +1019,11 @@ export function RouterProvider({
 
         return { match: loadedMatch, data: data ?? {}, title, finalHref };
       } catch (err: unknown) {
-        log.error({ action: "navigate_failed", href: basePath + logicalHref, error: String(err) });
+        log.error({ action: "navigate_failed", href: _basePath + logicalHref, error: String(err) });
         return null;
       }
     },
-    [routes, basePath, rootBoundaries]
+    [routes, _basePath, rootBoundaries]
   );
 
   const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
@@ -1088,7 +1053,7 @@ export function RouterProvider({
 
   const prefetch = useCallback(
     (href: string, opts?: { staleTime?: number }) => {
-      const staleTime = opts?.staleTime ?? defaultPreloadStaleTime;
+      const staleTime = opts?.staleTime ?? _defaultPreloadStaleTime;
       const existing = prefetchCache.current.get(href);
       if (existing && !shouldRefetch(existing)) {
         return;
@@ -1099,12 +1064,12 @@ export function RouterProvider({
         staleTime,
       });
       // Evict the oldest entry when the cap is exceeded
-      if (prefetchCache.current.size > prefetchCacheSize) {
+      if (prefetchCache.current.size > _prefetchCacheSize) {
         const oldest = prefetchCache.current.keys().next().value as string;
         prefetchCache.current.delete(oldest);
       }
     },
-    [fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
+    [fetchPageState, _defaultPreloadStaleTime, _prefetchCacheSize]
   );
 
   const navigate = useCallback(
@@ -1130,7 +1095,7 @@ export function RouterProvider({
             reason: "prefetch_returned_null",
           });
           // Fall back to full-page navigation using the physical URL.
-          window.location.href = basePath + logicalHref;
+          window.location.href = _basePath + logicalHref;
           return;
         }
         currentMatchRef.current = newState.match;
@@ -1141,7 +1106,7 @@ export function RouterProvider({
         // effectiveHref is logical (finalHref from fetchPageState is also logical).
         const effectiveLogical = newState.finalHref ?? logicalHref;
         // Push the PHYSICAL path to browser history.
-        const physicalEffective = basePath + effectiveLogical;
+        const physicalEffective = _basePath + effectiveLogical;
         if (opts?.replace) {
           // Preserve the existing key — same history entry, URL just updated.
           window.history.replaceState(
@@ -1162,10 +1127,10 @@ export function RouterProvider({
         }
         // Store the LOGICAL path in currentHref so Link active-state works.
         const effectiveUrl = new URL(physicalEffective, window.location.origin);
-        const logicalPath = toLogical(effectiveUrl.pathname, basePath);
+        const logicalPath = toLogical(effectiveUrl.pathname, _basePath);
         setCurrentHref(logicalPath + effectiveUrl.search);
         if (opts?.resetScroll ?? true) {
-          handleScrollRestoration(physicalEffective, myVersion, navVersion);
+          pendingScrollRef.current = { type: "reset", href: physicalEffective };
         }
       } finally {
         // Only clear navigating flag if this is still the latest navigation
@@ -1174,19 +1139,19 @@ export function RouterProvider({
         }
       }
     },
-    [prefetch, basePath]
+    [prefetch, _basePath]
   );
 
   const refresh = useCallback(
     async (opts?: { resetScroll?: boolean }) => {
       // Convert the physical browser URL to a logical href before navigating.
-      const logicalPath = toLogical(window.location.pathname, basePath);
+      const logicalPath = toLogical(window.location.pathname, _basePath);
       const logicalHref = logicalPath + window.location.search;
       // Bust the cache for this exact logical page so navigate always re-fetches
       invalidatePrefetch(logicalHref, "page");
       await navigate(logicalHref, { replace: true, resetScroll: opts?.resetScroll ?? false });
     },
-    [navigate, invalidatePrefetch, basePath]
+    [navigate, invalidatePrefetch, _basePath]
   );
 
   // Expose refresh() to the HMR handler in _hydrate.tsx so that after a hot
@@ -1203,69 +1168,73 @@ export function RouterProvider({
     }
   }, [refresh]);
 
-  const handlePopState = useCallback(async () => {
-    // Capture the destination key immediately — history.state is already the
-    // destination entry when popstate fires, before any awaits.
+  const handlePopState = useCallback(() => {
+    // Capture the destination key IMMEDIATELY — history.state is already the
+    // destination entry when popstate fires, before any awaits. Keeping the
+    // handler synchronous prevents browsers (notably Chrome) from treating the
+    // event as resolved and applying their own scroll restoration prematurely.
     const destKey = getHistoryKey(history.state);
     // Convert physical browser URL to logical href for cache lookup + fetchPageState.
     // Normalize trailing slashes so "/docs/routing/" back-button navigations
     // still match the route pattern "/docs/routing".
-    const logicalPath = normalizeHref(toLogical(window.location.pathname, basePath));
+    const logicalPath = normalizeHref(toLogical(window.location.pathname, _basePath));
     const logicalHref = logicalPath + window.location.search;
     const myVersion = ++navVersion.current;
     setIsNavigating(true);
-    try {
-      // Check prefetch cache before fetching fresh (keyed by logical href)
-      const cached = prefetchCache.current.get(logicalHref);
-      let newState: RouterState | null;
-      if (cached && !shouldRefetch(cached)) {
-        newState = await cached.promise;
-      } else {
-        newState = await fetchPageState(logicalHref);
-      }
-      // Discard if a newer navigation was started while we were waiting
-      if (navVersion.current !== myVersion) {
-        return;
-      }
-      if (!newState) {
-        log.warn({
-          action: "popstate_fallback",
-          href: logicalHref,
-          reason: "fetchPageState_returned_null",
-        });
-        window.location.reload();
-        return;
-      }
-      currentMatchRef.current = newState.match;
-      setState(newState);
-      if (newState.title) {
-        document.title = newState.title;
-      }
-      // effectiveHref is logical (includes search); push physical to history if server redirected.
-      const effectiveLogical = newState.finalHref ?? logicalHref;
-      if (newState.finalHref) {
-        // Preserve _furinKey so restoreScrollPosition still works after a redirect.
-        window.history.replaceState(history.state, "", basePath + effectiveLogical);
-      }
-      // effectiveLogical already contains the search params — no URL round-trip needed.
-      setCurrentHref(effectiveLogical);
-      // Restore the saved scroll position for this history entry (double rAF waits
-      // for React to finish painting the new page before scrolling).
-      if (destKey) {
-        restoreScrollPosition(destKey, myVersion, navVersion);
-      } else {
-        window.scrollTo({ top: 0, behavior: "instant" });
-      }
-    } finally {
-      if (navVersion.current === myVersion) {
-        setIsNavigating(false);
-      }
-    }
-  }, [fetchPageState, basePath]);
 
-  // Disable native scroll restoration and assign a key to the initial history entry
+    (async () => {
+      try {
+        // Check prefetch cache before fetching fresh (keyed by logical href)
+        const cached = prefetchCache.current.get(logicalHref);
+        let newState: RouterState | null;
+        if (cached && !shouldRefetch(cached)) {
+          newState = await cached.promise;
+        } else {
+          newState = await fetchPageState(logicalHref);
+        }
+        // Discard if a newer navigation was started while we were waiting
+        if (navVersion.current !== myVersion) {
+          return;
+        }
+        if (!newState) {
+          log.warn({
+            action: "popstate_fallback",
+            href: logicalHref,
+            reason: "fetchPageState_returned_null",
+          });
+          window.location.reload();
+          return;
+        }
+        currentMatchRef.current = newState.match;
+        setState(newState);
+        if (newState.title) {
+          document.title = newState.title;
+        }
+        // effectiveHref is logical (includes search); push physical to history if server redirected.
+        const effectiveLogical = newState.finalHref ?? logicalHref;
+        if (newState.finalHref) {
+          // Preserve _furinKey so scroll restoration still works after a redirect.
+          window.history.replaceState(history.state, "", _basePath + effectiveLogical);
+        }
+        // effectiveLogical already contains the search params — no URL round-trip needed.
+        setCurrentHref(effectiveLogical);
+        // Queue scroll restoration for the layout effect tied to currentHref.
+        if (destKey) {
+          pendingScrollRef.current = { type: "restore", key: destKey };
+        } else {
+          window.scrollTo({ top: 0, behavior: "instant" });
+        }
+      } finally {
+        if (navVersion.current === myVersion) {
+          setIsNavigating(false);
+        }
+      }
+    })();
+  }, [fetchPageState, _basePath]);
+
+  // Disable native scroll restoration and assign a key to the initial history entry.
+  // No cleanup: in an SPA once manual it stays manual for the app lifetime.
   useEffect(() => {
-    const prevScrollRestoration = history.scrollRestoration;
     history.scrollRestoration = "manual";
     if (!getHistoryKey(history.state)) {
       history.replaceState(
@@ -1273,10 +1242,41 @@ export function RouterProvider({
         ""
       );
     }
-    return () => {
-      history.scrollRestoration = prevScrollRestoration;
-    };
   }, []);
+
+  // Render-synchronous scroll restoration. Fires immediately after React commits
+  // the new route, eliminating the race conditions inherent in double rAF.
+  useLayoutEffect(() => {
+    const instruction = pendingScrollRef.current;
+    if (!instruction) {
+      return;
+    }
+    pendingScrollRef.current = null;
+
+    if (instruction.type === "restore") {
+      try {
+        const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+        const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
+        const y = positions[instruction.key] ?? 0;
+        window.scrollTo({ top: y, behavior: "instant" });
+      } catch {
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+      return;
+    }
+
+    // instruction.type === "reset"
+    const destUrl = new URL(instruction.href, window.location.origin);
+    if (destUrl.hash) {
+      const id = decodeURIComponent(destUrl.hash.slice(1));
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: "instant", block: "start" });
+      }
+    } else {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [currentHref]);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -1292,14 +1292,24 @@ export function RouterProvider({
       return;
     }
     const handler = (e: MouseEvent) => {
+      if (e.defaultPrevented) {
+        return;
+      }
       const anchor = (e.target as HTMLElement).closest("a");
       if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+      // Ignore Furin Link anchors — they handle their own navigation via
+      // LinkInteractive.handleClick. This guards against double-interception
+      // in dev mode where React synthetic-event defaultPrevented may not
+      // propagate reliably to the native event after Bun HMR reloads.
+      if (anchor.closest("a[data-furin-link]")) {
         return;
       }
       const logicalHref = shouldInterceptClick(
         anchor,
         e,
-        basePath,
+        _basePath,
         window.location.origin,
         window.location.pathname
       );
@@ -1311,7 +1321,7 @@ export function RouterProvider({
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [navigate, basePath]);
+  }, [navigate, _basePath]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   // This ensures that API routes calling revalidatePath() automatically bust the
@@ -1329,9 +1339,10 @@ export function RouterProvider({
         invalidatePrefetch(path, type);
         invalidated.push({ path, type });
       });
-      if (autoRefresh && invalidated.length > 0) {
-        const currentPath = window.location.pathname + window.location.search;
-        if (shouldAutoRefreshPath(currentPath, invalidated)) {
+      if (_autoRefresh && invalidated.length > 0) {
+        const currentLogicalPath =
+          toLogical(window.location.pathname, _basePath) + window.location.search;
+        if (shouldAutoRefreshPath(currentLogicalPath, invalidated)) {
           // fire-and-forget: don't block the original fetch caller
           refresh();
         }
@@ -1345,7 +1356,7 @@ export function RouterProvider({
     return () => {
       window.fetch = originalFetch;
     };
-  }, [invalidatePrefetch, refresh, autoRefresh]);
+  }, [invalidatePrefetch, refresh, _autoRefresh]);
 
   // Slice 8 — when a prior SPA navigation hit a loader-thrown or catch-all 404,
   // render the bare not-found element (mirrors server's `buildNotFoundElement`).
@@ -1387,16 +1398,16 @@ export function RouterProvider({
   // the same id the server already logged.
   return buildRouterTree(
     {
-      basePath,
+      basePath: _basePath,
       currentHref,
       navigate,
       prefetch,
       refresh,
       invalidatePrefetch,
       isNavigating,
-      defaultPreload,
-      defaultPreloadDelay,
-      defaultPreloadStaleTime,
+      defaultPreload: _defaultPreload,
+      defaultPreloadDelay: _defaultPreloadDelay,
+      defaultPreloadStaleTime: _defaultPreloadStaleTime,
     },
     pageElement,
     {

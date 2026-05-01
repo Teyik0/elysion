@@ -47,7 +47,11 @@ function computeLinkView<To extends RouteTo>(
     search as Record<string, unknown> | null | undefined,
     undefined
   );
-  const href = router.basePath + logicalHref;
+  const isAbsolute =
+    logicalHref.startsWith("http://") ||
+    logicalHref.startsWith("https://") ||
+    logicalHref.startsWith("//");
+  const href = isAbsolute ? logicalHref : router.basePath + logicalHref;
   const isActive = router.currentHref === logicalHrefWithoutHash;
   const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
   const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
@@ -80,6 +84,8 @@ function LinkInteractive<To extends RouteTo>({
   onMouseLeave,
   onFocus,
   children,
+  // @ts-expect-error: defensive strip of accidental href prop passed via spread
+  href: _href,
   ...anchorProps
 }: LinkProps<To>): React.ReactElement {
   const router = useRouter();
@@ -137,7 +143,11 @@ function LinkInteractive<To extends RouteTo>({
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
-    if (e.defaultPrevented || disabled) {
+    if (e.defaultPrevented) {
+      return;
+    }
+    if (disabled) {
+      e.preventDefault();
       return;
     }
     // Let browser handle modifier+click (new tab, etc.)
@@ -184,6 +194,7 @@ function LinkInteractive<To extends RouteTo>({
     {
       ref: anchorRef,
       href,
+      "data-furin-link": true,
       onClick: handleClick,
       onMouseEnter: handleMouseEnter,
       onMouseLeave: handleMouseLeave,
@@ -250,6 +261,8 @@ function renderLinkElement<To extends RouteTo>(
     onMouseEnter: _ome,
     onMouseLeave: _oml,
     onFocus: _of,
+    // @ts-expect-error: defensive strip of accidental href prop passed via spread
+    href: _href,
     ...anchorProps
   } = props;
 
@@ -257,6 +270,7 @@ function renderLinkElement<To extends RouteTo>(
     "a",
     {
       href,
+      "data-furin-link": true,
       ...(isActive ? { "data-status": "active" } : {}),
       ...anchorProps,
       ...extraProps,

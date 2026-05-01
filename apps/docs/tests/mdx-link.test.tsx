@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { RouterContext } from "@teyik0/furin/link";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MdxLink } from "../src/components/doc-page";
@@ -42,5 +43,33 @@ describe("MdxLink", () => {
     expect(html).toBe(
       '<a href="tel:+1234567890" rel="noopener noreferrer" target="_blank">Call</a>'
     );
+  });
+
+  test("does not override basePath computed by Link", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        RouterContext.Provider,
+        {
+          value: {
+            basePath: "/docs",
+            currentHref: "/",
+            navigate: () => Promise.resolve(),
+            prefetch: () => {
+              /* noop */
+            },
+            invalidatePrefetch: () => {
+              /* noop */
+            },
+            refresh: () => Promise.resolve(),
+            isNavigating: false,
+            defaultPreload: "intent",
+            defaultPreloadDelay: 50,
+            defaultPreloadStaleTime: 30_000,
+          },
+        },
+        createElement(MdxLink, { href: "/routing" }, "Routing")
+      )
+    );
+    expect(html).toBe('<a href="/docs/routing">Routing</a>');
   });
 });
