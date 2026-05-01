@@ -17,6 +17,8 @@
  */
 
 import { statSync } from "node:fs";
+import { registerCacheInvalidator } from "./cache.ts";
+import { createRouteCache, type RevalidateType } from "./route-cache.ts";
 
 export interface DevLoaderCacheEntry {
   /**
@@ -36,9 +38,6 @@ export interface DevLoaderCacheEntry {
   revalidate: number;
 }
 
-const devISRLoaderCache = new Map<string, DevLoaderCacheEntry>();
-const devSSGLoaderCache = new Map<string, DevLoaderCacheEntry>();
-
 /**
  * Reverse index: source file → set of cache keys whose entries depend on it.
  * Populated by `setDevISRLoaderCache` / `setDevSSGLoaderCache`, drained by
@@ -48,12 +47,9 @@ const devSSGLoaderCache = new Map<string, DevLoaderCacheEntry>();
 const sourceFileToCacheKeys = new Map<string, Set<string>>();
 
 interface CacheKindHandle {
-  cache: Map<string, DevLoaderCacheEntry>;
+  cache: ReturnType<typeof createDevLoaderCache>;
   kind: "isr" | "ssg";
 }
-
-const isrHandle: CacheKindHandle = { cache: devISRLoaderCache, kind: "isr" };
-const ssgHandle: CacheKindHandle = { cache: devSSGLoaderCache, kind: "ssg" };
 
 function indexEntryDependencies(cacheKey: string, deps: string[]): void {
   for (const dep of deps) {
@@ -79,14 +75,31 @@ function unindexEntryDependencies(cacheKey: string, deps: string[]): void {
   }
 }
 
+function createDevLoaderCache(name: string) {
+  return createRouteCache<DevLoaderCacheEntry>({
+    name,
+    onDelete: (key, entry) => {
+      unindexEntryDependencies(key, entry.dependencies);
+    },
+    onSet: (key, entry, previous) => {
+      // Drop any stale reverse-index links from a previous entry under this key.
+      if (previous) {
+        unindexEntryDependencies(key, previous.dependencies);
+      }
+      indexEntryDependencies(key, entry.dependencies);
+    },
+    pathFromKey: urlPathFromCacheKey,
+  });
+}
+
+const devISRLoaderCache = createDevLoaderCache("render:dev-isr-loader");
+const devSSGLoaderCache = createDevLoaderCache("render:dev-ssg-loader");
+
+const isrHandle: CacheKindHandle = { cache: devISRLoaderCache, kind: "isr" };
+const ssgHandle: CacheKindHandle = { cache: devSSGLoaderCache, kind: "ssg" };
+
 function setEntry(handle: CacheKindHandle, key: string, entry: DevLoaderCacheEntry): void {
-  // Drop any stale reverse-index links from a previous entry under this key.
-  const previous = handle.cache.get(key);
-  if (previous) {
-    unindexEntryDependencies(key, previous.dependencies);
-  }
   handle.cache.set(key, entry);
-  indexEntryDependencies(key, entry.dependencies);
 }
 
 export function getDevISRLoaderCache(key: string): DevLoaderCacheEntry | undefined {
@@ -116,6 +129,84 @@ export interface InvalidateOutcome {
 }
 
 /**
+ * Extracts the URL path part from a dev cache key.
+ *
+ * Cache keys have the format `${rootPath}:${urlPath}` where `urlPath` always
+ * starts with `/` (it's a route pattern). Filesystem `rootPath` may contain
+ * `:` on Windows (e.g. `C:/Users/...`), so we use `lastIndexOf(":/")` to find
+ * the boundary — the URL part is always the trailing `/...` segment.
+ *
+ * Returns `null` if the key doesn't match the expected shape (defensive — all
+ * keys produced by `renderDevISRWithLoaderCache` are well-formed, but a
+ * future caller could violate the invariant).
+ *
+ * @internal Exported for unit testing only.
+ */
+export function urlPathFromCacheKey(key: string): string | null {
+  const sep = key.lastIndexOf(":/");
+  if (sep === -1) {
+    return null;
+  }
+  return key.slice(sep + 1);
+}
+
+/**
+ * Drops every dev cache entry whose URL path matches `path` according to the
+ * same rules as `revalidatePath`:
+ *
+ * - `type: "page"` — exact match
+ * - `type: "layout"` — prefix match (the path itself + any descendant)
+ *
+ * Called from `cache.ts:revalidatePath` so a single API works for both prod
+ * (HTML caches `isrCache` / `ssgCache`) and dev (loader-data caches
+ * `devISRLoaderCache` / `devSSGLoaderCache`). Without this, dev users see
+ * stale loader data after mutations until the revalidate window expires.
+ */
+export function invalidateDevLoaderCacheByPath(
+  path: string,
+  type: RevalidateType
+): InvalidateOutcome {
+  const cleared: string[] = [];
+  let isr = 0;
+  let ssg = 0;
+
+  const matches = (urlPath: string): boolean => {
+    if (type === "page") {
+      return urlPath === path;
+    }
+    // layout: the path itself + any descendant
+    const prefix = path === "/" || path.endsWith("/") ? path : `${path}/`;
+    return urlPath === path || urlPath.startsWith(prefix);
+  };
+
+  for (const handle of [isrHandle, ssgHandle]) {
+    // Snapshot keys before mutation — drop-as-we-go invalidates the iterator.
+    for (const key of [...handle.cache.keys()]) {
+      const urlPath = urlPathFromCacheKey(key);
+      if (urlPath === null || !matches(urlPath)) {
+        continue;
+      }
+      const entry = handle.cache.get(key);
+      if (!entry) {
+        continue;
+      }
+      handle.cache.delete(key);
+      cleared.push(key);
+      if (handle.kind === "isr") {
+        isr++;
+      } else {
+        ssg++;
+      }
+    }
+  }
+
+  return { cleared, isr, ssg };
+}
+
+registerCacheInvalidator(devISRLoaderCache);
+registerCacheInvalidator(devSSGLoaderCache);
+
+/**
  * Drops every dev cache entry whose dependency chain includes `filePath`.
  * Safe to call for files that were never registered — returns an empty
  * outcome.  Called by the dev-page-plugin's onLoad hook on each workspace
@@ -137,7 +228,6 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
     const isrEntry = devISRLoaderCache.get(key);
     if (isrEntry) {
       devISRLoaderCache.delete(key);
-      unindexEntryDependencies(key, isrEntry.dependencies);
       cleared.push(key);
       isr++;
       continue;
@@ -145,7 +235,6 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
     const ssgEntry = devSSGLoaderCache.get(key);
     if (ssgEntry) {
       devSSGLoaderCache.delete(key);
-      unindexEntryDependencies(key, ssgEntry.dependencies);
       cleared.push(key);
       ssg++;
     }
