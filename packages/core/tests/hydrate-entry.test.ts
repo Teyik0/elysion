@@ -84,12 +84,12 @@ describe("generateHydrateEntry", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
     // The generated pathname expression must strip trailing slashes so that
     // "/furin/docs/routing/" → "/docs/routing" and matches the regex.
-    expect(code).toContain(".replace(/\\/$/");
+    expect(code).toContain(".replace(/\\/+$/");
   });
 
   test("B13d: without basePath — strips trailing slash from window.location.pathname", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "");
-    expect(code).toContain("window.location.pathname.replace(/\\/$/");
+    expect(code).toContain("window.location.pathname.replace(/\\/+$/");
   });
 
   test("B13c: with basePath — log drain endpoint is prefixed", () => {

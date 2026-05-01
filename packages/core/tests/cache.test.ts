@@ -92,7 +92,7 @@ describe("revalidatePath page eviction", () => {
     });
     expect(isrCache.has("/blog/post")).toBe(true);
 
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
 
     expect(isrCache.has("/blog/post")).toBe(false);
   });
@@ -104,13 +104,13 @@ describe("revalidatePath page eviction", () => {
       revalidate: 60,
     });
 
-    const result = revalidatePath("/blog/post");
+    const result = revalidatePath("/blog/post", "page");
 
     expect(result).toBe(true);
   });
 
   test("returns false when no cache entry existed", () => {
-    const result = revalidatePath("/blog/nonexistent");
+    const result = revalidatePath("/blog/nonexistent", "page");
 
     expect(result).toBe(false);
   });
@@ -119,7 +119,7 @@ describe("revalidatePath page eviction", () => {
     setSSGCache("/about", { html: "<html>about</html>", cachedAt: Date.now(), status: 200 });
     expect(ssgCache.has("/about")).toBe(true);
 
-    revalidatePath("/about");
+    revalidatePath("/about", "page");
 
     expect(ssgCache.has("/about")).toBe(false);
   });
@@ -136,7 +136,7 @@ describe("revalidatePath page eviction", () => {
       revalidate: 60,
     });
 
-    revalidatePath("/blog/post-1");
+    revalidatePath("/blog/post-1", "page");
 
     expect(isrCache.has("/blog/post-1")).toBe(false);
     expect(isrCache.has("/blog/post-2")).toBe(true);
@@ -217,7 +217,7 @@ describe("revalidatePath layout prefix eviction", () => {
 
 describe("consumePendingInvalidations after page revalidation", () => {
   test("consumePendingInvalidations returns the queued path", () => {
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
 
     const paths = consumePendingInvalidations();
 
@@ -225,7 +225,7 @@ describe("consumePendingInvalidations after page revalidation", () => {
   });
 
   test("second call returns empty array", () => {
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
     consumePendingInvalidations();
 
     const second = consumePendingInvalidations();
@@ -234,8 +234,8 @@ describe("consumePendingInvalidations after page revalidation", () => {
   });
 
   test("multiple revalidatePath calls accumulate before consume", () => {
-    revalidatePath("/page-a");
-    revalidatePath("/page-b");
+    revalidatePath("/page-a", "page");
+    revalidatePath("/page-b", "page");
 
     const paths = consumePendingInvalidations();
 
@@ -245,8 +245,8 @@ describe("consumePendingInvalidations after page revalidation", () => {
   });
 
   test("duplicate paths are deduplicated (Set semantics)", () => {
-    revalidatePath("/blog/post");
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
+    revalidatePath("/blog/post", "page");
 
     const paths = consumePendingInvalidations();
 
@@ -299,7 +299,7 @@ describe("setCachePurger", () => {
       generatedAt: Date.now(),
       revalidate: 60,
     });
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
 
     // Wait a tick for the fire-and-forget async purger
     await Bun.sleep(10);
@@ -315,7 +315,7 @@ describe("setCachePurger", () => {
       return Promise.resolve();
     });
 
-    revalidatePath("/nonexistent");
+    revalidatePath("/nonexistent", "page");
 
     await Bun.sleep(10);
 
@@ -352,14 +352,14 @@ describe("setCachePurger", () => {
 
   test("no purger is registered — revalidatePath does not throw", () => {
     // _cachePurger is null after __resetCacheState()
-    expect(() => revalidatePath("/blog/post")).not.toThrow();
+    expect(() => revalidatePath("/blog/post", "page")).not.toThrow();
   });
 
   test("purger errors are swallowed (fire-and-forget)", async () => {
     emittedLogs.length = 0;
 
     setCachePurger(() => Promise.reject(new Error("CDN unavailable")));
-    revalidatePath("/blog/post");
+    revalidatePath("/blog/post", "page");
 
     // Two microtask ticks: one for the rejection to settle, one for .catch() to fire.
     // Avoids yielding to a macrotask timer (setTimeout) which lets other tests interleave
@@ -457,9 +457,9 @@ describe("ISR LRU eviction", () => {
 describe("_runWithRequestInvalidationScope", () => {
   test("isolates concurrent scopes so inner scope does not see outer pending invalidations", () => {
     const result = _runWithRequestInvalidationScope(() => {
-      revalidatePath("/outer");
+      revalidatePath("/outer", "page");
       const inner = _runWithRequestInvalidationScope(() => {
-        revalidatePath("/inner");
+        revalidatePath("/inner", "page");
         return consumePendingInvalidations();
       });
       const outer = consumePendingInvalidations();

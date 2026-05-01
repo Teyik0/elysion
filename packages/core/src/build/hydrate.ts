@@ -89,8 +89,8 @@ export function generateHydrateEntry(
   // Trailing slashes are also stripped so "/docs/routing/" matches the route
   // pattern "/docs/routing" — GitHub Pages and many static hosts append them.
   const pathnameExpr = basePath
-    ? `(() => { const p = window.location.pathname; const b = ${basePathLiteral}; const stripped = (p.startsWith(b) && (p.length === b.length || p[b.length] === "/")) ? p.slice(b.length) || "/" : p; return stripped === "/" ? "/" : stripped.replace(/\\/$/, ""); })()`
-    : `window.location.pathname.replace(/\\/$/, "") || "/"`;
+    ? `(() => { const p = window.location.pathname; const b = ${basePathLiteral}; const stripped = (p.startsWith(b) && (p.length === b.length || p[b.length] === "/")) ? p.slice(b.length) || "/" : p; return stripped === "/" ? "/" : stripped.replace(/\\/+$/, ""); })()`
+    : `window.location.pathname.replace(/\\/+$/, "") || "/"`;
 
   // Log drain endpoint: prepend basePath so the request goes to the correct origin path.
   const logEndpoint = basePath

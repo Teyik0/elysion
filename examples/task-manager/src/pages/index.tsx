@@ -100,7 +100,7 @@ export default route.page({
             . The board list is served from cache and revalidates in the background every 10
             seconds. After creating or deleting a board,{" "}
             <code className="rounded bg-white/6 px-1 py-0.5 font-mono text-violet-300">
-              revalidatePath("/")
+              revalidatePath("/", "page")
             </code>{" "}
             is called server-side to immediately bust the cache.
           </p>
