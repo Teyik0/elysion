@@ -26,18 +26,18 @@ export function MdxLink({
   children,
   ...props
 }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  if (href && isInternalHref(href)) {
-    return (
-      <Link to={href} {...props}>
-        {children}
-      </Link>
-    );
-  }
   if (href?.startsWith("#")) {
     return (
       <a href={href} {...props}>
         {children}
       </a>
+    );
+  }
+  if (href && isInternalHref(href)) {
+    return (
+      <Link to={href} {...props}>
+        {children}
+      </Link>
     );
   }
   return (
