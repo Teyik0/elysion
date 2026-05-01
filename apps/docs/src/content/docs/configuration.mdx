@@ -1,0 +1,161 @@
+# Configuration Reference
+
+Furin reads `furin.config.ts` (or `.js` / `.mjs`) at the project root. Every field is optional — the framework works out of the box with zero config.
+
+```ts
+// furin.config.ts
+import { defineConfig } from "@teyik0/furin/config";
+import tailwind from "bun-plugin-tailwind";
+
+export default defineConfig({
+  rootDir: ".",
+  pagesDir: "src/pages",
+  serverEntry: "src/server.ts",
+  targets: ["bun"],
+  plugins: [tailwind],
+  bun: {
+    compile: "embed",
+  },
+  static: {
+    basePath: "/my-app",
+    outDir: "dist",
+    onSSR: "error",
+  },
+});
+```
+
+---
+
+## `rootDir`
+
+**Type:** `string`  
+**Default:** `"."`
+
+Project root directory. All relative paths in the config (e.g. `pagesDir`, `serverEntry`) are resolved from here.
+
+---
+
+## `pagesDir`
+
+**Type:** `string`  
+**Default:** `"src/pages"`
+
+Directory containing your page files. Furin scans this directory recursively and turns every `.tsx` file into a route.
+
+---
+
+## `serverEntry`
+
+**Type:** `string`  
+**Default:** `"src/server.ts"`
+
+Path to the server entrypoint that creates the Elysia instance. Required for `bun` target builds. Not needed for `static` builds.
+
+---
+
+## `targets`
+
+**Type:** `Array<"bun" | "node" | "vercel" | "cloudflare" | "static">`  
+**Default:** `["bun"]`
+
+Build targets to produce. Only `"bun"` and `"static"` are fully implemented today. `"node"`, `"vercel"`, and `"cloudflare"` are planned.
+
+| Target | Output | Use case |
+|--------|--------|----------|
+| `bun` | Server bundle + client assets | Self-hosted Bun runtime |
+| `static` | Pre-rendered HTML directory | GitHub Pages, Netlify, CDN |
+
+You can also pass `"all"` to the CLI (`--target all`) to build every target defined in the config.
+
+---
+
+## `plugins`
+
+**Type:** `BunPlugin[]`
+
+Bun plugins passed to the client bundler. Useful for Tailwind CSS, MDX, or any custom transform.
+
+```ts
+import { defineConfig } from "@teyik0/furin/config";
+import tailwind from "bun-plugin-tailwind";
+
+export default defineConfig({
+  plugins: [tailwind],
+});
+```
+
+### `buildOnly` flag
+
+Plugins can be marked `buildOnly: true` to skip runtime registration. Useful for build-time-only transforms like Tailwind.
+
+```ts
+import type { FurinPlugin } from "@teyik0/furin/config";
+
+const myPlugin: FurinPlugin = {
+  name: "my-plugin",
+  setup() { /* ... */ },
+  buildOnly: true,
+};
+```
+
+---
+
+## `bun.compile`
+
+**Type:** `"server" | "embed"`  
+**Default:** `undefined` (no compilation)
+
+Compile the server to a native Bun binary.
+
+| Mode | Behaviour |
+|------|-----------|
+| `"server"` | Binary + `client/` directory on disk |
+| `"embed"` | Self-contained binary with all assets in memory |
+
+```bash
+# CLI override
+bunx furin build --compile embed
+```
+
+---
+
+## `static`
+
+Configuration for the `static` build target.
+
+### `static.basePath`
+
+**Type:** `string`  
+**Default:** `""`
+
+Sub-path prefix for static deployments (e.g. `"/my-app"` for `user.github.io/my-app`). Must start with `/` and have no trailing slash.
+
+### `static.outDir`
+
+**Type:** `string`  
+**Default:** `"dist"`
+
+Output directory for the static export.
+
+### `static.onSSR`
+
+**Type:** `"error" | "skip"`  
+**Default:** `"error"`
+
+Behaviour when SSR or ISR routes are encountered during a static build:
+- `"error"` — Throw at build time with the list of incompatible routes.
+- `"skip"` — Emit a warning and omit those routes from the output.
+
+---
+
+## Dev plugins (`bunfig.toml`)
+
+Dev-only plugins are configured in `bunfig.toml`, not `furin.config.ts`:
+
+```toml
+[serve.static]
+plugins = ["bun-plugin-tailwind", "furin/strip-plugin"]
+env = "FURIN_PUBLIC_*"
+```
+
+See the [Plugins](/docs/plugins) page for more details.

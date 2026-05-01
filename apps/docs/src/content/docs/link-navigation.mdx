@@ -1,0 +1,160 @@
+# Link & Navigation
+
+Furin's client-side router provides type-safe navigation, prefetching, and scroll management — all without leaving React.
+
+---
+
+## `<Link>`
+
+The typed alternative to `<a>` for internal navigation.
+
+```tsx
+import { Link } from "@teyik0/furin/link";
+
+<Link to="/docs">Documentation</Link>
+```
+
+### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `to` | `RouteTo` | — | Destination path. Auto-completed from `furin-env.d.ts`. |
+| `search` | `RouteSearch<To>` | — | Typed query params for this route. |
+| `hash` | `string` | — | URL fragment (without `#`). |
+| `replace` | `boolean` | `false` | Use `history.replaceState` instead of `pushState`. |
+| `resetScroll` | `boolean` | `true` | Scroll to top (or hash target) after navigation. Set to `false` for tabs/drawers. |
+| `disabled` | `boolean` | `false` | Adds `aria-disabled="true"`. Right-click still works. |
+| `preload` | `false \| "intent" \| "viewport" \| "render"` | `"intent"` | When to preload the target page. |
+| `preloadDelay` | `number` | `50` | Delay in ms before `"intent"` preload triggers. |
+| `preloadStaleTime` | `number` | `30_000` | How long a preloaded entry stays fresh. |
+| `activeProps` | `(opts) => anchorProps` | — | Props applied when the link matches the current route. |
+| `inactiveProps` | `() => anchorProps` | — | Props applied when the link does NOT match. |
+
+### Active state
+
+```tsx
+<Link
+  to="/docs"
+  activeProps={({ isActive }) => ({
+    className: isActive ? "text-blue-600" : "text-gray-600",
+  })}
+>
+  Docs
+</Link>
+```
+
+Furin also sets `data-status="active"` on the anchor when active, so you can style via CSS:
+
+```css
+a[data-status="active"] {
+  font-weight: bold;
+}
+```
+
+### Preload strategies
+
+| Strategy | Trigger |
+|----------|---------|
+| `"intent"` | Hover or focus (default) |
+| `"viewport"` | Link enters viewport (200px root margin) |
+| `"render"` | Immediately on mount |
+| `false` | Never preload |
+
+Preloading fetches both the HTML payload and the JS chunk in parallel. The browser module cache makes subsequent navigations near-instant.
+
+### Typed `search`
+
+If the route declares a `query` schema, `<Link>` infers the correct search param types:
+
+```tsx
+// Route declares: query: t.Object({ page: t.Number(), tag: t.Optional(t.String()) })
+<Link to="/blog" search={{ page: 2, tag: "react" }}>
+  Page 2
+</Link>
+```
+
+---
+
+## `useRouter()`
+
+Hook for programmatic navigation and router state.
+
+```tsx
+import { useRouter } from "@teyik0/furin/link";
+
+function PostActions() {
+  const router = useRouter();
+
+  return (
+    <button onClick={() => router.navigate("/blog")}>
+      Go to blog
+    </button>
+  );
+}
+```
+
+### Return value
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `navigate(href, opts?)` | `(string, { replace?, resetScroll? }) => Promise<void>` | SPA navigation |
+| `refresh(opts?)` | `({ resetScroll? }) => Promise<void>` | Re-fetch current page (cache bust + replaceState) |
+| `prefetch(href, opts?)` | `(string, { staleTime? }) => void` | Manual prefetch |
+| `invalidatePrefetch(path, type?)` | `(string, "page" \| "layout"?) => void` | Evict prefetch cache entries |
+| `currentHref` | `string` | Current logical pathname + search (basePath stripped) |
+| `basePath` | `string` | Sub-path prefix for static deployments |
+| `isNavigating` | `boolean` | `true` while a navigation is in flight |
+
+### `navigate()`
+
+```tsx
+// Push new history entry
+router.navigate("/blog/my-post");
+
+// Replace current entry
+router.navigate("/blog/my-post", { replace: true });
+
+// Navigate without scrolling
+router.navigate("/tabs/settings", { resetScroll: false });
+```
+
+### `refresh()`
+
+Re-fetches the current page in-place. Busts the prefetch cache, re-runs loaders, and updates the tree — without adding a history entry.
+
+```tsx
+await apiClient.publishPost({ id });
+await router.refresh();
+```
+
+Prefer `refresh()` over `router.navigate(window.location.pathname)` after a mutation.
+
+---
+
+## Hash-only navigation
+
+When the pathname is identical and only the hash differs, Furin lets the browser handle scrolling natively instead of triggering a full SPA fetch:
+
+```tsx
+// On /docs/page, clicking this scrolls to #section natively
+<a href="#section">Jump to section</a>
+```
+
+This also works for `<Link to="/docs/page#section">` when already on `/docs/page`.
+
+---
+
+## `applyRevalidateHeader`
+
+If you make manual `fetch()` calls and want to propagate server-side `revalidatePath()` invalidations to the prefetch cache:
+
+```tsx
+import { applyRevalidateHeader } from "@teyik0/furin/link";
+
+const res = await fetch("/api/publish");
+applyRevalidateHeader(res.headers, (path, type) => {
+  console.log("invalidate", path, type);
+});
+```
+
+This is the same utility `RouterProvider` uses internally to process `X-Furin-Revalidate` headers.

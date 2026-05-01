@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- Trailing-slash regex in generated hydration entry now strips multiple consecutive trailing slashes (`///`) instead of just one.
+- `MdxLink` wrapper in docs app now correctly treats relative MDX links as internal and enforces `rel="noopener noreferrer"` on external anchors.
+- `revalidatePath` signature restored to accept a single argument (default `"page"`) for backward compatibility.
+- `shouldInterceptClick` test helpers no longer rely on implicit default parameters.
+
+### Changed
+- Router provider extracted into its own module (`refactor: extract router provider`).
+- Unified cache invalidation logic — root path is always included in CDN purge set alongside descendant paths.
+
+## [0.1.0-alpha.11] — 2026-04-30
+
+### Added
+- **Dev cache invalidation for SSG and ISR routes** — `revalidatePath()` now also clears the dev-mode loader data caches, so mutations immediately reflect in the browser without waiting for the revalidate window.
+- **ISR support in dev mode** — dev server now caches ISR loader data with proper freshness tracking, matching production behaviour.
+- **Dev invalidator watches nested `pages/` directories** — source-file mtime tracking now covers all nested layout and page files, preventing stale data after edits in deeply nested routes.
+
+### Fixed
+- ISR HMR loader not serving fresh data after a loader-bearing route was hot-reloaded.
+- ISR cache key collision between routes with identical URL paths but different root directories.
+- Various review fixes from automated and human code review (trailing-slash normalization, click interception, MDX link security).
+
 ## [0.1.0-alpha.10] — 2026-04-20
 
 ### Added

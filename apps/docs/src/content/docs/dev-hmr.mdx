@@ -245,3 +245,35 @@ This setup gives Furin two useful properties in development:
 - client-side navigation stays on SPA transitions instead of degrading into full reloads
 - template URLs stay aligned with the latest client rebundle
 - live HMR updates seamlessly pick up layout changes and fresh loader data without hydration mismatches
+
+---
+
+## Dev Inspector
+
+In development mode, Furin exposes JSON inspection endpoints at `/__furin/_inspect` for debugging cache state.
+
+### `GET /__furin/_inspect/isr`
+
+Lists all dev-mode ISR loader cache entries:
+
+```json
+{
+  "entries": [
+    {
+      "key": "/Users/me/app/src/pages:/blog/my-post",
+      "mode": "isr",
+      "isFresh": true,
+      "revalidate": 60,
+      "generatedAt": 1714500000000,
+      "dependencies": ["/Users/me/app/src/pages/blog/[slug].tsx"],
+      "dataPreview": { "post": { "title": "Hello" } }
+    }
+  ]
+}
+```
+
+### `GET /__furin/_inspect/ssg`
+
+Same format for SSG entries.
+
+These endpoints are intended to back a future browser DevTools panel. They are not a public API and may change without notice.
