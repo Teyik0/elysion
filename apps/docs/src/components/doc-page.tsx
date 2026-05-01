@@ -4,12 +4,29 @@ import type { DocNavItem } from "@/lib/docs";
 import { CodeTab, CodeTabs } from "./code-tabs";
 import { DocsActions } from "./docs-actions";
 
+const ABSOLUTE_URL_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+function isInternalHref(href: string | undefined): boolean {
+  if (!href) {
+    return false;
+  }
+  // Protocol-relative URLs are external
+  if (href.startsWith("//")) {
+    return false;
+  }
+  // Absolute URLs (http:, https:, mailto:, etc.) are external
+  if (ABSOLUTE_URL_RE.test(href)) {
+    return false;
+  }
+  return true;
+}
+
 export function MdxLink({
   href,
   children,
   ...props
 }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  if (href?.startsWith("/") && !href.startsWith("//")) {
+  if (href && isInternalHref(href)) {
     return (
       <Link to={href} {...props}>
         {children}
@@ -24,7 +41,7 @@ export function MdxLink({
     );
   }
   return (
-    <a href={href} rel="noopener noreferrer" target="_blank" {...props}>
+    <a href={href} {...props} rel="noopener noreferrer" target="_blank">
       {children}
     </a>
   );

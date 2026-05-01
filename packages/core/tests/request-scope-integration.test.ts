@@ -75,7 +75,7 @@ describe.serial("request scope isolation when furin is mounted as a plugin", () 
 
     // Global invalidation (outside any request scope).
     // If the plugin request scope is broken, this path leaks into the response.
-    revalidatePath("/global-leak");
+    revalidatePath("/global-leak", "page");
 
     const response = await parent.handle(new Request("http://furin/revalidate-a"));
     const header = response.headers.get("x-furin-revalidate");

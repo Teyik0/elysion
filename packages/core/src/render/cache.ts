@@ -217,7 +217,7 @@ registerCacheInvalidator(ssgRouteCache);
  * revalidatePath("/blog", "layout");          // invalidate /blog + all children
  * ```
  */
-export function revalidatePath(path: string, type: RevalidateType = "page"): boolean {
+export function revalidatePath(path: string, type: RevalidateType): boolean {
   // Queue for client-side notification via X-Furin-Revalidate header
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
@@ -229,7 +229,7 @@ export function revalidatePath(path: string, type: RevalidateType = "page"): boo
     purgedPaths.push(...result.purgedPaths);
   }
 
-  callCachePurger(purgedPaths.length > 0 ? dedupePaths(purgedPaths) : [path]);
+  callCachePurger(dedupePaths([...purgedPaths, path]));
   return deleted;
 }
 
