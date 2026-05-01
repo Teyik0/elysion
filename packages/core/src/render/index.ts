@@ -1,8 +1,8 @@
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { RouterContext, type RouterContextValue } from "../link.tsx";
 import { FurinNotFoundError } from "../not-found.ts";
 import type { RootLayout } from "../router.ts";
+import { RouterContext, type RouterContextValue } from "../router-provider.tsx";
 import { assembleHTML, resolvePath, splitTemplate, streamToString } from "./assemble.ts";
 import {
   getISRCache,

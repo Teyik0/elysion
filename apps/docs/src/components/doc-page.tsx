@@ -16,6 +16,13 @@ export function MdxLink({
       </Link>
     );
   }
+  if (href?.startsWith("#")) {
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
+  }
   return (
     <a href={href} rel="noopener noreferrer" target="_blank" {...props}>
       {children}
