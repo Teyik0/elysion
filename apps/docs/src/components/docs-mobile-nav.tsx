@@ -44,11 +44,19 @@ export function DocsMobileNav() {
                     <li key={item.href}>
                       <SheetClose asChild>
                         <Link
-                          activeProps={({ isActive }) => ({
-                            className: isActive
-                              ? "block rounded-lg px-3 py-2 text-sm transition-colors bg-accent text-foreground"
-                              : "block rounded-lg px-3 py-2 text-sm transition-colors text-muted-foreground hover:bg-muted hover:text-foreground",
-                          })}
+                          activeProps={({
+                            isActive,
+                          }: {
+                            isActive: boolean;
+                          }): React.AnchorHTMLAttributes<HTMLAnchorElement> =>
+                            isActive
+                              ? {
+                                  className:
+                                    "block rounded-lg px-3 py-2 text-sm transition-colors bg-accent text-foreground",
+                                }
+                              : {}
+                          }
+                          className="block rounded-lg px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
                           onClick={() => setOpen(false)}
                           to={item.href}
                         >

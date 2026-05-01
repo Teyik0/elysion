@@ -410,8 +410,8 @@ describe("types", () => {
     expectTypeOf<ReturnType<RouterContextValue["refresh"]>>().toEqualTypeOf<Promise<void>>();
   });
 
-  test("RouterProviderProps.autoRefresh is an optional boolean", () => {
-    expectTypeOf<RouterProviderProps["autoRefresh"]>().toEqualTypeOf<boolean | undefined>();
+  test("RouterProviderProps.autoRefresh is a required boolean", () => {
+    expectTypeOf<RouterProviderProps["autoRefresh"]>().toEqualTypeOf<boolean>();
   });
 
   test("LinkProps.preload is an optional PreloadStrategy", () => {
@@ -460,8 +460,8 @@ describe("types", () => {
     expectTypeOf<"/">().toMatchTypeOf<SimulatedRouteTo>();
   });
 
-  test("RouterProviderProps.prefetchCacheSize is an optional number", () => {
-    expectTypeOf<RouterProviderProps["prefetchCacheSize"]>().toEqualTypeOf<number | undefined>();
+  test("RouterProviderProps.prefetchCacheSize is a required number", () => {
+    expectTypeOf<RouterProviderProps["prefetchCacheSize"]>().toEqualTypeOf<number>();
   });
 });
 

@@ -10,13 +10,9 @@ export default route.page({
   }),
   loader: () => {
     const doc = DOCS_BY_PATH["/docs/head-seo"];
-    return { markdownSource: getDocSourceText(doc.sourcePath) };
+    return { doc, markdownSource: getDocSourceText(doc.sourcePath) };
   },
-  component: ({ markdownSource }) => (
-    <DocPage
-      Content={HeadSeo}
-      doc={DOCS_BY_PATH["/docs/head-seo"]}
-      markdownSource={markdownSource}
-    />
+  component: ({ doc, markdownSource }) => (
+    <DocPage Content={HeadSeo} doc={doc} markdownSource={markdownSource} />
   ),
 });

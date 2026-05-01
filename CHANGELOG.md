@@ -150,7 +150,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `writeRouteTypes()` generating `furin-env.d.ts` for per-route type inference
 - Bun-native HMR with React Fast Refresh — single process, no Vite
 
-[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.10...HEAD
+[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.11...HEAD
+[0.1.0-alpha.11]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
 [0.1.0-alpha.10]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
 [0.1.0-alpha.9]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.7...v0.1.0-alpha.8

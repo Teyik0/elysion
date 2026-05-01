@@ -98,7 +98,7 @@ export function generateHydrateEntry(
     : `"/_furin/ingest"`;
 
   // RouterProvider receives basePath so navigate() / Link push physical paths.
-  const basePathProp = basePath ? `\n      basePath: ${basePathLiteral},` : "";
+  const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,`;
 
   const conventionImportsBlock = conventionImportLines ? `\n${conventionImportLines}` : "";
 
@@ -147,7 +147,7 @@ const rootEl = document.getElementById("root") as HTMLElement;
       initialMatch: match,
       initialData: loaderData,
       initialDigest: loaderData.__furinError?.digest,
-      initialNotFound: isNotFound ? (loaderData.__furinNotFound ?? loaderData) : undefined,${basePathProp}
+      initialNotFound: isNotFound ? (loaderData.__furinNotFound ?? loaderData) : undefined,${routerProviderDefaults}
     } as any);
   } else if (loaderData.__furinStatus === 404) {
     // Direct load to an unknown URL. The server sent the root not-found UI
@@ -164,7 +164,7 @@ const rootEl = document.getElementById("root") as HTMLElement;
       initialMatch: null,
       initialData: cleanData,
       initialDigest: loaderData.__furinError?.digest,
-      initialNotFound: loaderData.__furinNotFound ?? {},${basePathProp}
+      initialNotFound: loaderData.__furinNotFound ?? {},${routerProviderDefaults}
     } as any);
   } else {
     // No match and no 404 signal — either the client bundle is out of sync

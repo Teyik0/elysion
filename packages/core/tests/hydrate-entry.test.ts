@@ -59,9 +59,9 @@ describe("generateHydrateEntry", () => {
     expect(code).not.toContain('" + "/_furin/ingest"');
   });
 
-  test("B12c: without basePath — RouterProvider has no basePath prop", () => {
+  test("B12c: without basePath — RouterProvider has basePath: ''", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "");
-    expect(code).not.toContain("basePath:");
+    expect(code).toContain('basePath: ""');
   });
 
   // ── B13: with basePath — stripping logic injected ────────────────────────────
