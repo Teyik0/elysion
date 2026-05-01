@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/server.ts",
-    "test": "bun test",
+    "test": "bun test --preload ../../tests/setup.ts",
     "test:types": "tsc --noEmit",
     "start:debug": "bun run --cpu-prof --cpu-prof-md --heap-prof-md --inspect ./.furin/build/bun/server.js",
     "start": "./.furin/build/bun/server",
