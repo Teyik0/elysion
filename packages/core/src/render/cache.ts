@@ -176,6 +176,19 @@ const _cacheInvalidators = new Map<string, CacheInvalidator>();
  * @internal
  */
 export function registerCacheInvalidator(invalidator: CacheInvalidator): () => void {
+  const existing = _cacheInvalidators.get(invalidator.name);
+  if (existing !== undefined && existing !== invalidator) {
+    throw new Error(
+      `Cache invalidator "${invalidator.name}" is already registered with a different instance.`
+    );
+  }
+  if (existing === invalidator) {
+    return () => {
+      if (_cacheInvalidators.get(invalidator.name) === invalidator) {
+        _cacheInvalidators.delete(invalidator.name);
+      }
+    };
+  }
   _cacheInvalidators.set(invalidator.name, invalidator);
   return () => {
     if (_cacheInvalidators.get(invalidator.name) === invalidator) {
@@ -196,8 +209,10 @@ registerCacheInvalidator(ssgRouteCache);
 /**
  * Programmatically invalidate the server-side cache for a given path.
  *
- * - `type: 'page'` (default): exact URL match.
- * - `type: 'layout'`: the path itself plus all nested children (prefix match).
+ * - `type: 'page'` — exact URL match.
+ * - `type: 'layout'` — the path itself plus all nested children (prefix match).
+ *
+ * The `type` parameter is required and must be provided by callers.
  *
  * Works for ISR and SSG routes. SSR routes are always fresh (no server-side
  * cache), but calling this still queues a client-side prefetch invalidation

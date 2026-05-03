@@ -17,7 +17,7 @@ const SOURCE_PREFIX_RE = /^src\//;
  */
 export function getDocSourceText(sourcePath: string): string {
   const pregenerated = DOCS_CONTENT[sourcePath];
-  if (pregenerated) {
+  if (pregenerated !== undefined) {
     return pregenerated;
   }
 

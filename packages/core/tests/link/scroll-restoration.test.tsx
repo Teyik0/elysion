@@ -45,6 +45,22 @@ function makeHtmlResponse(data: Record<string, unknown>, title: string): Respons
   return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
 }
 
+function waitFor(predicate: () => boolean, timeout = 2000, interval = 10): Promise<void> {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) {
+        resolve();
+      } else if (Date.now() - start > timeout) {
+        reject(new Error("waitFor timed out"));
+      } else {
+        setTimeout(tick, interval);
+      }
+    };
+    tick();
+  });
+}
+
 interface RenderRouterResult {
   cleanup: () => void;
   container: HTMLDivElement;
@@ -208,18 +224,17 @@ describe("scroll restoration on browser back", () => {
 
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    // Wait for async navigation
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // 3. Verify we navigated to Page B (scroll should be reset to top)
-    expect(win.location.pathname).toBe("/page-b");
+    await waitFor(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    );
     expect(currentScrollY).toBe(0);
 
     // 4. Simulate browser back button
     win.history.back();
 
-    // Wait for async popstate handler
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(
+      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A")
+    );
 
     // 5. Verify we're back on Page A and scroll is restored
     expect(win.location.pathname).toBe("/page-a");
@@ -238,7 +253,9 @@ describe("scroll restoration on browser back", () => {
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    );
 
     expect(win.location.pathname).toBe("/page-b");
     expect(currentScrollY).toBe(0);
@@ -259,7 +276,9 @@ describe("scroll restoration on browser back", () => {
     currentScrollY = 100;
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    );
 
     // Scroll down on Page B to 200
     currentScrollY = 200;
@@ -267,20 +286,24 @@ describe("scroll restoration on browser back", () => {
     // Navigate B -> C
     const linkC = container.querySelector('a[href="/page-c"]') as HTMLAnchorElement;
     linkC.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(
+      () => win.location.pathname === "/page-c" && container.textContent?.includes("Page C")
+    );
 
     expect(win.location.pathname).toBe("/page-c");
 
     // Back to B
     win.history.back();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(win.location.pathname).toBe("/page-b");
+    await waitFor(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    );
     expect(currentScrollY).toBe(200);
 
     // Back to A
     win.history.back();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(win.location.pathname).toBe("/page-a");
+    await waitFor(
+      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A")
+    );
     expect(currentScrollY).toBe(100); // Position when we left A
 
     cleanup();

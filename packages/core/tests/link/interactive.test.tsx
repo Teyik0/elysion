@@ -7,7 +7,7 @@ import { Link, RouterContext, type RouterContextValue, SSR_FALLBACK_ROUTER } fro
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeRouterContext(overrides: Partial<RouterContextValue> = {}): RouterContextValue {
+function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): RouterContextValue {
   return {
     basePath: "",
     currentHref: "/",
@@ -23,7 +23,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> = {}): RouterC
     defaultPreload: "intent",
     defaultPreloadDelay: 50,
     defaultPreloadStaleTime: 30_000,
-    ...overrides,
+    ...(overrides ?? {}),
   };
 }
 
@@ -34,7 +34,10 @@ interface RenderResult {
   root: Root;
 }
 
-function renderLink(element: React.ReactElement, ctx?: RouterContextValue): RenderResult {
+function renderLink(
+  element: React.ReactElement,
+  ctx: RouterContextValue | undefined
+): RenderResult {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -374,7 +377,7 @@ describe("LinkInteractive — client-side behaviour", () => {
   // ── Rendering ───────────────────────────────────────────────────────────────
 
   test("renders an anchor with correct href", () => {
-    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"));
+    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), undefined);
     expect(anchor.tagName).toBe("A");
     expect(anchor.getAttribute("href")).toBe("/blog");
     expect(anchor.textContent).toBe("Blog");
@@ -389,7 +392,7 @@ describe("LinkInteractive — client-side behaviour", () => {
   });
 
   test("appends search and hash to href", () => {
-    const ctx = makeRouterContext();
+    const ctx = makeRouterContext(undefined);
     const { anchor, cleanup } = renderLink(
       createElement(Link, { to: "/blog", search: { page: 2 }, hash: "comments" }, "Blog"),
       ctx
@@ -414,7 +417,8 @@ describe("LinkInteractive — client-side behaviour", () => {
 
   test("aria-disabled when disabled", () => {
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/about", disabled: true }, "About")
+      createElement(Link, { to: "/about", disabled: true }, "About"),
+      undefined
     );
     expect(anchor.getAttribute("aria-disabled")).toBe("true");
     cleanup();
@@ -616,7 +620,10 @@ describe("LinkInteractive — client-side behaviour", () => {
     const onClick = mock<(e: React.MouseEvent<HTMLAnchorElement>) => void>(() => {
       /* noop */
     });
-    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog", onClick }, "Blog"));
+    const { anchor, cleanup } = renderLink(
+      createElement(Link, { to: "/blog", onClick }, "Blog"),
+      undefined
+    );
 
     anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
@@ -930,7 +937,8 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onMouseEnter }, "Blog")
+      createElement(Link, { to: "/blog", onMouseEnter }, "Blog"),
+      undefined
     );
 
     anchor.dispatchEvent(
@@ -946,7 +954,8 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onMouseLeave }, "Blog")
+      createElement(Link, { to: "/blog", onMouseLeave }, "Blog"),
+      undefined
     );
 
     anchor.dispatchEvent(
@@ -961,7 +970,10 @@ describe("LinkInteractive — client-side behaviour", () => {
     const onFocus = mock<(e: React.FocusEvent<HTMLAnchorElement>) => void>(() => {
       /* noop */
     });
-    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog", onFocus }, "Blog"));
+    const { anchor, cleanup } = renderLink(
+      createElement(Link, { to: "/blog", onFocus }, "Blog"),
+      undefined
+    );
 
     anchor.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
@@ -973,7 +985,7 @@ describe("LinkInteractive — client-side behaviour", () => {
 
   test("without RouterProvider, click falls back to window.location.href", () => {
     const originalHref = window.location.href;
-    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"));
+    const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), undefined);
 
     anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 

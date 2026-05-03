@@ -30,7 +30,7 @@ import { FurinErrorBoundary } from "../src/render/boundaries";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeRouterContext(overrides: Partial<RouterContextValue> = {}): RouterContextValue {
+function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): RouterContextValue {
   return {
     basePath: "",
     currentHref: "/",
@@ -46,7 +46,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> = {}): RouterC
     defaultPreload: "intent",
     defaultPreloadDelay: 50,
     defaultPreloadStaleTime: 30_000,
-    ...overrides,
+    ...(overrides ?? {}),
   };
 }
 
@@ -56,20 +56,21 @@ function renderWithRouter(element: React.ReactElement, ctx: RouterContextValue):
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): RuntimeRoute {
-  return { __type: "FURIN_ROUTE", ...opts };
+function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> | undefined): RuntimeRoute {
+  return { __type: "FURIN_ROUTE", ...(opts ?? {}) };
 }
 
 function makeMatch(
   component: React.FC<Record<string, unknown>>,
   pageRoute: RuntimeRoute,
-  pattern = "/"
+  pattern: string | undefined
 ): LoadedClientRoute {
+  const p = pattern ?? "/";
   return {
     component,
     pageRoute,
-    pattern,
-    regex: new RegExp(`^${pattern}$`),
+    pattern: p,
+    regex: new RegExp(`^${p}$`),
     load: () => Promise.resolve({ default: { component, _route: pageRoute } }),
   };
 }
@@ -159,7 +160,7 @@ describe("buildPageElement", () => {
   const Page: React.FC<Record<string, unknown>> = () => createElement("p", null, "page");
 
   test("no layout — returns the page element directly", () => {
-    const match = makeMatch(Page, makeRoute());
+    const match = makeMatch(Page, makeRoute(undefined), undefined);
     expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
       "<p>page</p>"
     );
@@ -169,7 +170,7 @@ describe("buildPageElement", () => {
     const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       createElement("main", null, children);
 
-    const match = makeMatch(Page, makeRoute({ layout: Layout }));
+    const match = makeMatch(Page, makeRoute({ layout: Layout }), undefined);
     expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
       "<main><p>page</p></main>"
     );
@@ -180,7 +181,7 @@ describe("buildPageElement", () => {
       createElement("body", null, children);
 
     const root = makeRoute({ layout: Root });
-    const match = makeMatch(Page, makeRoute()); // pageRoute has no layout
+    const match = makeMatch(Page, makeRoute(undefined), undefined); // pageRoute has no layout
     expect(renderToStaticMarkup(buildPageElement(match, root, data, undefined))).toBe(
       "<body><p>page</p></body>"
     );
@@ -205,7 +206,7 @@ describe("buildPageElement", () => {
     const DataPage: React.FC<Record<string, unknown>> = ({ title }) =>
       createElement("h1", null, String(title));
 
-    const match = makeMatch(DataPage, makeRoute());
+    const match = makeMatch(DataPage, makeRoute(undefined), undefined);
     expect(
       renderToStaticMarkup(buildPageElement(match, null, { title: "Hello World" }, undefined))
     ).toBe("<h1>Hello World</h1>");
@@ -215,7 +216,7 @@ describe("buildPageElement", () => {
     const Layout: React.FC<Record<string, unknown>> = ({ title, children }) =>
       createElement("div", { "data-title": String(title) }, children as React.ReactNode);
 
-    const match = makeMatch(Page, makeRoute({ layout: Layout }));
+    const match = makeMatch(Page, makeRoute({ layout: Layout }), undefined);
     expect(
       renderToStaticMarkup(buildPageElement(match, null, { title: "My Blog" }, undefined))
     ).toBe('<div data-title="My Blog"><p>page</p></div>');
@@ -876,7 +877,7 @@ describe("buildRouterTree", () => {
   const page = createElement("p", null, "page");
 
   test("returns a FurinErrorBoundary as the outermost element", () => {
-    const tree = buildRouterTree(makeRouterContext(), page, {});
+    const tree = buildRouterTree(makeRouterContext(undefined), page, {});
     expect(tree.type).toBe(FurinErrorBoundary);
   });
 
@@ -892,7 +893,7 @@ describe("buildRouterTree", () => {
   });
 
   test("forwards digest onto the root boundary (Slice 10 — rehydration)", () => {
-    const tree = buildRouterTree(makeRouterContext(), page, { digest: "deadbeef12" });
+    const tree = buildRouterTree(makeRouterContext(undefined), page, { digest: "deadbeef12" });
     expect((tree.props as { digest?: string }).digest).toBe("deadbeef12");
   });
 
@@ -900,7 +901,7 @@ describe("buildRouterTree", () => {
     const onReset = () => {
       /* noop */
     };
-    const tree = buildRouterTree(makeRouterContext(), page, {
+    const tree = buildRouterTree(makeRouterContext(undefined), page, {
       onReset,
       resetKey: "/blog",
     });
@@ -910,13 +911,13 @@ describe("buildRouterTree", () => {
   });
 
   test("omits digest when not provided (no false correlation)", () => {
-    const tree = buildRouterTree(makeRouterContext(), page, {});
+    const tree = buildRouterTree(makeRouterContext(undefined), page, {});
     expect((tree.props as { digest?: string }).digest).toBeUndefined();
   });
 
   test("renders children unchanged when no error is thrown (SSR passthrough)", () => {
     const html = renderToStaticMarkup(
-      buildRouterTree(makeRouterContext(), createElement("h1", null, "hello"), {})
+      buildRouterTree(makeRouterContext(undefined), createElement("h1", null, "hello"), {})
     );
     expect(html).toContain("hello");
   });
@@ -927,7 +928,7 @@ describe("buildRouterTree", () => {
     // already picks up at depth 0. The top boundary stays with the built-in
     // default so there's always something to render even if user's own
     // error.tsx throws during its own render.
-    const tree = buildRouterTree(makeRouterContext(), page, {});
+    const tree = buildRouterTree(makeRouterContext(undefined), page, {});
     expect((tree.props as { fallback?: unknown }).fallback).toBeUndefined();
   });
 });

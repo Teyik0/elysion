@@ -549,7 +549,13 @@ export function shouldInterceptClick(
   }
 
   const logicalPath = normalizeHref(toLogical(url.pathname, basePath));
-  if (!normalizePath(url.pathname).startsWith(normalizePath(basePath))) {
+  const normalizedBase = normalizePath(basePath);
+  const normalizedPathname = normalizePath(url.pathname);
+  if (
+    normalizedBase &&
+    normalizedPathname !== normalizedBase &&
+    !normalizedPathname.startsWith(`${normalizedBase}/`)
+  ) {
     return null;
   }
   return logicalPath + url.search + url.hash;
@@ -1342,7 +1348,7 @@ export function RouterProvider({
       });
       if (_autoRefresh && invalidated.length > 0) {
         const currentLogicalPath =
-          toLogical(window.location.pathname, _basePath) + window.location.search;
+          normalizeHref(toLogical(window.location.pathname, _basePath)) + window.location.search;
         if (shouldAutoRefreshPath(currentLogicalPath, invalidated)) {
           // fire-and-forget: don't block the original fetch caller
           refresh();
