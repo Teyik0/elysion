@@ -7,9 +7,9 @@ interface AstNode {
   [key: string]: unknown;
 }
 
-function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" {
+function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dts" {
   if (filePath.endsWith(".d.ts")) {
-    return "js";
+    return "dts";
   }
   const ext = filePath.split(".").pop()?.toLowerCase();
   switch (ext) {
@@ -30,6 +30,11 @@ function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" {
 export function scanFurinInstances(serverEntryPath: string): string[] {
   const code = readFileSync(serverEntryPath, "utf8");
   let lang = detectLangFromPath(serverEntryPath);
+
+  // Declaration files contain no runtime code — skip parsing.
+  if (lang === "dts") {
+    return [];
+  }
 
   let parseInput = code;
   if (lang === "ts" || lang === "tsx") {

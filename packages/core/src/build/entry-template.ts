@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
 // through package exports, and is the Web-standard API.
 const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
-const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "furin.ts"))
+const _pkgSrcDirRaw = existsSync(join(_pkgRoot, "src", "furin.ts"))
   ? join(_pkgRoot, "src")
   : join(_pkgRoot, "dist");
+// Normalize to forward slashes so endsWith checks and template paths work on Windows.
+const _pkgSrcDir = _pkgSrcDirRaw.replace(/\\/g, "/");
 const _ext = _pkgSrcDir.endsWith("/src") ? ".ts" : ".js";
 const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/internal${_ext}`;
 const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/runtime-env${_ext}`;
