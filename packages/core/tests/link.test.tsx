@@ -227,7 +227,7 @@ describe("buildPageElement", () => {
 describe("Link", () => {
   test("renders an <a> tag with the given to path", () => {
     const html = renderToStaticMarkup(createElement(Link, { to: "/blog" }, "Blog"));
-    expect(html).toBe('<a href="/blog">Blog</a>');
+    expect(html).toBe('<a href="/blog" data-furin-link="true">Blog</a>');
   });
 
   test("passes through className", () => {
@@ -258,12 +258,12 @@ describe("Link", () => {
       // Cast because RouteManifest is unaugmented here; external URLs are still valid at runtime
       createElement(Link, { to: "https://example.com" as string }, "External")
     );
-    expect(html).toBe('<a href="https://example.com">External</a>');
+    expect(html).toBe('<a href="https://example.com" data-furin-link="true">External</a>');
   });
 
   test("renders without children", () => {
     const html = renderToStaticMarkup(createElement(Link, { to: "/empty" as string }));
-    expect(html).toBe('<a href="/empty"></a>');
+    expect(html).toBe('<a href="/empty" data-furin-link="true"></a>');
   });
 
   test("search params are serialized into the href", () => {
@@ -271,14 +271,14 @@ describe("Link", () => {
       // Cast to string since RouteManifest is unaugmented in tests
       createElement(Link, { to: "/blog" as string, search: { page: 2 } }, "Next")
     );
-    expect(html).toBe('<a href="/blog?page=2">Next</a>');
+    expect(html).toBe('<a href="/blog?page=2" data-furin-link="true">Next</a>');
   });
 
   test("hash is appended to the href", () => {
     const html = renderToStaticMarkup(
       createElement(Link, { to: "/about" as string, hash: "team" }, "Team")
     );
-    expect(html).toBe('<a href="/about#team">Team</a>');
+    expect(html).toBe('<a href="/about#team" data-furin-link="true">Team</a>');
   });
 
   test("data-status='active' when to matches the fallback currentHref '/'", () => {

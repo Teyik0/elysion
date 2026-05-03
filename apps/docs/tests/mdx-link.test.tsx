@@ -17,7 +17,7 @@ describe("MdxLink", () => {
   test("renders a Furin <Link> for internal absolute paths", () => {
     const html = renderToStaticMarkup(createElement(MdxLink, { href: "/docs/routing" }, "Routing"));
     // Link during SSR renders as <a> with the href
-    expect(html).toBe('<a href="/docs/routing">Routing</a>');
+    expect(html).toBe('<a href="/docs/routing" data-furin-link="true">Routing</a>');
   });
 
   test("renders a native <a> for protocol-relative URLs", () => {
@@ -70,6 +70,6 @@ describe("MdxLink", () => {
         createElement(MdxLink, { href: "/routing" }, "Routing")
       )
     );
-    expect(html).toBe('<a href="/docs/routing">Routing</a>');
+    expect(html).toBe('<a href="/docs/routing" data-furin-link="true">Routing</a>');
   });
 });

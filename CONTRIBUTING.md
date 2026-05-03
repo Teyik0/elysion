@@ -20,7 +20,7 @@ bun install
 bun run dev        # Run the example app with HMR
 bun run build      # Build the library to dist/
 bun run test       # Run tests
-bun run test:types # Type-check without emitting
+bun run tscheck # Type-check without emitting
 bun run fix        # Auto-fix lint issues
 ```
 
@@ -36,7 +36,7 @@ The monorepo is structured as:
 Please make sure all of the following pass before requesting a review:
 
 ```bash
-bun run fix && bun run test && bun run test:types
+bun run fix && bun run test && bun run tscheck
 ```
 
 Unverified pull requests will not be reviewed until the checks are green.

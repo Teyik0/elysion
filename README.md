@@ -232,7 +232,7 @@ From this monorepo root:
 ```bash
 bun run fix
 bun run test
-bun run test:types
+bun run tscheck
 ```
 
 For the docs app:

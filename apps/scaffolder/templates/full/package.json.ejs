@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "fix": "ultracite fix",
+    "tscheck": "tsc --noEmit",
     "dev": "bun --hot src/server.ts",
     "build": "furin build --target bun --compile embed",
-    "start": "./.furin/build/bun/server",
-    "fix": "ultracite fix",
-    "test:types": "tsc --noEmit"
+    "start": "./.furin/build/bun/server"
   },
   "dependencies": {
     "@teyik0/furin": "<%= versions['@teyik0/furin'] %>",

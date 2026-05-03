@@ -20,6 +20,15 @@ export function getDocSourceText(sourcePath: string): string {
   if (pregenerated) {
     return pregenerated;
   }
+
+  // In compiled binaries the filesystem is virtual and raw MDX sources are not
+  // present. Fail fast with a clear message instead of an obscure ENOENT.
+  if (import.meta.path?.includes("/$bunfs/")) {
+    throw new Error(
+      `Missing pre-generated content for ${sourcePath}. Run generate:content before building the binary.`
+    );
+  }
+
   return readFileSync(
     new URL(`../${sourcePath.replace(SOURCE_PREFIX_RE, "")}`, import.meta.url),
     "utf8"

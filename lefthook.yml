@@ -6,7 +6,7 @@ pre-commit:
       stage_fixed: true
 
     - name: typescript check
-      run: bun run test:types
+      run: bun run tscheck
       stage_fixed: true
 
     - name: knip
