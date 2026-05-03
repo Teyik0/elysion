@@ -5,7 +5,7 @@
  * calls setProductionTemplateContent() — a module-level singleton that is not
  * safe to mutate from concurrent describe blocks.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildStaticTarget } from "../src/adapter/static.ts";
@@ -13,6 +13,7 @@ import type { BuildAppOptions } from "../src/build/types.ts";
 import { __resetCacheState } from "../src/render/cache.ts";
 import { __resetTemplateState } from "../src/render/template.ts";
 import { scanPages } from "../src/router.ts";
+import { __setDevMode } from "../src/runtime-env.ts";
 import { createTmpApp } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
 
@@ -27,6 +28,9 @@ const UNSAFE_PATH_RE = /unsafe output path/;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
+
+beforeAll(() => __setDevMode(false));
+afterAll(() => __setDevMode(true));
 
 afterEach(() => {
   __resetCacheState();
@@ -99,7 +103,7 @@ describe.serial("buildStaticTarget", () => {
     const { root, routes } = await scanPages(join(app.path, "src/pages"));
     const distDir = join(app.path, "dist");
 
-    await expect(
+    expect(
       withBuildStub(() =>
         buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
           target: "static",
@@ -202,7 +206,7 @@ describe.serial("buildStaticTarget", () => {
     const app = makeApp("cli-app");
     const { root, routes } = await scanPages(join(app.path, "src/pages"));
 
-    await expect(
+    expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
         target: "static",
         staticConfig: { outDir: join(app.path, "dist"), basePath: "sub-path" },
@@ -235,7 +239,7 @@ describe.serial("buildStaticTarget", () => {
     const app = makeApp("cli-app");
     const { root, routes } = await scanPages(join(app.path, "src/pages"));
 
-    await expect(
+    expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
         target: "static",
         staticConfig: { outDir: "/" },
@@ -249,7 +253,7 @@ describe.serial("buildStaticTarget", () => {
     const app = makeApp("cli-app");
     const { root, routes } = await scanPages(join(app.path, "src/pages"));
 
-    await expect(
+    expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
         target: "static",
         staticConfig: { outDir: app.path },
@@ -266,7 +270,7 @@ describe.serial("buildStaticTarget", () => {
     // Parent directory contains the app root — deleting it would wipe the app
     const parentDir = join(app.path, "..");
 
-    await expect(
+    expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
         target: "static",
         staticConfig: { outDir: parentDir },
@@ -367,7 +371,7 @@ describe.serial("buildStaticTarget", () => {
       },
     };
 
-    await expect(
+    expect(
       withBuildStub(() =>
         buildStaticTarget(
           [failingRoute, ...routes.filter((r) => r.mode === "ssg")],
@@ -438,7 +442,7 @@ describe.serial("buildStaticTarget", () => {
         : r
     );
 
-    await expect(
+    expect(
       withBuildStub(() =>
         buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
           target: "static",
