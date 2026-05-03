@@ -49,15 +49,16 @@ interface RenderRouterResult {
 
 async function renderRouterWithLink(
   routes: ClientRoute[],
-  initialPath = "/"
+  initialPath: string | undefined
 ): Promise<RenderRouterResult> {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
   const win = globalThis as unknown as Window & typeof globalThis;
-  win.location.href = `http://localhost:3000${initialPath}`;
-  win.history.replaceState(null, "", initialPath);
+  const path = initialPath ?? "/";
+  win.location.href = `http://localhost:3000${path}`;
+  win.history.replaceState(null, "", path);
 
   let initialMatch:
     | (ClientRoute & {
@@ -65,7 +66,7 @@ async function renderRouterWithLink(
         pageRoute: unknown;
       })
     | null = null;
-  const rawMatch = routes.find((r) => r.regex.test(initialPath));
+  const rawMatch = routes.find((r) => r.regex.test(path));
   if (rawMatch) {
     const mod = await rawMatch.load();
     initialMatch = {
@@ -112,11 +113,13 @@ describe("RouterProvider click interception", () => {
   let originalFetch: typeof globalThis.fetch;
   let originalPushState: typeof window.history.pushState;
   let pushStateCalls: Array<{ url: string }> = [];
+  let currentCleanup: (() => void) | undefined;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     originalPushState = window.history.pushState;
     pushStateCalls = [];
+    currentCleanup = undefined;
 
     globalThis.fetch = mock((input: RequestInfo | URL) => {
       const url = new URL(input.toString(), window.location.origin);
@@ -142,11 +145,14 @@ describe("RouterProvider click interception", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     window.history.pushState = originalPushState;
+    currentCleanup?.();
+    currentCleanup = undefined;
   });
 
   test("click on Furin Link triggers history.pushState exactly once", async () => {
     const routes = [makeRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
     const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+    currentCleanup = cleanup;
 
     const anchor = container.querySelector("a") as HTMLAnchorElement;
     expect(anchor).not.toBeNull();
@@ -169,7 +175,5 @@ describe("RouterProvider click interception", () => {
 
     expect(pushStateCalls.length).toBe(1);
     expect(pushStateCalls[0]?.url).toBe("/page-b");
-
-    cleanup();
   });
 });

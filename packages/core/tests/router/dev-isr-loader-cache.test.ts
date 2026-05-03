@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("evlog/elysia", () => ({
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
@@ -374,10 +374,6 @@ describe("dev SSG loader cache", () => {
  * — `setDevISRLoaderCache` overwrite path (drops stale reverse-index links)
  */
 describe("dev cache primitives", () => {
-  afterEach(() => {
-    __resetDevLoaderCacheState();
-  });
-
   const makeEntry = (overrides: Partial<DevLoaderCacheEntry> | undefined): DevLoaderCacheEntry => ({
     dependencies: ["/some/page.tsx", "/some/root.tsx"],
     generatedAt: Date.now(),
