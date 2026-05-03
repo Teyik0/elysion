@@ -893,7 +893,7 @@ export function RouterProvider({
     if (typeof window === "undefined") {
       return "/";
     }
-    return toLogical(window.location.pathname, _basePath) + window.location.search;
+    return normalizeHref(toLogical(window.location.pathname, _basePath)) + window.location.search;
   });
   const prefetchCache = useRef(new Map<string, CacheEntry>());
   /** Monotonic counter to discard stale navigations (race condition guard). */
@@ -1134,7 +1134,7 @@ export function RouterProvider({
         }
         // Store the LOGICAL path in currentHref so Link active-state works.
         const effectiveUrl = new URL(physicalEffective, window.location.origin);
-        const logicalPath = toLogical(effectiveUrl.pathname, _basePath);
+        const logicalPath = normalizeHref(toLogical(effectiveUrl.pathname, _basePath));
         setCurrentHref(logicalPath + effectiveUrl.search);
         if (opts?.resetScroll ?? true) {
           pendingScrollRef.current = { type: "reset", href: physicalEffective };
@@ -1224,7 +1224,7 @@ export function RouterProvider({
           window.history.replaceState(history.state, "", _basePath + effectiveLogical);
         }
         // effectiveLogical already contains the search params — no URL round-trip needed.
-        setCurrentHref(effectiveLogical);
+        setCurrentHref(normalizeHref(effectiveLogical));
         // Queue scroll restoration for the layout effect tied to currentHref.
         if (destKey) {
           pendingScrollRef.current = { type: "restore", key: destKey };

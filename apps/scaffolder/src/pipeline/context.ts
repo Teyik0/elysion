@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 // ── Template manifest types ────────────────────────────────────────────────
@@ -123,14 +124,23 @@ export function createContext(overrides?: Partial<PipelineContext>): PipelineCon
 // ── Template path resolution ───────────────────────────────────────────────
 
 /**
- * Absolute path to the templates/ directory.
- *
- * import.meta.dir = .../apps/scaffolder/src/pipeline/
- * ../.. up = .../apps/scaffolder/  (local monorepo)
- *         = .../node_modules/create-furin/  (bunx / published)
- * + templates = .../templates/
+ * Resolve the templates/ directory regardless of whether the code is running
+ * from source (src/pipeline/) or from a bundled artifact (dist/).
  */
-export const TEMPLATES_DIR = resolve(import.meta.dir, "../../templates");
+function findTemplatesDir(): string {
+  const candidates = [
+    resolve(import.meta.dir, "../templates"), // bundled: dist/ → package-root/templates
+    resolve(import.meta.dir, "../../templates"), // dev: src/pipeline/ → package-root/templates
+  ];
+  for (const dir of candidates) {
+    if (existsSync(resolve(dir, "manifest.json"))) {
+      return dir;
+    }
+  }
+  throw new Error("Cannot resolve templates directory");
+}
+
+export const TEMPLATES_DIR = findTemplatesDir();
 
 export function resolveTemplateSrc(srcRelative: string): string {
   return resolve(TEMPLATES_DIR, srcRelative);
