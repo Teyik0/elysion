@@ -524,9 +524,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true })
+    );
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -537,9 +537,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true })
+    );
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -550,9 +550,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true })
+    );
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -563,9 +563,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true })
+    );
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -579,9 +579,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -595,9 +593,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -608,9 +604,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "http://" }, "Broken"), ctx);
 
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-    event.preventDefault();
-    anchor.dispatchEvent(event);
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
