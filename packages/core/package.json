@@ -54,8 +54,8 @@
   },
   "scripts": {
     "fix": "ultracite fix",
-    "test": "bun test --parallel --isolate --bail --preload ../../tests/setup.ts",
-    "test:dev": "bun test --changed --parallel --isolate --bail --preload ../../tests/setup.ts",
+    "test": "bun test --isolate --bail --preload ../../tests/setup.ts",
+    "test:dev": "bun test --changed --isolate --bail --preload ../../tests/setup.ts",
     "tscheck": "tsc --noEmit",
     "build": "bun run build.ts"
   },

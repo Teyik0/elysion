@@ -153,8 +153,19 @@ describe("RouterProvider click interception", () => {
 
     anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    // Wait for async navigation
-    await new Promise((r) => setTimeout(r, 100));
+    // Wait deterministically for pushState to be called
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (pushStateCalls.length === 1 || window.location.pathname === "/page-b") {
+          clearInterval(interval);
+          resolve();
+        } else if (Date.now() - start > 2000) {
+          clearInterval(interval);
+          reject(new Error("Timed out waiting for navigation"));
+        }
+      }, 10);
+    });
 
     expect(pushStateCalls.length).toBe(1);
     expect(pushStateCalls[0]?.url).toBe("/page-b");

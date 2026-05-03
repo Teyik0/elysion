@@ -1,5 +1,5 @@
 import type React from "react";
-import { createElement, useEffect, useRef } from "react";
+import { createElement, useCallback, useEffect, useRef } from "react";
 import {
   buildHref,
   type LinkProps,
@@ -102,10 +102,10 @@ function LinkInteractive<To extends RouteTo>({
   const effectiveDelay = preloadDelay ?? router.defaultPreloadDelay;
   const effectiveStaleTime = preloadStaleTime ?? router.defaultPreloadStaleTime;
 
-  const triggerPrefetch = () => {
+  const triggerPrefetch = useCallback(() => {
     // prefetch() expects the logical href (no basePath prefix).
     router.prefetch(logicalHref, { staleTime: effectiveStaleTime });
-  };
+  }, [router, logicalHref, effectiveStaleTime]);
 
   // "render": preload immediately on mount
   useEffect(() => {

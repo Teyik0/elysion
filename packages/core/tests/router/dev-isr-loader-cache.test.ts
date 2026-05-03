@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("evlog/elysia", () => ({
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
@@ -35,7 +35,7 @@ beforeAll(() => {
   __setDevMode(false);
   setProductionTemplateContent(TEST_TEMPLATE);
 });
-afterEach(() => {
+beforeEach(() => {
   __resetCacheState();
   __resetDevLoaderCacheState();
 });
