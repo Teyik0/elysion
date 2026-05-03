@@ -15,7 +15,7 @@ const shared = {
   root: `${import.meta.dir}/src`,
   target: "bun" as const,
   format: "esm" as const,
-  external: ["elysia", "react", "react-dom", "@elysiajs/static", "oxc-parser"],
+  external: ["elysia", "react", "react-dom", "@elysiajs/static", "yuku-parser"],
   minify: false,
   sourcemap: false,
 };

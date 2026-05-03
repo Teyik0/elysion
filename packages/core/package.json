@@ -62,7 +62,7 @@
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
     "magic-string": "^0.30.21",
-    "oxc-parser": "^0.128.0"
+    "yuku-parser": "^0.4.6"
   },
   "devDependencies": {
     "@types/react": "catalog:",

@@ -1,10 +1,21 @@
 import { readFileSync } from "node:fs";
-import { parseSync } from "oxc-parser";
+import { parse } from "yuku-parser";
 
 // Minimal AST node shapes — just what we need
 interface AstNode {
   type: string;
   [key: string]: unknown;
+}
+
+function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dts" {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'ts': return 'ts';
+    case 'tsx': return 'tsx';
+    case 'jsx': return 'jsx';
+    case 'dts': return 'dts';
+    default: return 'js';
+  }
 }
 
 /**
@@ -16,8 +27,9 @@ interface AstNode {
  */
 export function scanFurinInstances(serverEntryPath: string): string[] {
   const code = readFileSync(serverEntryPath, "utf8");
-  const { program, errors } = parseSync(serverEntryPath, code);
-  if (errors.length > 0) {
+  const lang = detectLangFromPath(serverEntryPath);
+  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
+  if (diagnostics.some(d => d.severity === "error")) {
     return [];
   }
 

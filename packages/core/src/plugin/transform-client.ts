@@ -1,5 +1,5 @@
 import MagicString from "magic-string";
-import { parseSync } from "oxc-parser";
+import { parse } from "yuku-parser";
 
 // ---------------------------------------------------------------------------
 // Bun.Transpiler singleton — strips TypeScript + JSX before AST work.
@@ -280,9 +280,9 @@ function removeUnusedSpecifiers(
 // ---------------------------------------------------------------------------
 export function deadCodeElimination(s: MagicString): MagicString {
   const code = s.toString();
-  const { program, errors } = parseSync("dce.js", code);
-  if (errors.length > 0) {
-    console.error("[furin] DCE: failed to parse transformed output:", errors[0]?.message);
+  const { program, diagnostics } = parse(code, { sourceType: "module" });
+  if (diagnostics.some((d) => d.severity === "error")) {
+    console.error("[furin] DCE: failed to parse transformed output:", diagnostics[0]?.message);
     return s;
   }
 
@@ -347,10 +347,10 @@ export function transformForClient(code: string, filename: string): TransformRes
   // Pass 1 — Bun.Transpiler: strip TypeScript + JSX → plain JS.
   const plainJs = bunTranspiler.transformSync(code);
 
-  // Pass 2 — oxc-parser: parse plain JS to ESTree AST with span offsets.
-  const { program, errors } = parseSync(filename, plainJs);
-  if (errors.length > 0) {
-    throw new Error(`Failed to parse ${filename}: ${errors[0]?.message}`);
+  // Pass 2 — yuku-parser: parse plain JS to ESTree AST with span offsets.
+  const { program, diagnostics } = parse(plainJs, { sourceType: "module" });
+  if (diagnostics.some((d) => d.severity === "error")) {
+    throw new Error(`Failed to parse ${filename}: ${diagnostics[0]?.message}`);
   }
 
   // Pass 3 — MagicString: surgically remove server-only properties.
