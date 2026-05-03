@@ -281,8 +281,9 @@ function removeUnusedSpecifiers(
 export function deadCodeElimination(s: MagicString): MagicString {
   const code = s.toString();
   const { program, diagnostics } = parse(code, { sourceType: "module" });
-  if (diagnostics.some((d) => d.severity === "error")) {
-    console.error("[furin] DCE: failed to parse transformed output:", diagnostics[0]?.message);
+  const firstError = diagnostics.find((d) => d.severity === "error");
+  if (firstError) {
+    console.error("[furin] DCE: failed to parse transformed output:", firstError.message);
     return s;
   }
 
@@ -349,8 +350,9 @@ export function transformForClient(code: string, filename: string): TransformRes
 
   // Pass 2 — yuku-parser: parse plain JS to ESTree AST with span offsets.
   const { program, diagnostics } = parse(plainJs, { sourceType: "module" });
-  if (diagnostics.some((d) => d.severity === "error")) {
-    throw new Error(`Failed to parse ${filename}: ${diagnostics[0]?.message}`);
+  const firstError = diagnostics.find((d) => d.severity === "error");
+  if (firstError) {
+    throw new Error(`Failed to parse ${filename}: ${firstError.message}`);
   }
 
   // Pass 3 — MagicString: surgically remove server-only properties.

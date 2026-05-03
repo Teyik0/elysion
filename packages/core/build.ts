@@ -4,6 +4,7 @@ import { $ } from "bun";
 $.cwd(import.meta.dir);
 
 await $`rm -rf dist bin`;
+await $`rm -f tsconfig.dts.tsbuildinfo`;
 await $`bunx tsc --project tsconfig.dts.json`;
 
 // Each entrypoint is built in its own Bun.build() call.
@@ -30,6 +31,17 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/link.tsx`] }),
 ]);
+
+// Copy ambient declaration so it is available for the ./env export.
+await $`cp src/env.d.ts dist/env.d.ts`;
+
+// Copy template source files that the adapter reads at runtime.
+await $`cp src/build/compile-entry.ts dist/build/compile-entry.ts`;
+await $`cp src/build/entry-template.ts dist/build/entry-template.ts`;
+await $`cp src/build/server-routes-entry.ts dist/build/server-routes-entry.ts`;
+await $`cp src/render/index.ts dist/render/index.ts`;
+await $`cp src/render/shell.ts dist/render/shell.ts`;
+await $`cp src/router.ts dist/router.ts`;
 
 // Prepend shebang to CLI dist file so the OS runs it with Bun (not as a shell script).
 // Guard against duplication: if the shebang is already present (e.g. build run twice),

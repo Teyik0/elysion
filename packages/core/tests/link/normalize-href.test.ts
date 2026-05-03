@@ -21,4 +21,12 @@ describe("normalizeHref", () => {
   test("handles path with query string and trailing slash", () => {
     expect(normalizeHref("/docs/routing/?foo=bar")).toBe("/docs/routing?foo=bar");
   });
+
+  test("preserves root slash with query string", () => {
+    expect(normalizeHref("/?foo=bar")).toBe("/?foo=bar");
+  });
+
+  test("preserves hash fragment", () => {
+    expect(normalizeHref("/docs/routing/#section")).toBe("/docs/routing#section");
+  });
 });

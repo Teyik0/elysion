@@ -7,14 +7,16 @@ interface AstNode {
   [key: string]: unknown;
 }
 
-function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dts" {
-  const ext = filePath.split('.').pop()?.toLowerCase();
+function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" {
+  if (filePath.endsWith(".d.ts")) {
+    return "js";
+  }
+  const ext = filePath.split(".").pop()?.toLowerCase();
   switch (ext) {
-    case 'ts': return 'ts';
-    case 'tsx': return 'tsx';
-    case 'jsx': return 'jsx';
-    case 'dts': return 'dts';
-    default: return 'js';
+    case "ts": return "ts";
+    case "tsx": return "tsx";
+    case "jsx": return "jsx";
+    default: return "js";
   }
 }
 
@@ -27,9 +29,19 @@ function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dt
  */
 export function scanFurinInstances(serverEntryPath: string): string[] {
   const code = readFileSync(serverEntryPath, "utf8");
-  const lang = detectLangFromPath(serverEntryPath);
-  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
-  if (diagnostics.some(d => d.severity === "error")) {
+  let lang = detectLangFromPath(serverEntryPath);
+
+  let parseInput = code;
+  if (lang === "ts" || lang === "tsx") {
+    const transpiler = new Bun.Transpiler({ loader: lang });
+    parseInput = transpiler.transformSync(code);
+    lang = "js";
+  }
+
+  const { program, diagnostics } = parse(parseInput, { sourceType: "module", lang });
+  const firstError = diagnostics.find((d) => d.severity === "error");
+  if (firstError) {
+    console.error("[furin] scan-server: parse error:", firstError.message, "in", serverEntryPath);
     return [];
   }
 

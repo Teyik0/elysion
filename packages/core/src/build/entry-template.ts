@@ -1,11 +1,16 @@
-import { dirname } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
-// through package exports, and is the Web-standard API. The "bun" condition
-// on "." resolves to src/furin.ts, so dirname gives us the src/ dir.
-const _pkgSrcDir = dirname(new URL(import.meta.resolve("@teyik0/furin")).pathname);
-const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/internal.ts`;
-const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/runtime-env.ts`;
+// through package exports, and is the Web-standard API.
+const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
+const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "furin.ts"))
+  ? join(_pkgRoot, "src")
+  : join(_pkgRoot, "dist");
+const _ext = _pkgSrcDir.endsWith("/src") ? ".ts" : ".js";
+const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/internal${_ext}`;
+const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/runtime-env${_ext}`;
 
 export interface EntryTemplateOptions {
   buildId?: string;

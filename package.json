@@ -1,5 +1,9 @@
 {
   "name": "@teyik0/furin/root",
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "workspaces": [
     "apps/*",
     "packages/*",
