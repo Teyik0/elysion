@@ -104,4 +104,22 @@ new Elysia().listen(3000);
       }
     );
   });
+
+  test("returns [] for .d.ts declaration files", async () => {
+    const path = join(
+      import.meta.dir,
+      `_scan-tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.d.ts`
+    );
+    // .d.ts files contain TS declaration syntax that a JS parser cannot handle.
+    await Bun.write(
+      path,
+      `declare module "furin" { export function furin(opts: { pagesDir: string }): any; }`
+    );
+    try {
+      const result = scanFurinInstances(path);
+      expect(result).toEqual([]);
+    } finally {
+      rmSync(path, { force: true });
+    }
+  });
 });

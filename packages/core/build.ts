@@ -1,4 +1,4 @@
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { $ } from "bun";
 
 $.cwd(import.meta.dir);
@@ -30,10 +30,20 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/router.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/link.tsx`] }),
+  // Modules imported directly by the generated compile-entry (entry-template.ts).
+  // Must exist as standalone files so the dist/ fallback path works.
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/internal.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/runtime-env.ts`] }),
 ]);
 
 // Copy ambient declaration so it is available for the ./env export.
 await $`cp src/env.d.ts dist/env.d.ts`;
+
+// Ensure target directories exist before copying runtime source files.
+// dist/build is created by Bun.build above, but dist/render is not —
+// without this, clean builds where tsc is skipped would fail.
+mkdirSync(`${import.meta.dir}/dist/build`, { recursive: true });
+mkdirSync(`${import.meta.dir}/dist/render`, { recursive: true });
 
 // Copy template source files that the adapter reads at runtime.
 await $`cp src/build/compile-entry.ts dist/build/compile-entry.ts`;

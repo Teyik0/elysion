@@ -1,8 +1,9 @@
+// biome-ignore-all lint/correctness/useHookAtTopLevel: useLogger is not a hook attached to a react component
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { FurinNotFoundError } from "../not-found.ts";
 import type { RootLayout } from "../router.ts";
-import { RouterContext, type RouterContextValue } from "../router-provider.tsx";
+import { normalizeHref, RouterContext, type RouterContextValue } from "../router-provider.tsx";
 import { assembleHTML, resolvePath, splitTemplate, streamToString } from "./assemble.ts";
 import {
   getISRCache,
@@ -146,7 +147,7 @@ async function prepareRender(
   // while the client hydrates with the real pathname.
   const ssrContext: RouterContextValue = {
     basePath: basePath ?? "",
-    currentHref: ctx.path,
+    currentHref: normalizeHref(ctx.path),
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
@@ -473,7 +474,7 @@ export async function renderRootNotFound(
 
   const notFoundContext: RouterContextValue = {
     basePath: "",
-    currentHref: request ? new URL(request.url).pathname : "/",
+    currentHref: request ? normalizeHref(new URL(request.url).pathname) : "/",
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
