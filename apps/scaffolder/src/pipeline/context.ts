@@ -137,7 +137,7 @@ function findTemplatesDir(): string {
       return dir;
     }
   }
-  throw new Error("Cannot resolve templates directory");
+  throw new Error(`Cannot resolve templates directory. Tried: ${candidates.join(", ")}`);
 }
 
 export const TEMPLATES_DIR = findTemplatesDir();

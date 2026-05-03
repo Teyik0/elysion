@@ -3,6 +3,7 @@ import { createElement, useCallback, useEffect, useRef } from "react";
 import {
   buildHref,
   type LinkProps,
+  normalizeHref,
   RouterContext,
   type RouterContextValue,
   type RouteTo,
@@ -52,7 +53,7 @@ function computeLinkView<To extends RouteTo>(
     logicalHref.startsWith("https://") ||
     logicalHref.startsWith("//");
   const href = isAbsolute ? logicalHref : router.basePath + logicalHref;
-  const isActive = router.currentHref === logicalHrefWithoutHash;
+  const isActive = !isAbsolute && router.currentHref === normalizeHref(logicalHrefWithoutHash);
   const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
   const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
     ...(inactiveProps && !isActive ? inactiveProps() : {}),

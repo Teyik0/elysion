@@ -430,13 +430,15 @@ function stripHashFromHref(href: string): string {
   return href.replace(HASH_FRAGMENT_RE, "");
 }
 
-/** Strips trailing slashes from a pathname or href. Root `/` is preserved. */
+/** Strips trailing slashes from a pathname or href. Root `/` is preserved.
+ *  Query strings and hashes are preserved and re-attached after normalization. */
 export function normalizeHref(href: string): string {
-  if (href === "/") {
-    return "/";
+  const url = new URL(href, "http://localhost");
+  let pathname = url.pathname;
+  if (pathname !== "/") {
+    pathname = pathname.replace(/\/+$/g, "");
   }
-  // Strip trailing slashes before query string or hash, and at end of string
-  return href.replace(/\/+(\?|#|$)/g, "$1");
+  return pathname + url.search + url.hash;
 }
 
 /** Strips a single trailing slash from a pathname. Root `/` and empty string are preserved. */

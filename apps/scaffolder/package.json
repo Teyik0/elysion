@@ -16,7 +16,8 @@
     "test": "bun test --parallel --isolate --bail",
     "test:dev": "bun test --changed --parallel --isolate --bail",
     "tscheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --target bun --outdir dist --external ejs"
+    "build": "bun build src/index.ts --target bun --outdir dist --external ejs",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "ejs": "^5.0.2"

@@ -12,7 +12,10 @@ import type { ResolvedRoute, RootLayout } from "../router.ts";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
 // through package exports, and is the Web-standard API.
-const _pkgSrcDir = dirname(fileURLToPath(import.meta.resolve("@teyik0/furin")));
+const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
+const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "furin.ts"))
+  ? join(_pkgRoot, "src")
+  : join(_pkgRoot, "dist");
 const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/build/compile-entry.ts`,
   `${_pkgSrcDir}/build/entry-template.ts`,

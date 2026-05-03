@@ -6,15 +6,10 @@ const config: KnipConfig = {
       // @biomejs/biome is used via biome.jsonc but not directly imported in JS/TS
       // @commitlint/cli is the CLI runner; commitlint plugin detects config-conventional
       // react-doctor is a standalone CLI tool, not imported
-      // @happy-dom/global-registrator is loaded via bunfig.toml [test] preload, not imported in JS/TS
-      ignoreDependencies: [
-        "@biomejs/biome",
-        "@commitlint/cli",
-        "react-doctor",
-        "@happy-dom/global-registrator",
-      ],
+      ignoreDependencies: ["@biomejs/biome", "@commitlint/cli", "react-doctor"],
     },
     "packages/core": {
+      entry: ["src/cli/index.ts"],
       project: ["src/**/*.{ts,tsx}"],
     },
     "apps/docs": {

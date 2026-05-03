@@ -1,55 +1,84 @@
 {
   "name": "@teyik0/furin",
   "version": "0.1.0-alpha.12",
+  "description": "React meta-framework powered by Elysia and Bun with file-based routing, SSR, SSG, and ISR.",
+  "license": "MIT",
+  "author": "teyik0",
+  "sideEffects": false,
   "type": "module",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "keywords": [
+    "react",
+    "furin",
+    "framework",
+    "elysia",
+    "bun",
+    "ssr",
+    "ssg",
+    "routing",
+    "file-based-routing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/teyik0/furin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/teyik0/furin/issues"
+  },
+  "homepage": "https://github.com/teyik0/furin#readme",
   "files": [
     "dist",
-    "src"
+    "src",
+    "LICENSE",
+    "README.md"
   ],
   "main": "./dist/furin.js",
   "module": "./dist/furin.js",
-  "types": "./src/furin.ts",
+  "types": "./dist/furin.d.ts",
   "bin": {
-    "furin": "./src/cli/index.ts"
+    "furin": "./dist/cli/index.js"
   },
   "exports": {
     ".": {
-      "types": "./src/furin.ts",
+      "types": "./dist/furin.d.ts",
       "bun": "./src/furin.ts",
       "import": "./dist/furin.js"
     },
     "./client": {
-      "types": "./src/client.ts",
+      "types": "./dist/client.d.ts",
       "bun": "./src/client.ts",
       "import": "./dist/client.js"
     },
     "./build": {
-      "types": "./src/build/index.ts",
+      "types": "./dist/build/index.d.ts",
       "bun": "./src/build/index.ts",
       "import": "./dist/build/index.js"
     },
     "./config": {
-      "types": "./src/config.ts",
+      "types": "./dist/config.d.ts",
       "bun": "./src/config.ts",
       "import": "./dist/config.js"
     },
     "./router": {
-      "types": "./src/router.ts",
+      "types": "./dist/router.d.ts",
       "bun": "./src/router.ts",
       "import": "./dist/router.js"
     },
     "./strip-plugin": {
-      "types": "./src/plugin/index.ts",
+      "types": "./dist/plugin/index.d.ts",
       "bun": "./src/plugin/index.ts",
       "import": "./dist/plugin/index.js"
     },
     "./link": {
-      "types": "./src/link.tsx",
+      "types": "./dist/link.d.ts",
       "bun": "./src/link.tsx",
       "import": "./dist/link.js"
     },
     "./env": {
-      "types": "./src/env.d.ts"
+      "types": "./dist/env.d.ts",
+      "bun": "./src/env.d.ts"
     }
   },
   "scripts": {
