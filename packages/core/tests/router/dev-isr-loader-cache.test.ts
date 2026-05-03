@@ -8,6 +8,7 @@ mock.module("evlog/elysia", () => ({
 
 import { Elysia } from "elysia";
 import { createDevInspectorPlugin } from "../../src/dev-inspector";
+import { registerDevPagePlugin } from "../../src/dev-page-plugin.ts";
 import { __resetCacheState } from "../../src/render/cache";
 import {
   __resetDevLoaderCacheState,
@@ -23,6 +24,8 @@ import {
 import { __resetTemplateState, setProductionTemplateContent } from "../../src/render/template";
 import { createRoutePlugin, scanPages } from "../../src/router";
 import { __setDevMode, IS_DEV } from "../../src/runtime-env";
+
+registerDevPagePlugin();
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 const TEST_TEMPLATE =
