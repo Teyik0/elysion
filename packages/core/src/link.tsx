@@ -1,5 +1,5 @@
 import type React from "react";
-import { createElement, useCallback, useEffect, useRef } from "react";
+import { createElement, useEffect, useRef } from "react";
 import {
   buildHref,
   type LinkProps,
@@ -98,15 +98,14 @@ function LinkInteractive<To extends RouteTo>({
     { to, search, hash, children, activeProps, inactiveProps },
     router
   );
-
   const effectivePreload = preload ?? router.defaultPreload;
   const effectiveDelay = preloadDelay ?? router.defaultPreloadDelay;
   const effectiveStaleTime = preloadStaleTime ?? router.defaultPreloadStaleTime;
 
-  const triggerPrefetch = useCallback(() => {
+  const triggerPrefetch = () => {
     // prefetch() expects the logical href (no basePath prefix).
     router.prefetch(logicalHref, { staleTime: effectiveStaleTime });
-  }, [router, logicalHref, effectiveStaleTime]);
+  };
 
   // "render": preload immediately on mount
   useEffect(() => {
@@ -132,6 +131,18 @@ function LinkInteractive<To extends RouteTo>({
     observer.observe(anchorRef.current);
     return () => observer.disconnect();
   }, [effectivePreload, triggerPrefetch]);
+
+  // Clear any pending intent prefetch timer on unmount to avoid leaking
+  // setTimeout callbacks between test cases (or across re-renders).
+  useEffect(
+    () => () => {
+      if (intentTimerRef.current !== null) {
+        clearTimeout(intentTimerRef.current);
+        intentTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   const isInternal = (url: string): boolean => {
     try {

@@ -244,8 +244,9 @@ export const RouterContext = createContext<RouterContextValue | null>(null);
  * Provides a graceful fallback (full-page navigation) when used outside RouterProvider.
  */
 export function useRouter(): RouterContextValue {
+  const ctx = useContext(RouterContext);
   return (
-    useContext(RouterContext) ?? {
+    ctx ?? {
       basePath: "",
       // Use the same "/" as SSR_FALLBACK_ROUTER so SSR and client render the
       // same active-state when no RouterProvider is present, avoiding hydration mismatches.

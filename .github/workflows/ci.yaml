@@ -2,7 +2,7 @@ name: Workflow - CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         run: bun run build
 
       - name: Type Check
-        run: bun run test:types
+        run: bun run tscheck
 
       - name: Test
         run: bun run test

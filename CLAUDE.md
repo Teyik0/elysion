@@ -20,7 +20,7 @@ As an agent, you should help the user develop senior-grade features, as such you
 - `bun run fix` — Auto-fix lint issues
 - `bun run test` — Run tests
 - `bun run build` — Build the library to `dist/`
-- `bun run test:types` — Type-check without emitting
+- `bun run tscheck` — Type-check without emitting
 
 ## Tooling
 

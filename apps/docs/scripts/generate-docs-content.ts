@@ -9,24 +9,11 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { DOCS_CARDS } from "../src/lib/docs.ts";
 
 const DOCS_DIR = resolve(import.meta.dir, "..");
 
-const SOURCE_PATHS = [
-  "src/content/docs/introduction.mdx",
-  "src/content/docs/comparison.mdx",
-  "src/content/docs/getting-started.mdx",
-  "src/content/docs/routing.mdx",
-  "src/content/docs/data-loading.mdx",
-  "src/content/docs/rendering.mdx",
-  "src/content/docs/error-handling.mdx",
-  "src/content/docs/layouts.mdx",
-  "src/content/docs/api-routes.mdx",
-  "src/content/docs/plugins.mdx",
-  "src/content/docs/caching.mdx",
-  "src/content/docs/deployment.mdx",
-  "src/content/docs/dev-hmr.mdx",
-];
+const SOURCE_PATHS = DOCS_CARDS.map((doc) => doc.sourcePath);
 
 const entries = SOURCE_PATHS.map((sourcePath) => {
   const fullPath = resolve(DOCS_DIR, sourcePath);

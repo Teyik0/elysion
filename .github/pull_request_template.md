@@ -14,6 +14,6 @@
 
 - [ ] `bun run fix` passes (Biome lint)
 - [ ] `bun run test` passes
-- [ ] `bun run test:types` passes
+- [ ] `bun run tscheck` passes
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] No AI-generated code included without human review

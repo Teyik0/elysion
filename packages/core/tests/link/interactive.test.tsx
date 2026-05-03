@@ -111,7 +111,7 @@ describe("Link SSR path", () => {
 
     try {
       const html = renderToStaticMarkup(createElement(Link, { to: "/blog" }, "Blog"));
-      expect(html).toBe('<a href="/blog">Blog</a>');
+      expect(html).toBe('<a href="/blog" data-furin-link="true">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -154,7 +154,9 @@ describe("Link SSR path", () => {
           createElement(Link, { to: "/docs" }, "Docs")
         )
       );
-      expect(html).toBe('<a href="/furin/docs" data-status="active">Docs</a>');
+      expect(html).toBe(
+        '<a href="/furin/docs" data-furin-link="true" data-status="active">Docs</a>'
+      );
     } finally {
       globalThis.window = originalWindow;
     }
@@ -169,7 +171,7 @@ describe("Link SSR path", () => {
       const html = renderToStaticMarkup(
         createElement(Link, { to: "/blog", search: { page: 2 }, hash: "comments" }, "Blog")
       );
-      expect(html).toBe('<a href="/blog?page=2#comments">Blog</a>');
+      expect(html).toBe('<a href="/blog?page=2#comments" data-furin-link="true">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -184,7 +186,7 @@ describe("Link SSR path", () => {
       const html = renderToStaticMarkup(
         createElement(Link, { to: "/about", disabled: true }, "About")
       );
-      expect(html).toBe('<a href="/about" aria-disabled="true">About</a>');
+      expect(html).toBe('<a href="/about" data-furin-link="true" aria-disabled="true">About</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -335,7 +337,7 @@ describe("Link SSR path", () => {
           )
         )
       );
-      expect(html).toBe('<a href="/furin/blog">Blog</a>');
+      expect(html).toBe('<a href="/furin/blog" data-furin-link="true">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -345,15 +347,28 @@ describe("Link SSR path", () => {
 // ── LinkInteractive (client) ──────────────────────────────────────────────────
 
 describe("LinkInteractive — client-side behaviour", () => {
+  let originalOpen: typeof window.open | undefined;
+
   beforeEach(() => {
     MockIntersectionObserver.cleanup();
     globalThis.IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver;
+
+    // happy-dom navigates on <a> clicks when preventDefault() is not called.
+    // That async navigation loads stylesheets/scripts that throw uncaught
+    // errors (missing SyntaxError, disabled module loading, etc.) and bleed
+    // into the next test. We stub window.open so browser-level navigation
+    // is suppressed while React handlers still run for SPA routing asserts.
+    originalOpen = window.open;
+    window.open = () => null;
   });
 
   afterEach(() => {
     globalThis.IntersectionObserver = OriginalIntersectionObserver;
     MockIntersectionObserver.cleanup();
+    if (originalOpen) {
+      window.open = originalOpen;
+    }
   });
 
   // ── Rendering ───────────────────────────────────────────────────────────────
@@ -462,7 +477,25 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    console.log("CLICK TEST typeof window:", typeof window);
+    const getListenerTypes = (el: any) => {
+      const sym = Object.getOwnPropertySymbols(el).find(
+        (s) => s.toString() === "Symbol(listeners)"
+      );
+      if (!sym) {
+        return [];
+      }
+      const listeners = el[sym];
+      return [...(listeners.capturing?.keys() || []), ...(listeners.bubbling?.keys() || [])];
+    };
+    console.log("CLICK TEST anchor types:", getListenerTypes(anchor).join(", ") || "none");
+    console.log("CLICK TEST document types:", getListenerTypes(document).join(", ") || "none");
+    console.log(
+      "CLICK TEST container types:",
+      getListenerTypes(anchor.parentElement).join(", ") || "none"
+    );
+
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).toHaveBeenCalledWith("/blog", { replace: undefined, resetScroll: true });
     cleanup();
@@ -476,7 +509,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -487,7 +520,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -498,7 +533,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -509,7 +546,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -520,7 +559,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, altKey: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -534,7 +575,9 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -548,7 +591,9 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -559,7 +604,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "http://" }, "Broken"), ctx);
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    event.preventDefault();
+    anchor.dispatchEvent(event);
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -571,7 +618,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog", onClick }, "Blog"));
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(onClick).toHaveBeenCalled();
     cleanup();
@@ -586,7 +633,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -600,7 +647,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).toHaveBeenCalledWith("/blog", { replace: true, resetScroll: true });
     cleanup();
@@ -614,7 +661,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       ctx
     );
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).toHaveBeenCalledWith("/blog", { replace: undefined, resetScroll: false });
     cleanup();
@@ -719,9 +766,10 @@ describe("LinkInteractive — client-side behaviour", () => {
   // ── Prefetch: intent (mouse enter / focus) ──────────────────────────────────
 
   test("mouse enter triggers intent prefetch after delay", async () => {
-    const prefetch = mock<RouterContextValue["prefetch"]>(() => {
-      /* noop */
-    });
+    const calls: Array<{ args: unknown[] }> = [];
+    const prefetch = ((...args: unknown[]) => {
+      calls.push({ args });
+    }) as RouterContextValue["prefetch"];
     const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 10 });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
@@ -729,9 +777,14 @@ describe("LinkInteractive — client-side behaviour", () => {
       new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })
     );
 
-    expect(prefetch).not.toHaveBeenCalled();
+    expect(calls.length).toBe(0);
     await new Promise((r) => setTimeout(r, 20));
-    expect(prefetch).toHaveBeenCalledWith("/blog", { staleTime: 30_000 });
+    expect(calls.length).toBe(1);
+    const firstCall = calls[0];
+    if (!firstCall) {
+      throw new Error("Expected at least one prefetch call");
+    }
+    expect(firstCall.args).toEqual(["/blog", { staleTime: 30_000 }]);
     cleanup();
   });
 
@@ -922,7 +975,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const originalHref = window.location.href;
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"));
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(window.location.href).toBe("http://localhost:3000/blog");
     cleanup();

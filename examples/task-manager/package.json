@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "fix": "ultracite fix",
     "dev": "bun --hot src/server.ts",
+    "test": "bun test --parallel --isolate --bail",
+    "test:dev": "bun test --changed --parallel --isolate --bail",
+    "tscheck": "tsc --noEmit",
     "build": "furin build --target bun --compile embed",
     "start": "./.furin/build/bun/server",
-    "test:types": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:generate": "drizzle-kit generate"

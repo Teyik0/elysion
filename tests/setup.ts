@@ -1,4 +1,4 @@
-import { afterEach } from "bun:test";
+import { afterEach, beforeEach } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 // happy-dom overrides some native Web APIs with incomplete polyfills.
@@ -12,6 +12,17 @@ const nativeReadableStream = globalThis.ReadableStream;
 const nativeWritableStream = globalThis.WritableStream;
 
 GlobalRegistrator.register();
+
+// happy-dom@20.9.0 omits window.SyntaxError, breaking CSS selector parsing
+// inside its querySelector engine. Must be set AFTER register() because
+// GlobalRegistrator replaces globalThis with its own window object.
+(globalThis as Window & { SyntaxError?: typeof SyntaxError }).SyntaxError = SyntaxError;
+const docWithView = globalThis.document as Document & {
+  defaultView?: Window & { SyntaxError?: typeof SyntaxError };
+};
+if (docWithView.defaultView) {
+  docWithView.defaultView.SyntaxError = SyntaxError;
+}
 
 // Restore native Web APIs — happy-dom's polyfills break Bun's server-side
 // fetch (Parse Error on local URLs), TransformStream (no getWriter), and
@@ -38,9 +49,14 @@ if (nativeWritableStream) {
   globalThis.WritableStream = nativeWritableStream;
 }
 
+beforeEach(() => {
+  // Ensure a valid origin for every test. happy-dom defaults to about:blank
+  // with a null origin, which breaks isInternal() in <Link> and any code
+  // that resolves relative URLs against window.location.
+  window.location.href = "http://localhost:3000/";
+});
+
 afterEach(() => {
-  document.body.innerHTML = "";
-  document.head.innerHTML = "";
   // Reset location to a safe default so cross-test pathname pollution
   // (e.g. hash-only navigation tests that mutate window.location) does
   // not bleed into the next test.

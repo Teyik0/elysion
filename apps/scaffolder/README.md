@@ -134,7 +134,7 @@ Pour démarrer :
 ```bash
 cd my-app
 bun dev           # http://localhost:3000
-bun test:types    # vérification TypeScript
+bun tscheck    # vérification TypeScript
 ```
 
 ---
@@ -146,7 +146,7 @@ bun test:types    # vérification TypeScript
 bun run --filter="create-furin" test
 
 # Vérification TypeScript
-bun run --filter="create-furin" test:types
+bun run --filter="create-furin" tscheck
 ```
 
 ### Mettre à jour une version de dépendance
