@@ -64,6 +64,8 @@ const T_PARAM_RE = /&t=(\d+)/;
 const STRIP_FURIN_SERVER_RE = /\?furin-server.*$/;
 const STRIP_T_PARAM_RE = /\?t=\d+$/;
 
+let _pluginRegistered = false;
+
 type SourceLoader = "js" | "jsx" | "ts" | "tsx";
 
 // ── Singleton package resolution ───────────────────────────────────────────────
@@ -332,6 +334,10 @@ function transformDevSource(
 }
 
 export function registerDevPagePlugin(): void {
+  if (_pluginRegistered) {
+    return;
+  }
+  _pluginRegistered = true;
   Bun.plugin({
     name: "furin-dev-page-loader",
     setup(build) {
