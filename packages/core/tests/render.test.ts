@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bu
 import { join } from "node:path";
 import type { Context, Cookie } from "elysia";
 
+const FURIN_DATA_REGEX = /<script id="__FURIN_DATA__"[^>]*>(.*?)<\/script>/s;
+
 // renderSSR / handleISR call useLogger() which requires an Elysia evlog
 // request context.  These unit tests call render functions directly, so we
 // provide a no-op stub.
@@ -150,8 +152,27 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.layoutData).toBe("from-layout");
-        expect(result.data.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
+      }
+    });
+
+    test("syncData includes params, query and path from context", async () => {
+      const withLoaderRoute = await getRoute("/with-loader");
+      const root = await getRoot();
+
+      const ctx = createMockLoaderContext({
+        params: { boardId: "abc" },
+        query: { tab: "active" },
+        path: "/with-loader",
+      });
+      const result = await runLoaders(withLoaderRoute, ctx, root.route);
+
+      expect(result.type).toBe("data");
+      if (result.type === "data") {
+        expect(result.syncData.params).toEqual({ boardId: "abc" });
+        expect(result.syncData.query).toEqual({ tab: "active" });
+        expect(result.syncData.path).toBe("/with-loader");
       }
     });
 
@@ -173,8 +194,8 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.pageData).toBe("from-page");
-        expect(result.data.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
       }
     });
 
@@ -187,7 +208,7 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(Object.keys(result.data).length).toBeGreaterThanOrEqual(2);
+        expect(Object.keys(result.syncData).length).toBeGreaterThanOrEqual(2);
       }
     });
 
@@ -380,7 +401,7 @@ describe("render.tsx", () => {
         const res = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
         expect(capturedFromPage).toBe("alice");
         if (res.type === "data") {
-          expect(res.data.result).toBe("alice");
+          expect(res.syncData.result).toBe("alice");
         }
       });
 
@@ -464,9 +485,9 @@ describe("render.tsx", () => {
         const result = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
         expect(result.type).toBe("data");
         if (result.type === "data") {
-          expect(result.data.keyA).toBe("valueA");
-          expect(result.data.keyB).toBe("valueB");
-          expect(result.data.keyC).toBe("valueC");
+          expect(result.syncData.keyA).toBe("valueA");
+          expect(result.syncData.keyB).toBe("valueB");
+          expect(result.syncData.keyC).toBe("valueC");
         }
       });
     });
@@ -493,6 +514,25 @@ describe("render.tsx", () => {
       const result = await renderToHTML(withLoaderRoute, ctx, root);
 
       expect(result.html).toContain("__FURIN_DATA__");
+    });
+
+    test("data script contains params, query and path for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const ctx = createMockLoaderContext({
+        params: { id: "456" },
+        query: { sort: "asc" },
+        path: "/dynamic/456",
+      });
+      const result = await renderToHTML(dynamicRoute, ctx, root);
+
+      const match = result.html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "456" });
+      expect(data.query).toEqual({ sort: "asc" });
+      expect(data.path).toBe("/dynamic/456");
     });
 
     test("injects head tags from page head() function", async () => {
@@ -558,6 +598,26 @@ describe("render.tsx", () => {
       expect(html1).toBe(html2);
     });
 
+    test("injects params into __FURIN_DATA__ for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const result = await prerenderSSG(
+        dynamicRoute,
+        { id: "789" },
+        root,
+        "http://localhost",
+        undefined
+      );
+
+      expect(result instanceof Response).toBe(false);
+      const html = (result as { html: string }).html;
+      const match = html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "789" });
+    });
+
     test("returns redirect Response when loader throws redirect", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
@@ -594,6 +654,21 @@ describe("render.tsx", () => {
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
       expect(html).toContain("<html");
+    });
+
+    test("injects params into __FURIN_DATA__ for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const ctx = createMockLoaderContext({ params: { id: "123" }, path: "/dynamic/123" });
+      const response = await renderSSR(dynamicRoute, ctx, root, undefined);
+      const html = await response.text();
+
+      const match = html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "123" });
+      expect(data.path).toBe("/dynamic/123");
     });
 
     test("Link active-state matches client hydration path (no SSR_FALLBACK mismatch)", async () => {

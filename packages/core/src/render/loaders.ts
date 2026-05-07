@@ -1,14 +1,75 @@
 import type { Context } from "elysia";
-import type { RuntimeRoute } from "../client";
+import { isDeferred, type RuntimeRoute } from "../client";
 import { useLogger } from "../context-logger.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../not-found.ts";
 import type { ResolvedRoute } from "../router";
 
 export type LoaderResult =
-  | { type: "data"; data: Record<string, unknown>; headers: Record<string, string> }
+  | {
+      type: "data";
+      /**
+       * Synchronous (JSON-serialisable) loader fields. Injected into the initial
+       * HTML shell as `__FURIN_DATA__` / the deferred registry's `_data` object.
+       */
+      syncData: Record<string, unknown>;
+      /**
+       * Promise-valued fields from a `defer()` return. `undefined` when the page
+       * loader did not call `defer()`. Streamed as late `<script>` resolution
+       * chunks (SSR) or as NDJSON chunks via `/_furin/data` (SPA nav).
+       */
+      deferredPromises: Record<string, Promise<unknown>> | undefined;
+      headers: Record<string, string>;
+    }
   | { type: "redirect"; response: Response }
   | { type: "not-found"; error: FurinNotFoundError; headers: Record<string, string> }
-  | { type: "error"; error: unknown; headers: Record<string, string> };
+  | {
+      type: "error";
+      /**
+       * Original thrown value, kept for digest computation and server logging.
+       * For thrown `Response` objects this is the Response instance whose body
+       * has already been consumed by `runLoaders` (do NOT read it again).
+       */
+      error: unknown;
+      /** HTTP status to return. Default 500; sourced from `Response.status` for thrown Response objects. */
+      status: number;
+      /**
+       * Safe public message extracted at the loader boundary. For thrown
+       * `Response` objects: response body or `statusText`. For thrown `Error`
+       * / non-Error values: a generic "Something went wrong" string (the raw
+       * error/message is never leaked here — `errorMessageOf` decides what to
+       * surface from the original `error` value when an `error.tsx` fallback
+       * exists).
+       */
+      message: string;
+      headers: Record<string, string>;
+    };
+
+/**
+ * `true` only for HTTP responses that are syntactically valid redirects:
+ * 3xx status code AND a `Location` header. A 3xx without `Location` is invalid
+ * HTTP and almost always a developer mistake — surfaced as an error so it's
+ * debuggable rather than silently redirecting to `/`.
+ */
+function isHttpRedirect(res: Response): boolean {
+  return res.status >= 300 && res.status < 400 && res.headers.has("location");
+}
+
+/**
+ * Reads the body of a thrown `Response` exactly once. Returns the body text
+ * if present, otherwise the response's `statusText`. The body is consumed
+ * destructively — callers must NOT read `res.body` / `res.text()` again.
+ */
+async function readResponseMessage(res: Response): Promise<string> {
+  if (res.body === null) {
+    return res.statusText;
+  }
+  try {
+    const body = await res.text();
+    return body || res.statusText;
+  } catch {
+    return res.statusText;
+  }
+}
 
 /**
  * Wraps the Elysia context so that any property NOT present on `ctx` is
@@ -51,6 +112,41 @@ function createLoaderCtx(
       return entry;
     },
   });
+}
+
+/**
+ * Splits a `defer()` page result into sync scalars and deferred Promises,
+ * then merges in the already-resolved route-chain loader data.
+ */
+function splitDeferredResult(
+  pageResult: Record<string, unknown>,
+  routeChainData: Record<string, unknown>
+): {
+  syncData: Record<string, unknown>;
+  deferredPromises: Record<string, Promise<unknown>> | undefined;
+} {
+  const syncData: Record<string, unknown> = {};
+  const deferredPromises: Record<string, Promise<unknown>> = {};
+
+  for (const [key, value] of Object.entries(pageResult)) {
+    if (key === "__isDeferred") {
+      continue;
+    }
+    if (value instanceof Promise) {
+      deferredPromises[key] = value;
+    } else {
+      syncData[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(routeChainData)) {
+    syncData[key] = value;
+  }
+
+  return {
+    syncData,
+    deferredPromises: Object.keys(deferredPromises).length > 0 ? deferredPromises : undefined,
+  };
 }
 
 // TODO: remove _rootLayout parameter in next refactor (unused; routeChain[0] is root layout)
@@ -104,24 +200,65 @@ export async function runLoaders(
       ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
       : Promise.resolve({});
 
-    // Await everything in parallel, then flat-merge (same contract as before).
+    // Await everything in parallel, then flat-merge.
     const results = await Promise.all([...loaderMap.values(), pagePromise]);
-    const data = Object.assign({}, ...results);
+    const merged = Object.assign({}, ...results);
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
 
-    return { type: "data", data, headers };
+    // When the page loader returned a `defer()` object, split its fields:
+    // - Promise-valued fields → deferredPromises (streamed lazily)
+    // - Scalar fields + all route-chain loader data → syncData (injected into the HTML shell)
+    //
+    // Route-chain loaders (layouts) are never deferred in v1; their data always
+    // lands in syncData. Only the page loader's own `defer()` fields are split.
+    const routeOnlyResults = results.slice(0, loaderMap.size);
+    const pageResult = results[loaderMap.size] as Record<string, unknown>;
+    // Route context is always injected into syncData so components receive
+    // params, query and path regardless of the serialisation path (SSR, SPA
+    // nav, dev cache).
+    const routeCtx = { params: ctx.params, query: ctx.query, path: ctx.path };
+    if (isDeferred(pageResult)) {
+      const routeMerged = Object.assign({}, ...routeOnlyResults) as Record<string, unknown>;
+      const { syncData, deferredPromises } = splitDeferredResult(pageResult, routeMerged);
+      return { type: "data", syncData: { ...syncData, ...routeCtx }, deferredPromises, headers };
+    }
+
+    // No defer() — all data is synchronous
+    return {
+      type: "data",
+      syncData: { ...merged, ...routeCtx },
+      deferredPromises: undefined,
+      headers,
+    };
   } catch (err) {
+    const headers: Record<string, string> = {};
+    Object.assign(headers, ctx.set.headers);
     if (isNotFoundError(err)) {
-      const headers: Record<string, string> = {};
-      Object.assign(headers, ctx.set.headers);
       return { type: "not-found", error: err, headers };
     }
     if (err instanceof Response) {
-      return { type: "redirect", response: err };
+      if (isHttpRedirect(err)) {
+        return { type: "redirect", response: err };
+      }
+      // Non-redirect Response → error. Read the body ONCE here so downstream
+      // consumers (digest, logging, error UI) all share the same extracted
+      // message without consuming the stream a second time.
+      //
+      // 3xx without Location is invalid HTTP — treat as a developer mistake
+      // (status 500) rather than honouring an unreachable redirect status.
+      const isMalformedRedirect = err.status >= 300 && err.status < 400;
+      const status = isMalformedRedirect ? 500 : err.status;
+      const body = await readResponseMessage(err);
+      const message = body || "Something went wrong";
+      return { type: "error", error: err, status, message, headers };
     }
-    const headers: Record<string, string> = {};
-    Object.assign(headers, ctx.set.headers);
-    return { type: "error", error: err, headers };
+    return {
+      type: "error",
+      error: err,
+      status: 500,
+      message: "Something went wrong",
+      headers,
+    };
   }
 }

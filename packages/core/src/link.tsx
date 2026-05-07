@@ -175,6 +175,12 @@ function LinkInteractive<To extends RouteTo>({
       return;
     }
     e.preventDefault();
+    // When there is no RouterProvider, fall back to a full-page navigation so
+    // the link is still functional (e.g. in storybooks or third-party pages).
+    if (typeof window !== "undefined" && router.navigate === SSR_FALLBACK_ROUTER.navigate) {
+      window.location.href = href;
+      return;
+    }
     // navigate() expects the logical href (no basePath prefix).
     router.navigate(logicalHref, { replace, resetScroll: resetScroll ?? true });
   };
@@ -322,3 +328,9 @@ export function Link<To extends RouteTo>(props: LinkProps<To>): React.ReactEleme
     props as LinkProps<RouteTo>
   );
 }
+
+// ── Deferred hydration helpers ─────────────────────────────────────────────────
+// Re-exported here so generated `_hydrate.tsx` files can import from
+// `@teyik0/furin/link` (already a client-only bundle entry) without requiring
+// apps to add "seroval" as a direct dependency.
+export { fromCrossJSON } from "seroval";

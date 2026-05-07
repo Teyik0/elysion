@@ -1,10 +1,18 @@
 // biome-ignore-all lint/correctness/useHookAtTopLevel: useLogger is not a hook attached to a react component
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
+import { toCrossJSON } from "seroval";
 import { FurinNotFoundError } from "../not-found.ts";
 import type { RootLayout } from "../router.ts";
 import { normalizeHref, RouterContext, type RouterContextValue } from "../router-provider.tsx";
-import { assembleHTML, resolvePath, splitTemplate, streamToString } from "./assemble.ts";
+import {
+  assembleHTML,
+  buildDeferredResolution,
+  buildDeferredScript,
+  resolvePath,
+  splitTemplate,
+  streamToString,
+} from "./assemble.ts";
 import {
   getISRCache,
   getSSGCache,
@@ -43,7 +51,18 @@ interface RenderResult {
 // ── Shared render preparation ────────────────────────────────────────────────
 
 interface PreparedRender {
+  /**
+   * All props passed to the React component tree. For deferred renders this
+   * includes the Promise objects (for `<Await resolve={promise}>`) alongside
+   * the scalar sync fields. Never serialise this directly — use `syncData`.
+   */
   componentProps: Record<string, unknown>;
+  /**
+   * Promise-valued fields from a `defer()` loader return. Undefined for normal
+   * (non-deferred) loaders. These are streamed as late `<script>` chunks after
+   * the React stream finishes.
+   */
+  deferredPromises: Record<string, Promise<unknown>> | undefined;
   element: ReactNode;
   /** Set when the prepared element is an error UI. Surfaced to the client via
    * `__FURIN_DATA__.__furinError.digest` and logged server-side. */
@@ -60,6 +79,12 @@ interface PreparedRender {
   notFoundError?: { data?: unknown; message?: string };
   ssrContext: RouterContextValue;
   status: number;
+  /**
+   * JSON-serialisable subset of `componentProps`. For deferred renders this
+   * excludes the Promise fields (those are streamed separately). For normal
+   * renders it equals `componentProps`.
+   */
+  syncData: Record<string, unknown>;
   template: string;
 }
 
@@ -105,10 +130,16 @@ async function prepareRender(
   const isNotFound = loaderResult.type === "not-found";
   const isError = loaderResult.type === "error";
   const isFallback = isNotFound || isError;
-  const data = isFallback ? {} : loaderResult.data;
+  const syncData = isFallback ? {} : loaderResult.syncData;
+  const deferredPromises =
+    !isFallback && loaderResult.type === "data" ? loaderResult.deferredPromises : undefined;
   const headers = loaderResult.headers;
+  // componentProps merges sync data + Promise objects so React receives them
+  // all as props. The Promise objects are used by <Await resolve={promise}>.
+  // Serialisation always uses syncData (which excludes Promises).
   const componentProps = {
-    ...data,
+    ...syncData,
+    ...(deferredPromises ?? {}),
     params: ctx.params,
     query: ctx.query,
     path: ctx.path,
@@ -134,8 +165,14 @@ async function prepareRender(
     notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
   } else if (loaderResult.type === "error") {
     errorDigest = computeErrorDigest(loaderResult.error);
-    element = buildErrorElement(route.error ?? root.error, loaderResult.error, errorDigest);
-    status = 500;
+    element = buildErrorElement(
+      route.error ?? root.error,
+      loaderResult.error,
+      errorDigest,
+      loaderResult.message,
+      loaderResult.status
+    );
+    status = loaderResult.status;
   } else {
     element = buildElement(route, componentProps, root.route);
   }
@@ -165,12 +202,14 @@ async function prepareRender(
 
   return {
     componentProps,
+    deferredPromises,
     element,
     errorDigest,
     headData,
     headers,
     loader_ms,
     notFoundError,
+    syncData,
     ssrContext,
     status,
     template,
@@ -320,7 +359,7 @@ export async function renderSSR(
     },
   });
 
-  const { componentProps, element, headData, headers, template } = prepared;
+  const { deferredPromises, element, headData, headers, syncData, template } = prepared;
 
   // Split template around placeholders
   const { headPre, bodyPre, bodyPost } = splitTemplate(template);
@@ -346,7 +385,7 @@ export async function renderSSR(
     try {
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest),
+          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
@@ -355,45 +394,79 @@ export async function renderSSR(
       // pure markup and cannot crash.
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest),
+          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
     }
   }
 
-  // In error-recovery mode, don't inject loader data (it may contain the
-  // failing state that caused the crash). Use an empty payload so rehydration
-  // is a no-op rather than repeating the error. When we DO have a digest
-  // (either from loader error or shell recovery), expose it under __furinError
-  // so the client-side ErrorBoundary can surface the same id on rehydrate.
-  const dataPayload: Record<string, unknown> = shellErrored ? {} : { ...componentProps };
+  // ── Data injection ───────────────────────────────────────────────────────────
+  //
+  // There are two modes:
+  //
+  // A) Deferred mode (deferredPromises present, no shell error):
+  //    - Inject buildDeferredScript(syncData) BEFORE the React stream (so the
+  //      registry is available when React hydrates the Suspense boundaries).
+  //    - After the React stream, inject one late `<script>` per deferred Promise
+  //      (resolve or reject based on the outcome).
+  //    - __FURIN_DATA__ is still injected for the syncData + error signals.
+  //
+  // B) Normal mode (no deferredPromises, or shell errored):
+  //    - Inject __FURIN_DATA__ JSON script at the end (existing behaviour).
+  //
+  // In both cases, error-recovery mode clears componentProps to avoid replaying
+  // the failing state during rehydration.
+
+  const dataPayload: Record<string, unknown> = shellErrored ? {} : { ...syncData };
   if (finalDigest) {
-    dataPayload.__furinError = { digest: finalDigest };
+    dataPayload.__furinError = { digest: finalDigest, status };
   }
-  // Slice 8 — SPA 404 signal. When the loader threw `notFound()`, the response
-  // status is 404 and the body contains the rendered not-found UI. We ALSO
-  // embed a machine-readable signal in __FURIN_DATA__ so that a mid-SPA-nav
-  // client can detect the case without guessing from the HTML, and render the
-  // not-found component inline instead of performing a jarring full-page
-  // reload. Mirrors the existing `__furinError.digest` channel for 500s.
+  // Slice 8 — SPA 404 signal.
   if (status === 404 && !shellErrored) {
     dataPayload.__furinStatus = 404;
     if (prepared.notFoundError) {
       dataPayload.__furinNotFound = prepared.notFoundError;
     }
   }
+  // Invariant: __furinError and __furinNotFound are mutually exclusive — one is
+  // a notFound() signal (renders not-found.tsx), the other is an error.tsx
+  // signal. They are gated by distinct LoaderResult variants in prepareRender,
+  // so collisions would indicate a bug. Dev assert to lock the invariant.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    dataPayload.__furinError !== undefined &&
+    dataPayload.__furinNotFound !== undefined
+  ) {
+    throw new Error(
+      "[furin] internal invariant violated: __furinError and __furinNotFound were both set on the same SSR payload. Open a bug — these signals are mutually exclusive."
+    );
+  }
+
+  const hasDeferred = !shellErrored && deferredPromises !== undefined;
+
+  // The deferred registry script is injected before the React stream so client
+  // Suspense boundaries can access `window.__FURIN_DEFERRED__` synchronously.
+  const deferredSetupScript = hasDeferred ? buildDeferredScript(dataPayload) : "";
+
+  // The standard __FURIN_DATA__ script is always injected (for SPA nav signal,
+  // error digest, and non-deferred data). In deferred mode the syncData is
+  // already in the deferred registry `_data`; we still emit it here so the
+  // `/_furin/data` fallback path and error handling work unmodified.
   const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
     dataPayload
   )}</script>`;
 
-  // Pipe head + React stream + tail into a single ReadableStream
+  // Pipe head + React stream + (late scripts) + tail into a single ReadableStream
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
   const enc = new TextEncoder();
 
   (async () => {
-    await writer.write(enc.encode(headPre + headData + bodyPre));
+    // Head section — includes the deferred registry if needed
+    await writer.write(enc.encode(headPre + headData + deferredSetupScript + bodyPre));
+
+    // React stream (may contain Suspense-resolved chunks)
     const reader = reactStream.getReader();
     for (;;) {
       const { done, value } = await reader.read();
@@ -402,6 +475,27 @@ export async function renderSSR(
       }
       await writer.write(value);
     }
+
+    // After React stream: inject late resolution scripts for each deferred Promise
+    if (hasDeferred) {
+      for (const [key, promise] of Object.entries(deferredPromises)) {
+        try {
+          const resolvedValue = await promise;
+          const chunk = toCrossJSON(resolvedValue);
+          await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
+        } catch (err) {
+          // TODO(furin/server-error): handle Response rejections in deferred
+          // streams. Same bug pattern as runLoaders — `String(err)` on a
+          // Response yields "[object Response]" and `notFound()` brand checks
+          // are lost when a deferred Promise rejects with one. Out of scope
+          // for the current slice; needs its own design (the rejection lands
+          // inside `<Await>` which has its own error UI semantics).
+          const chunk = toCrossJSON(err instanceof Error ? err : new Error(String(err)));
+          await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
+        }
+      }
+    }
+
     await writer.write(enc.encode(dataScript + bodyPost));
     await writer.close();
   })().catch((err) => writer.abort(err));
@@ -628,7 +722,7 @@ async function renderISRNon200(
     try {
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest),
+          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
@@ -637,14 +731,14 @@ async function renderISRNon200(
       // cannot crash).
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest),
+          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
     }
   }
   if (!fallbackProps.__furinError && errorDigest) {
-    fallbackProps.__furinError = { digest: errorDigest };
+    fallbackProps.__furinError = { digest: errorDigest, status };
   }
 
   await reactStream.allReady;

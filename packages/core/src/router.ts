@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
+import { toCrossJSONAsync } from "seroval";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
 import type { ErrorComponent } from "./error.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
@@ -16,6 +17,7 @@ import {
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "./render/dev-cache.ts";
+import { computeErrorDigest } from "./render/digest.ts";
 import {
   handleISR,
   type LoaderResult,
@@ -733,7 +735,8 @@ async function renderDevISRWithLoaderCache(
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
-      data: cached.loaderData,
+      syncData: cached.loaderData,
+      deferredPromises: undefined,
       headers: cached.headers,
     };
     return renderSSR(route, ctx, root, precomputed);
@@ -746,7 +749,7 @@ async function renderDevISRWithLoaderCache(
       dependencies: computeRouteDependencies(route.path, root.path),
       generatedAt: Date.now(),
       headers: result.headers,
-      loaderData: result.data,
+      loaderData: result.syncData,
       mode: "isr",
       revalidate,
     };
@@ -773,7 +776,8 @@ async function renderDevSSGWithLoaderCache(
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
-      data: cached.loaderData,
+      syncData: cached.loaderData,
+      deferredPromises: undefined,
       headers: cached.headers,
     };
     return renderSSR(route, ctx, root, precomputed);
@@ -785,7 +789,7 @@ async function renderDevSSGWithLoaderCache(
       dependencies: computeRouteDependencies(route.path, root.path),
       generatedAt: Date.now(),
       headers: result.headers,
-      loaderData: result.data,
+      loaderData: result.syncData,
       mode: "ssg",
       // SSG entries are forever-fresh — only source-aware invalidation drops them.
       revalidate: Number.POSITIVE_INFINITY,
@@ -1031,4 +1035,248 @@ export function filePathToPattern(path: string): string {
   }
 
   return `/${segments.join("/")}`;
+}
+
+// ── /_furin/data endpoint ──────────────────────────────────────────────────────
+
+const REGEX_META_CHARS_RE = /[.*+?^${}()|[\]\\]/;
+
+function escapeRegExpChar(ch: string): string {
+  return REGEX_META_CHARS_RE.test(ch) ? `\\${ch}` : ch;
+}
+
+/**
+ * Builds a regex from a route pattern, extracts named capture groups for
+ * each `:param` segment, and returns `{ regex, paramNames }`.
+ *
+ * Literal characters (e.g. dots in filenames like `v1.0`) are escaped so
+ * they are matched exactly rather than interpreted as regex syntax.
+ */
+function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: string[] } {
+  const paramNames: string[] = [];
+  let source = "";
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === ":") {
+      const start = ++i;
+      while (i < pattern.length && pattern[i] !== "/") {
+        i++;
+      }
+      paramNames.push(pattern.slice(start, i));
+      source += "([^/]+)";
+    } else if (pattern[i] === "*") {
+      source += "(.*)";
+      i++;
+    } else {
+      const ch = pattern[i];
+      if (ch !== undefined) {
+        source += escapeRegExpChar(ch);
+      }
+      i++;
+    }
+  }
+  return { regex: new RegExp(`^${source}$`), paramNames };
+}
+
+/**
+ * Applies top-level `default` values from a TypeBox TObject schema to a
+ * values record. Used in the `/_furin/data` endpoint so loaders see the same
+ * defaulted query objects that the SSR path produces via Elysia's guard.
+ */
+function applySchemaDefaults(
+  schema: Record<string, unknown> | undefined,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  if (!schema || typeof schema !== "object") {
+    return values;
+  }
+  const s = schema as Record<string, unknown>;
+  if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
+    return values;
+  }
+  const result = { ...values };
+  const properties = s.properties as Record<string, Record<string, unknown>>;
+  for (const [key, propSchema] of Object.entries(properties)) {
+    if (
+      !(key in result) &&
+      propSchema &&
+      typeof propSchema === "object" &&
+      "default" in propSchema
+    ) {
+      result[key] = propSchema.default;
+    }
+  }
+  return result;
+}
+
+/**
+ * Elysia plugin that handles `GET /_furin/data?path=<logicalHref>`.
+ *
+ * Returns an NDJSON stream (one-line, v1) produced by `toCrossJSONAsync`:
+ *   Line 0 — CrossJSON serialisation of `{ ...syncData, ...deferredPromises }`
+ *
+ * The `deferredPromises` values are awaited by `toCrossJSONAsync` before
+ * serialising, so the client receives all data resolved in one round-trip.
+ * SPA navigation calls this endpoint via `parseDeferredNdjson` in
+ * `router-provider.tsx`.
+ *
+ * Special fields emitted alongside data:
+ *   - `__furinStatus: 404` — when the loader called `notFound()`
+ *   - `__furinNotFound`    — not-found payload
+ *   - `__furinRedirect`    — logical path after a server-side redirect
+ */
+export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): AnyElysia {
+  const plugin = new Elysia();
+
+  plugin.get(
+    "/_furin/data",
+    async (ctx) => {
+      const rawPath = ctx.query.path;
+      if (!rawPath || typeof rawPath !== "string") {
+        return new Response("Missing required query param: path", { status: 400 });
+      }
+
+      // Parse the logical path (may include query string)
+      let url: URL;
+      try {
+        url = new URL(rawPath, "http://localhost");
+      } catch {
+        return new Response("Invalid path", { status: 400 });
+      }
+      const pathname = url.pathname;
+
+      // Find a matching route
+      const matched = routes.reduce<{
+        route: ResolvedRoute;
+        params: Record<string, string>;
+      } | null>((acc, route) => {
+        if (acc) {
+          return acc;
+        }
+        const { regex, paramNames } = buildRouteRegex(route.pattern);
+        const m = regex.exec(pathname);
+        if (!m) {
+          return null;
+        }
+        const params: Record<string, string> = {};
+        for (let i = 0; i < paramNames.length; i++) {
+          const name = paramNames[i];
+          if (name !== undefined) {
+            params[name] = m[i + 1] ?? "";
+          }
+        }
+        return { route, params };
+      }, null);
+
+      if (!matched) {
+        return new Response("Route not found", { status: 404 });
+      }
+
+      // Build a synthetic Elysia-compatible context for the matched route.
+      // Loaders receive request, params, query, set, headers, and cookie.
+      const syntheticRequest = new Request(new URL(rawPath, ctx.request.url));
+      const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
+      const syntheticCtx = {
+        request: syntheticRequest,
+        params: matched.params,
+        query: Object.fromEntries(url.searchParams),
+        set: syntheticSet,
+        headers: ctx.headers,
+        cookie: ctx.cookie,
+        path: pathname,
+        redirect: (url: string, status?: number) =>
+          new Response(null, { status: status ?? 302, headers: { location: url } }),
+        status: (code: number | string) => new Response(null, { status: Number(code) }),
+      } as unknown as Context;
+
+      // Normalize params and query through the same merged schemas used by
+      // createRoutePlugin so loaders see identical typed/defaulted inputs.
+      const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
+      const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      syntheticCtx.params = applySchemaDefaults(
+        mergedParams as Record<string, unknown> | undefined,
+        syntheticCtx.params as Record<string, unknown>
+      ) as Record<string, string>;
+      syntheticCtx.query = applySchemaDefaults(
+        mergedQuery as Record<string, unknown> | undefined,
+        syntheticCtx.query as Record<string, unknown>
+      ) as Record<string, string>;
+
+      // Redirect when query defaults were applied (validator-agnostic)
+      if (mergedQuery) {
+        const redirect = queryDefaultRedirectHook(syntheticCtx as Context);
+        if (redirect) {
+          return redirect;
+        }
+      }
+
+      const result = await runLoaders(matched.route, syntheticCtx, root.route);
+
+      if (result.type === "redirect") {
+        // Encode the redirect target as a special field for the client to follow
+        const redirectUrl = new URL(
+          result.response.headers.get("location") ?? "/",
+          ctx.request.url
+        );
+        const serialized = await toCrossJSONAsync({
+          __furinRedirect: redirectUrl.pathname + redirectUrl.search,
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      if (result.type === "not-found") {
+        const serialized = await toCrossJSONAsync({
+          __furinStatus: 404,
+          __furinNotFound: { message: result.error.message, data: result.error.data },
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          status: 200,
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      if (result.type === "error") {
+        // Compute the digest server-side ONCE so:
+        //   1. The HTTP response body carries it (client error UI displays the
+        //      same id the server logs).
+        //   2. The server-log line below uses the SAME digest a user would see
+        //      on screen, enabling support correlation.
+        // Recomputing client-side from a synthetic message + stack would yield
+        // a different hash — see boundaries.tsx for the digest precedence.
+        const digest = computeErrorDigest(result.error);
+        const serialized = await toCrossJSONAsync({
+          __furinError: {
+            digest,
+            message: result.message,
+            status: result.status,
+          },
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          status: result.status,
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      // Merge sync + deferred. toCrossJSONAsync awaits all Promises.
+      const payload: Record<string, unknown> = {
+        ...result.syncData,
+        ...(result.deferredPromises ?? {}),
+      };
+
+      const serialized = await toCrossJSONAsync(payload);
+      return new Response(`${JSON.stringify(serialized)}\n`, {
+        headers: {
+          "content-type": "application/x-ndjson",
+          ...result.headers,
+        },
+      });
+    },
+    {
+      query: t.Object({ path: t.Optional(t.String()) }),
+    }
+  );
+
+  return plugin;
 }
