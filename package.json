@@ -30,7 +30,7 @@
     "@types/bun": "^1.3.13",
     "knip": "^6.11.0",
     "lefthook": "^2.1.6",
-    "react-doctor": "^0.0.47",
+    "react-doctor": "^0.1.4",
     "typescript": "^6.0.3",
     "ultracite": "7.6.2"
   },
