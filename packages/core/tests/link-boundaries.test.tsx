@@ -26,6 +26,15 @@ import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundar
 
 // ── Helpers (mirrors render-element-boundaries.test.tsx) ─────────────────────
 
+function firstValidChild(kids: ReactNode): ReactElement | null {
+  for (const child of Children.toArray(kids)) {
+    if (isValidElement(child)) {
+      return child as ReactElement;
+    }
+  }
+  return null;
+}
+
 function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">>): RuntimeRoute {
   return { __type: "FURIN_ROUTE", ...opts };
 }
@@ -78,7 +87,7 @@ function typeChain(node: ReactNode): string[] {
       const onlyValid = kids.filter(isValidElement);
       current = onlyValid.length === 1 ? onlyValid[0] : null;
     } else {
-      current = Children.toArray(kids).find(isValidElement) ?? null;
+      current = firstValidChild(kids);
     }
   }
   return chain;
@@ -92,7 +101,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ layout: namedLayout("L1"), parent: rootRoute });
     const match = makeMatch(pageRoute, undefined);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     const chain = typeChain(element);
     expect(chain).not.toContain("FurinErrorBoundary");
     expect(chain).not.toContain("FurinNotFoundBoundary");
@@ -106,7 +115,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ layout: namedLayout("L1"), parent: rootRoute });
     const match = makeMatch(pageRoute, [{ depth: 0, error: E, notFound: NF }]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     expect(typeChain(element)).toEqual([
       "Root",
       "FurinErrorBoundary",
@@ -123,7 +132,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ layout: namedLayout("L2"), parent: l1Route });
     const match = makeMatch(pageRoute, [{ depth: 1, error: E }]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     expect(typeChain(element)).toEqual(["Root", "L1", "FurinErrorBoundary", "L2", "Page"]);
   });
 
@@ -138,7 +147,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
       { depth: 2, notFound: NF },
     ]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     expect(typeChain(element)).toEqual([
       "Root",
       "FurinErrorBoundary",
@@ -156,7 +165,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ parent: rootRoute });
     const match = makeMatch(pageRoute, [{ depth: 0, error: E, notFound: NF }]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     const chain = typeChain(element);
     const errIdx = chain.indexOf("FurinErrorBoundary");
     const nfIdx = chain.indexOf("FurinNotFoundBoundary");
@@ -172,7 +181,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ parent: rootRoute });
     const match = makeMatch(pageRoute, [{ depth: 0, error: E, notFound: NF }]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
     let node: ReactNode = element;
     let err: ReactElement | null = null;
     let nf: ReactElement | null = null;
@@ -183,7 +192,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         nf = node;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E });
     expect(nf?.props).toMatchObject({ fallback: NF });
@@ -206,7 +215,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const onReset = () => {
       /* test callback */
     };
-    const element = buildPageElement(match, rootRoute, {}, { onReset });
+    const element = buildPageElement(match, rootRoute, {}, { onReset }, undefined);
 
     let node: ReactNode = element;
     let err: ReactElement | null = null;
@@ -216,7 +225,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         break;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E, onReset });
   });
@@ -228,7 +237,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ parent: rootRoute });
     const match = makeMatch(pageRoute, [{ depth: 0, error: E, notFound: NF }]);
 
-    const element = buildPageElement(match, rootRoute, {}, { resetKey: "/blog" });
+    const element = buildPageElement(match, rootRoute, {}, { resetKey: "/blog" }, undefined);
 
     let node: ReactNode = element;
     let err: ReactElement | null = null;
@@ -240,7 +249,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         nf = node;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ resetKey: "/blog" });
     expect(nf?.props).toMatchObject({ resetKey: "/blog" });
@@ -252,7 +261,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     const pageRoute = makeRoute({ parent: rootRoute });
     const match = makeMatch(pageRoute, [{ depth: 0, error: E }]);
 
-    const element = buildPageElement(match, rootRoute, {}, undefined);
+    const element = buildPageElement(match, rootRoute, {}, undefined, undefined);
 
     let node: ReactNode = element;
     let err: ReactElement | null = null;
@@ -262,11 +271,55 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         break;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err).not.toBeNull();
     const props = err?.props as Record<string, unknown>;
     expect(props.onReset).toBeUndefined();
     expect(props.resetKey).toBeUndefined();
+  });
+
+  // ── Slice 3 — error injection at page slot ─────────────────────────────────
+  //
+  // When the SPA-nav payload carried `__furinError`, RouterProvider passes the
+  // sentinel as the 5th arg to buildPageElement. The page component is replaced
+  // by an internal RouteErrorThrower that throws a FurinServerError during
+  // render so the deepest <FurinErrorBoundary> catches it. We verify the tree
+  // shape: the layouts and boundaries are still in place; rendering it actually
+  // surfaces the user's error.tsx (not the page component).
+
+  test("error sentinel replaces the page slot with the throwing shim, boundaries still wrap", () => {
+    const E: ErrorComponent = () => createElement("p", null, "err");
+    const rootRoute = makeRoute({ layout: namedLayout("Root") });
+    const pageRoute = makeRoute({ layout: namedLayout("L1"), parent: rootRoute });
+    const match = makeMatch(pageRoute, [{ depth: 0, error: E }]);
+
+    const element = buildPageElement(match, rootRoute, {}, undefined, {
+      digest: "abc1234567",
+      message: "Forbidden",
+      status: 403,
+    });
+
+    // Boundary chain is preserved at depth 0 — when RouteErrorThrower throws
+    // during render, the surrounding FurinErrorBoundary catches it.
+    expect(typeChain(element)).toEqual(["Root", "FurinErrorBoundary", "L1", "RouteErrorThrower"]);
+
+    // Verify the deepest element is the shim and carries the sentinel payload.
+    let node: ReactNode = element;
+    let deepest: ReactElement | null = null;
+    while (isValidElement(node)) {
+      deepest = node;
+      const children = (node.props as { children?: ReactNode }).children;
+      const next = firstValidChild(children);
+      if (!next) {
+        break;
+      }
+      node = next;
+    }
+    expect(deepest).not.toBeNull();
+    const props = deepest?.props as {
+      error?: { digest: string; message: string; status: number };
+    };
+    expect(props.error).toEqual({ digest: "abc1234567", message: "Forbidden", status: 403 });
   });
 });

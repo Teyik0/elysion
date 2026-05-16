@@ -104,14 +104,6 @@ const BADGE_STYLE: CSSProperties = {
   padding: "12px 36px",
 };
 
-// 404 isn't an "error" in the same sense as a 500, so we drop the danger ring
-// entirely and let the typography stand on its own.
-const NOT_FOUND_BADGE_STYLE: CSSProperties = {
-  ...BADGE_STYLE,
-  border: 0,
-  padding: 0,
-};
-
 const HEADING_STYLE: CSSProperties = {
   color: COLOR_TEXT,
   fontFamily: FONT_SANS,
@@ -228,8 +220,7 @@ html, body {
 function ScreenFrame({ badge, children }: ScreenFrameProps) {
   return (
     <div style={PAGE_STYLE}>
-      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: literal CSS string, no user input */}
-      <style dangerouslySetInnerHTML={{ __html: RESET_CSS }} />
+      <style>{RESET_CSS}</style>
       <div style={FRAME_STYLE}>
         <CornerBracket corner="tl" />
         <CornerBracket corner="tr" />
@@ -282,7 +273,7 @@ interface DefaultNotFoundScreenProps {
 
 export function DefaultNotFoundScreen({ message }: DefaultNotFoundScreenProps) {
   return (
-    <ScreenFrame badge={<div style={NOT_FOUND_BADGE_STYLE}>404 — NOT FOUND</div>}>
+    <ScreenFrame badge={<div style={BADGE_STYLE}>404 — NOT FOUND</div>}>
       <h1 style={HEADING_STYLE}>This page does not exist</h1>
       <p style={DESCRIPTION_WRAPPER_STYLE}>
         {message

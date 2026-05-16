@@ -60,6 +60,15 @@ function makeRootLayout(label: string | null): RuntimeRoute {
   return { __type: "FURIN_ROUTE", layout: label ? makeLayout(label) : undefined };
 }
 
+function firstValidChild(kids: ReactNode): ReactElement | null {
+  for (const child of Children.toArray(kids)) {
+    if (isValidElement(child)) {
+      return child as ReactElement;
+    }
+  }
+  return null;
+}
+
 /**
  * Walks the element tree depth-first and collects the sequence of component
  * names encountered along the single-path chain from root to the innermost
@@ -86,7 +95,7 @@ function typeChain(node: ReactNode): string[] {
       const onlyValid = children.filter(isValidElement);
       current = onlyValid.length === 1 ? onlyValid[0] : null;
     } else {
-      current = Children.toArray(children).find(isValidElement) ?? null;
+      current = firstValidChild(children);
     }
   }
   return chain;
@@ -215,7 +224,7 @@ describe("buildElement — boundary interleaving", () => {
         nf = node;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E });
     expect(nf?.props).toMatchObject({ fallback: NF });
@@ -225,28 +234,58 @@ describe("buildElement — boundary interleaving", () => {
 // ── buildErrorElement — errorMessageOf variants ──────────────────────────────
 
 describe("buildErrorElement — error message extraction", () => {
-  test("uses Error.message when error is an Error instance", () => {
+  test("uses Error.message when error is an Error instance and no override is supplied", () => {
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
-    const el = buildErrorElement(E, new Error("something broke"), "d1") as ReactElement;
+    const el = buildErrorElement(
+      E,
+      new Error("something broke"),
+      "d1",
+      undefined,
+      500
+    ) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("something broke");
   });
 
   test("uses the raw string when error is a plain string", () => {
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
-    const el = buildErrorElement(E, "plain string error", "d2") as ReactElement;
+    const el = buildErrorElement(E, "plain string error", "d2", undefined, 500) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("plain string error");
   });
 
   test("returns empty string when error is neither Error nor string", () => {
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
-    const el = buildErrorElement(E, 42, "d3") as ReactElement;
+    const el = buildErrorElement(E, 42, "d3", undefined, 500) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("");
   });
 
   test("uses default message when no component provided (DefaultErrorComponent)", () => {
-    const el = buildErrorElement(undefined, new Error("boom"), "d4") as ReactElement;
+    const el = buildErrorElement(
+      undefined,
+      new Error("boom"),
+      "d4",
+      undefined,
+      500
+    ) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe(
       "An unexpected error occurred."
     );
+  });
+
+  test("messageOverride wins over errorMessageOf — used by the loader pipeline for Response throws", () => {
+    const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
+    const el = buildErrorElement(
+      E,
+      new Error("internal stack info"),
+      "d5",
+      "Forbidden",
+      403
+    ) as ReactElement;
+    expect((el.props as { error: { message: string } }).error.message).toBe("Forbidden");
+  });
+
+  test("status is passed through to the error component", () => {
+    const E: ErrorComponent = ({ error }) => <span>{`s=${error.status}`}</span>;
+    const el = buildErrorElement(E, new Error("x"), "d6", undefined, 401) as ReactElement;
+    expect((el.props as { error: { status: number } }).error.status).toBe(401);
   });
 });

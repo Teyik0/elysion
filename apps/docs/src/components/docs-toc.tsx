@@ -39,6 +39,7 @@ export function DocsToc() {
       setActiveId(hash);
     }
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: DOM traversal, IntersectionObserver setup, retry logic, and hash-scroll handling are inherently coupled; splitting further would obscure the intent
     function registerHeadings() {
       const article = document.getElementById("doc-content");
       if (!article) {
@@ -47,18 +48,27 @@ export function DocsToc() {
 
       const seen = new Map<string, number>();
       const elements = Array.from(article.querySelectorAll<HTMLHeadingElement>("h2, h3"));
-      const nextHeadings = elements
-        .map((element) => {
-          const id = getUniqueHeadingId(element.textContent ?? "", seen);
-          element.id = id;
-
-          return {
-            id,
-            level: element.tagName === "H2" ? 2 : 3,
-            text: element.textContent ?? "",
-          } satisfies HeadingItem;
-        })
-        .filter((heading) => heading.text.length > 0);
+      const nextHeadings: HeadingItem[] = [];
+      // Only headings that get an id end up here — empty headings are skipped
+      // entirely. The observer must watch THIS list, not `elements`: an
+      // observed-but-id-less heading becoming the first visible entry would
+      // make the callback's `target.id` guard fall through and freeze the
+      // active TOC item.
+      const observedHeadings: HTMLHeadingElement[] = [];
+      for (const element of elements) {
+        const text = element.textContent ?? "";
+        if (text.length === 0) {
+          continue;
+        }
+        const id = getUniqueHeadingId(text, seen);
+        element.id = id;
+        observedHeadings.push(element);
+        nextHeadings.push({
+          id,
+          level: element.tagName === "H2" ? 2 : 3,
+          text,
+        } satisfies HeadingItem);
+      }
 
       setHeadings(nextHeadings);
       setActiveId(nextHeadings[0]?.id ?? "");
@@ -86,7 +96,7 @@ export function DocsToc() {
         }
       );
 
-      for (const element of elements) {
+      for (const element of observedHeadings) {
         observer.observe(element);
       }
 
@@ -141,17 +151,15 @@ export function DocsToc() {
           <ul className="space-y-1 border-border border-l pl-4">
             {headings.map((heading) => (
               <li key={heading.id}>
-                <a
+                <button
                   className={cn(
-                    "block py-1 text-sm transition-colors",
+                    "block w-full py-1 text-left text-sm transition-colors",
                     heading.level === 3 && "pl-4 text-xs",
                     activeId === heading.id
                       ? "font-medium text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   )}
-                  href={`#${heading.id}`}
-                  onClick={(event) => {
-                    event.preventDefault();
+                  onClick={() => {
                     const target = document.getElementById(heading.id);
                     if (!target) {
                       return;
@@ -161,9 +169,10 @@ export function DocsToc() {
                     window.history.replaceState(null, "", `#${heading.id}`);
                     setActiveId(heading.id);
                   }}
+                  type="button"
                 >
                   {heading.text}
-                </a>
+                </button>
               </li>
             ))}
           </ul>

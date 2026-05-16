@@ -3,7 +3,12 @@ import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
+import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
+// Use the project-local `useLogger` (not `evlog/elysia` directly) so the
+// `/_furin/data` enrichment also works in synthetic render scopes (ISR/SSG)
+// and falls back to a no-op outside any request — see context-logger.ts.
+import { useLogger } from "./context-logger.ts";
 import type { ErrorComponent } from "./error.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
 import type { NotFoundComponent } from "./not-found.ts";
@@ -16,13 +21,16 @@ import {
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "./render/dev-cache.ts";
+import { computeErrorDigest } from "./render/digest.ts";
 import {
   handleISR,
   type LoaderResult,
   prerenderSSG,
   renderSSR,
   runLoaders,
+  serializeDeferredRejection,
 } from "./render/index.ts";
+import { extractTitle } from "./render/shell.ts";
 import { IS_DEV } from "./runtime-env.ts";
 import {
   collectRouteChainFromRoute,
@@ -467,16 +475,28 @@ async function buildDevRoute(
 // contains keys absent from the URL, defaults were applied → 302 redirect to
 // the canonical URL so the address bar always reflects the actual app state.
 
-/** @internal Exported for unit testing. */
-export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
-  const resolvedQuery = query as Record<string, unknown>;
+/**
+ * Detects whether a validator filled in default query values that the original
+ * URL did not carry, and returns the canonical `pathname + search` to redirect
+ * to — or `undefined` when the URL already reflects the resolved query.
+ *
+ * Pure helper extracted from `queryDefaultRedirectHook` so the `/_furin/data`
+ * NDJSON endpoint can detect the same condition without going through
+ * Elysia's `status()` shim (which only emits HTTP 302s, unparseable by the
+ * SPA client).
+ *
+ * @internal Exported for unit testing.
+ */
+export function detectQueryDefaultRedirect(
+  request: Request,
+  resolvedQuery: Record<string, unknown>
+): string | undefined {
   const queryKeys = Object.keys(resolvedQuery);
   if (queryKeys.length === 0) {
     return;
   }
 
   const rawParams = new URL(request.url).searchParams;
-
   let needsRedirect = false;
   for (const key of queryKeys) {
     if (!rawParams.has(key) && resolvedQuery[key] != null) {
@@ -494,8 +514,45 @@ export function queryDefaultRedirectHook({ request, query, status, set }: Contex
       url.searchParams.set(k, String(v));
     }
   }
+  return url.pathname + url.search;
+}
 
-  set.headers.location = url.pathname + url.search;
+/**
+ * Parses the `?path=` argument of `/_furin/data`, rejecting absolute /
+ * protocol-relative inputs that would let a caller smuggle a foreign origin
+ * into the synthetic loader request.
+ *
+ * Returns `{ url, pathname }` on success, or `undefined` when the input is
+ * unsafe (the caller should reply 400). `new URL(rawPath, base)` ignores the
+ * base when `rawPath` is itself absolute, so without these prefix and origin
+ * checks a value like `https://evil.com/foo` would propagate to
+ * `syntheticRequest.url`.
+ *
+ * @internal Exported for unit testing.
+ */
+export function parseDataEndpointPath(rawPath: string): { url: URL; pathname: string } | undefined {
+  if (rawPath.includes("://") || rawPath.startsWith("//")) {
+    return;
+  }
+  let url: URL;
+  try {
+    url = new URL(rawPath, "http://localhost");
+  } catch {
+    return;
+  }
+  if (url.origin !== "http://localhost") {
+    return;
+  }
+  return { url, pathname: url.pathname };
+}
+
+/** @internal Exported for unit testing. */
+export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
+  const location = detectQueryDefaultRedirect(request, query as Record<string, unknown>);
+  if (!location) {
+    return;
+  }
+  set.headers.location = location;
   return status("Found");
 }
 
@@ -638,6 +695,34 @@ export async function refreshLayoutChain(
   }
 }
 
+/**
+ * Rebuilds a `ResolvedRoute` from freshly-imported `page` and `chain` so that
+ * `mode` reflects the CURRENT contents of the page module — not the value
+ * captured at scan time.
+ *
+ * In dev, `handleDevRequest` re-imports the page on every request to pick up
+ * source edits via the `?furin-server&t=<ts>` cache-buster. Without this
+ * function the spread `{ ...route, page, chain }` would carry over the stale
+ * `route.mode` resolved at startup, so toggling `revalidate` or removing a
+ * loader in source would not retake effect until a server restart.
+ *
+ * Only `mode` is recomputed: it is the only field DERIVED from page+chain.
+ * Structural fields (`pattern`, `path`, `segmentBoundaries`, `error`,
+ * `notFound`) are scan-time invariants in dev and are preserved as-is.
+ */
+export function rebuildDevRoute(
+  base: ResolvedRoute,
+  page: RuntimePage,
+  chain: RuntimeRoute[]
+): ResolvedRoute {
+  return {
+    ...base,
+    page,
+    routeChain: chain,
+    mode: resolveMode(page, chain),
+  };
+}
+
 /** @internal Handles a request in dev mode — re-imports the page fresh on every request. */
 async function handleDevRequest(
   route: ResolvedRoute,
@@ -684,7 +769,7 @@ async function handleDevRequest(
         chain[0].loader = currentRoot.route.loader;
       }
 
-      const refreshedRoute: ResolvedRoute = { ...route, page, routeChain: chain };
+      const refreshedRoute = rebuildDevRoute(route, page, chain);
 
       // Live ISR — the loader chain is short-circuited by the dev cache when
       // a fresh entry exists.  HTML re-assembles every time so the dev shell
@@ -733,20 +818,21 @@ async function renderDevISRWithLoaderCache(
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
-      data: cached.loaderData,
+      syncData: cached.loaderData,
+      deferredPromises: undefined,
       headers: cached.headers,
     };
     return renderSSR(route, ctx, root, precomputed);
   }
 
-  const result = await runLoaders(route, ctx, root.route);
+  const result = await runLoaders(route, ctx);
   if (result.type === "data") {
     const revalidate = route.page._route.revalidate ?? 60;
     const entry: DevLoaderCacheEntry = {
       dependencies: computeRouteDependencies(route.path, root.path),
       generatedAt: Date.now(),
       headers: result.headers,
-      loaderData: result.data,
+      loaderData: result.syncData,
       mode: "isr",
       revalidate,
     };
@@ -773,19 +859,20 @@ async function renderDevSSGWithLoaderCache(
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
       type: "data",
-      data: cached.loaderData,
+      syncData: cached.loaderData,
+      deferredPromises: undefined,
       headers: cached.headers,
     };
     return renderSSR(route, ctx, root, precomputed);
   }
 
-  const result = await runLoaders(route, ctx, root.route);
+  const result = await runLoaders(route, ctx);
   if (result.type === "data") {
     const entry: DevLoaderCacheEntry = {
       dependencies: computeRouteDependencies(route.path, root.path),
       generatedAt: Date.now(),
       headers: result.headers,
-      loaderData: result.data,
+      loaderData: result.syncData,
       mode: "ssg",
       // SSG entries are forever-fresh — only source-aware invalidation drops them.
       revalidate: Number.POSITIVE_INFINITY,
@@ -872,7 +959,7 @@ export function mergeRouteSchemas(
   routeChain: RuntimeRoute[],
   key: "params" | "query"
 ): AnySchema | undefined {
-  const schemas = routeChain.map((r) => r[key]).filter(Boolean) as Record<string, unknown>[];
+  const schemas = routeChain.flatMap((r) => (r[key] ? [r[key]] : [])) as Record<string, unknown>[];
 
   if (schemas.length === 0) {
     return;
@@ -1031,4 +1118,385 @@ export function filePathToPattern(path: string): string {
   }
 
   return `/${segments.join("/")}`;
+}
+
+// ── /_furin/data endpoint ──────────────────────────────────────────────────────
+
+const REGEX_META_CHARS_RE = /[.*+?^${}()|[\]\\]/;
+
+function escapeRegExpChar(ch: string): string {
+  return REGEX_META_CHARS_RE.test(ch) ? `\\${ch}` : ch;
+}
+
+/**
+ * Scores how specific a route pattern is so the `/_furin/data` matcher can
+ * prefer a static route over a dynamic sibling that also matches. Per segment:
+ * a literal segment outranks a `:param`, which outranks a `*` wildcard.
+ */
+function routeSpecificity(pattern: string): number {
+  let score = 0;
+  for (const segment of pattern.split("/")) {
+    if (segment.length === 0) {
+      continue;
+    }
+    if (segment === "*") {
+      score += 1;
+    } else if (segment.startsWith(":")) {
+      score += 2;
+    } else {
+      score += 3;
+    }
+  }
+  return score;
+}
+
+/**
+ * Builds a regex from a route pattern, extracts named capture groups for
+ * each `:param` segment, and returns `{ regex, paramNames }`.
+ *
+ * Literal characters (e.g. dots in filenames like `v1.0`) are escaped so
+ * they are matched exactly rather than interpreted as regex syntax.
+ */
+function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: string[] } {
+  const paramNames: string[] = [];
+  let source = "";
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === ":") {
+      const start = ++i;
+      while (i < pattern.length && pattern[i] !== "/") {
+        i++;
+      }
+      paramNames.push(pattern.slice(start, i));
+      source += "([^/]+)";
+    } else if (pattern[i] === "*") {
+      paramNames.push("*");
+      source += "(.*)";
+      i++;
+    } else {
+      const ch = pattern[i];
+      if (ch !== undefined) {
+        source += escapeRegExpChar(ch);
+      }
+      i++;
+    }
+  }
+  return { regex: new RegExp(`^${source}$`), paramNames };
+}
+
+/**
+ * Applies top-level `default` values from a TypeBox TObject schema to a
+ * values record. Used in the `/_furin/data` endpoint so loaders see the same
+ * defaulted query objects that the SSR path produces via Elysia's guard.
+ */
+function applySchemaDefaults(
+  schema: Record<string, unknown> | undefined,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  if (!schema || typeof schema !== "object") {
+    return values;
+  }
+  const s = schema as Record<string, unknown>;
+  if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
+    return values;
+  }
+  const result = { ...values };
+  const properties = s.properties as Record<string, Record<string, unknown>>;
+  for (const [key, propSchema] of Object.entries(properties)) {
+    if (
+      !(key in result) &&
+      propSchema &&
+      typeof propSchema === "object" &&
+      "default" in propSchema
+    ) {
+      result[key] = propSchema.default;
+    }
+  }
+  return result;
+}
+
+/**
+ * Elysia plugin that handles `GET /_furin/data?path=<logicalHref>`.
+ *
+ * Returns an NDJSON stream (one-line, v1) produced by `toCrossJSONAsync`:
+ *   Line 0 — CrossJSON serialisation of `{ ...syncData, ...deferredPromises }`
+ *
+ * The `deferredPromises` values are awaited by `toCrossJSONAsync` before
+ * serialising, so the client receives all data resolved in one round-trip.
+ * SPA navigation calls this endpoint via `parseDeferredNdjson` in
+ * `router-provider.tsx`.
+ *
+ * Special fields emitted alongside data:
+ *   - `__furinStatus: 404` — when the loader called `notFound()`
+ *   - `__furinNotFound`    — not-found payload
+ *   - `__furinRedirect`    — logical path after a server-side redirect
+ */
+export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
+  const plugin = new Elysia();
+
+  plugin.get(
+    "/_furin/data",
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: data endpoint handler validates path, resolves loaders, handles deferred/SPA/ISR modes — each branch is a distinct protocol case; splitting would spread context across many functions
+    async (ctx) => {
+      const rawPath = ctx.query.path;
+      if (!rawPath || typeof rawPath !== "string") {
+        return new Response("Missing required query param: path", { status: 400 });
+      }
+
+      const parsed = parseDataEndpointPath(rawPath);
+      if (!parsed) {
+        return new Response("Invalid path", { status: 400 });
+      }
+      const { url, pathname } = parsed;
+
+      // Rewrite the request-scoped wide event so logs / drains report the
+      // *logical* path the user navigated to (e.g. "/board/123/card/456")
+      // instead of the technical "/_furin/data" transport URL. We set this
+      // before the route-match check so 404s also surface the attempted path
+      // — otherwise monitoring just sees "GET /_furin/data 404" with no clue.
+      const wideEventLog = useLogger();
+      wideEventLog.set({ path: rawPath });
+
+      // Find the MOST SPECIFIC matching route. A first-match scan would let a
+      // dynamic route (`/users/:id`) shadow a static sibling (`/users/new`)
+      // whenever it is scanned first — and `[id]` sorts before `new`, so it
+      // is. Score each match (static segment > :param > wildcard) and keep the
+      // highest, mirroring the precedence Elysia's router applies on the SSR path.
+      const matched = routes.reduce<{
+        route: ResolvedRoute;
+        params: Record<string, string>;
+        score: number;
+      } | null>((acc, route) => {
+        const { regex, paramNames } = buildRouteRegex(route.pattern);
+        const m = regex.exec(pathname);
+        if (!m) {
+          return acc;
+        }
+        const score = routeSpecificity(route.pattern);
+        if (acc && acc.score >= score) {
+          return acc;
+        }
+        const params: Record<string, string> = {};
+        for (let i = 0; i < paramNames.length; i++) {
+          const name = paramNames[i];
+          if (name !== undefined) {
+            params[name] = m[i + 1] ?? "";
+          }
+        }
+        return { route, params, score };
+      }, null);
+
+      if (!matched) {
+        return new Response("Route not found", { status: 404 });
+      }
+
+      // Now that we know the matched pattern, add it as a stable aggregation
+      // key for drains (e.g. "p99 latency by route").
+      wideEventLog.set({ routePattern: matched.route.pattern });
+
+      // Build a synthetic Elysia-compatible context for the matched route.
+      // Loaders receive request, params, query, set, headers, and cookie.
+      // Build the synthetic URL from the parsed `pathname + search` only —
+      // never from `rawPath` directly — so an attacker cannot smuggle a
+      // foreign origin into `syntheticRequest.url`.
+      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
+      const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
+      const syntheticCtx = {
+        request: syntheticRequest,
+        params: matched.params,
+        query: Object.fromEntries(url.searchParams),
+        set: syntheticSet,
+        headers: ctx.headers,
+        cookie: ctx.cookie,
+        path: pathname,
+        // Loader-emitted redirects flow through `runLoaders` → `result.type
+        // === "redirect"` and are converted to NDJSON below. The Response we
+        // return here only has to be detectable by that pipeline.
+        redirect: (location: string, status?: number) =>
+          new Response(null, { status: status ?? 302, headers: { location } }),
+        // Synthetic `status` helper: numeric codes only. Callers that reach
+        // this endpoint never dispatch a string-keyed status; rejecting them
+        // is safer than coercing via `Number(code)` and silently producing
+        // `NaN`. Query-default redirects no longer flow through this helper —
+        // they are detected via `detectQueryDefaultRedirect` below.
+        status: (code: number) => new Response(null, { status: code }),
+      } as unknown as Context;
+
+      // Normalize params and query through the same merged schemas used by
+      // createRoutePlugin so loaders see identical typed/defaulted inputs.
+      const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
+      const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      syntheticCtx.params = applySchemaDefaults(
+        mergedParams as Record<string, unknown> | undefined,
+        syntheticCtx.params as Record<string, unknown>
+      ) as Record<string, string>;
+      syntheticCtx.query = applySchemaDefaults(
+        mergedQuery as Record<string, unknown> | undefined,
+        syntheticCtx.query as Record<string, unknown>
+      ) as Record<string, string>;
+
+      // Query-default redirect: detect via the pure helper so we can emit the
+      // NDJSON `__furinRedirect` sentinel (the SPA client cannot parse a real
+      // HTTP 302 — it never sees one because `parseDeferredNdjson` reads the
+      // body, not the redirect chain).
+      if (mergedQuery) {
+        const redirectLocation = detectQueryDefaultRedirect(
+          syntheticRequest,
+          syntheticCtx.query as Record<string, unknown>
+        );
+        if (redirectLocation) {
+          const serialized = await toCrossJSONAsync({ __furinRedirect: redirectLocation });
+          return new Response(`${JSON.stringify(serialized)}\n`, {
+            headers: { "content-type": "application/x-ndjson" },
+          });
+        }
+      }
+
+      const result = await runLoaders(matched.route, syntheticCtx);
+
+      if (result.type === "redirect") {
+        // Encode the redirect target as a special field for the client to follow
+        const redirectUrl = new URL(
+          result.response.headers.get("location") ?? "/",
+          ctx.request.url
+        );
+        const serialized = await toCrossJSONAsync({
+          __furinRedirect: redirectUrl.pathname + redirectUrl.search,
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      if (result.type === "not-found") {
+        const serialized = await toCrossJSONAsync({
+          __furinStatus: 404,
+          __furinNotFound: { message: result.error.message, data: result.error.data },
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          status: 200,
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      if (result.type === "error") {
+        // Compute the digest server-side ONCE so:
+        //   1. The HTTP response body carries it (client error UI displays the
+        //      same id the server logs).
+        //   2. The server-log line below uses the SAME digest a user would see
+        //      on screen, enabling support correlation.
+        // Recomputing client-side from a synthetic message + stack would yield
+        // a different hash — see boundaries.tsx for the digest precedence.
+        const digest = computeErrorDigest(result.error);
+        const serialized = await toCrossJSONAsync({
+          __furinError: {
+            digest,
+            message: result.message,
+            status: result.status,
+          },
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          status: result.status,
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      }
+
+      // Resolve the page title server-side: head() never runs in the browser,
+      // so SPA navigation depends on the endpoint shipping it as __furinTitle.
+      const syncDataWithTitle = withResolvedTitle(matched.route, result.syncData);
+
+      if (result.deferredPromises) {
+        return new Response(
+          createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
+          {
+            headers: {
+              "content-type": "application/x-ndjson",
+              ...result.headers,
+            },
+          }
+        );
+      }
+
+      // No deferred fields: emit the single-line payload used by the legacy path.
+      const serialized = await toCrossJSONAsync(syncDataWithTitle);
+      return new Response(`${JSON.stringify(serialized)}\n`, {
+        headers: {
+          "content-type": "application/x-ndjson",
+          ...result.headers,
+        },
+      });
+    },
+    {
+      query: t.Object({ path: t.Optional(t.String()) }),
+    }
+  );
+
+  return plugin;
+}
+
+/**
+ * Runs the matched page's `head()` against the resolved sync data and, when it
+ * yields a title, returns a copy of `syncData` carrying the reserved
+ * `__furinTitle` field. `head()` never executes in the browser, so this is the
+ * only channel through which SPA navigation can learn the new document title.
+ *
+ * Deferred fields are absent from `syncData` (they are still Promises), so a
+ * `head()` that reads one sees `undefined` — titles should be derived from
+ * synchronous loader data. A throwing `head()` is swallowed: a missing title
+ * must never break the data response.
+ */
+function withResolvedTitle(
+  route: ResolvedRoute,
+  syncData: Record<string, unknown>
+): Record<string, unknown> {
+  const head = route.page.head;
+  if (!head) {
+    return syncData;
+  }
+  let title: string | undefined;
+  try {
+    title = extractTitle(head(syncData).meta);
+  } catch {
+    return syncData;
+  }
+  if (title === undefined) {
+    return syncData;
+  }
+  return { ...syncData, __furinTitle: title };
+}
+
+function createDeferredNdjsonStream(
+  syncData: Record<string, unknown>,
+  deferredPromises: Record<string, Promise<unknown>>
+): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder();
+  const entries = Object.entries(deferredPromises);
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const initial = toCrossJSON({
+        ...syncData,
+        __furinDeferredKeys: entries.map(([key]) => key),
+      });
+      controller.enqueue(enc.encode(`${JSON.stringify(initial)}\n`));
+
+      await Promise.all(
+        entries.map(async ([key, promise]) => {
+          try {
+            const value = await promise;
+            controller.enqueue(
+              enc.encode(
+                `${JSON.stringify({ key, action: "resolve", value: toCrossJSON(value) })}\n`
+              )
+            );
+          } catch (err) {
+            const normalized = await serializeDeferredRejection(err);
+            const value = toCrossJSON(normalized);
+            controller.enqueue(enc.encode(`${JSON.stringify({ key, action: "reject", value })}\n`));
+          }
+        })
+      );
+      controller.close();
+    },
+  });
 }

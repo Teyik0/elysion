@@ -15,7 +15,7 @@ import {
 } from "./render/cache.ts";
 import { renderRootNotFound, warmSSGCache } from "./render/index.ts";
 import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
-import { createRoutePlugin, loadProdRoutes } from "./router.ts";
+import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./router.ts";
 import { IS_DEV } from "./runtime-env.ts";
 
 function resolveClientDirFromArgv(): string {
@@ -183,8 +183,13 @@ export async function furin({
           "/_client/**",
           "/public/**",
           "/favicon.ico",
-          "/_furin/!(ingest)",
           "/_bun_hmr_entry/**",
+          // Note: /_furin/data is logged with the *logical* path rewritten by
+          // createDataEndpoint via useLogger().set({ path }), so SPA navigations
+          // appear as "GET /board/123 200" — same shape as a normal SSR nav.
+          // /_furin/ingest is kept loggable so browser-side events show up.
+          // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
+          // like `!(...)` matches nothing, so don't add patterns relying on it.
           ...(userExclude ?? []),
         ],
       })
@@ -277,6 +282,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
+      .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root));
@@ -363,6 +369,7 @@ export async function furin({
         return app;
       })()
     )
+    .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
         app.use(createRoutePlugin(route, root, prodBuildId));
@@ -374,6 +381,9 @@ export async function furin({
 
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
+export { Await, useAsyncError, useAsyncValue } from "./await.tsx";
+export type { DeferredData } from "./client.ts";
+export { defer, isDeferred } from "./client.ts";
 export type { ErrorComponent, ErrorProps } from "./error.ts";
 export type {
   NotFoundComponent,

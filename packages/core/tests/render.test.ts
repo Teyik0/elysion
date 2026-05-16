@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bu
 import { join } from "node:path";
 import type { Context, Cookie } from "elysia";
 
+const FURIN_DATA_REGEX = /<script id="__FURIN_DATA__"[^>]*>(.*?)<\/script>/s;
+
 // renderSSR / handleISR call useLogger() which requires an Elysia evlog
 // request context.  These unit tests call render functions directly, so we
 // provide a no-op stub.
@@ -12,8 +14,9 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
-import { createElement } from "react";
-import type { RuntimeRoute } from "../src/client";
+import { createElement, Suspense } from "react";
+import { Await } from "../src/await";
+import { defer, type RuntimeRoute } from "../src/client";
 import { Link } from "../src/link.tsx";
 import { notFound } from "../src/not-found";
 import {
@@ -143,60 +146,73 @@ describe("render.tsx", () => {
   describe("runLoaders", () => {
     test("runs root loader first", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const result = await runLoaders(withLoaderRoute, ctx, root.route);
+      const result = await runLoaders(withLoaderRoute, ctx);
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.layoutData).toBe("from-layout");
-        expect(result.data.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
+      }
+    });
+
+    test("syncData includes params, query and path from context", async () => {
+      const withLoaderRoute = await getRoute("/with-loader");
+
+      const ctx = createMockLoaderContext({
+        params: { boardId: "abc" },
+        query: { tab: "active" },
+        path: "/with-loader",
+      });
+      const result = await runLoaders(withLoaderRoute, ctx);
+
+      expect(result.type).toBe("data");
+      if (result.type === "data") {
+        expect(result.syncData.params).toEqual({ boardId: "abc" });
+        expect(result.syncData.query).toEqual({ tab: "active" });
+        expect(result.syncData.path).toBe("/with-loader");
       }
     });
 
     test("runs layout loaders in chain order", async () => {
       const deepRoute = await getRoute("/nested/deep");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/nested/deep" });
-      const result = await runLoaders(deepRoute, ctx, root.route);
+      const result = await runLoaders(deepRoute, ctx);
       expect(result.type).toBe("data");
     });
 
     test("runs page loader last", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const result = await runLoaders(withLoaderRoute, ctx, root.route);
+      const result = await runLoaders(withLoaderRoute, ctx);
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.pageData).toBe("from-page");
-        expect(result.data.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
       }
     });
 
     test("merges data from all loaders", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const result = await runLoaders(withLoaderRoute, ctx, root.route);
+      const result = await runLoaders(withLoaderRoute, ctx);
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(Object.keys(result.data).length).toBeGreaterThanOrEqual(2);
+        expect(Object.keys(result.syncData).length).toBeGreaterThanOrEqual(2);
       }
     });
 
     test("captures headers set by loader", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const result = await runLoaders(withLoaderRoute, ctx, root.route);
+      const result = await runLoaders(withLoaderRoute, ctx);
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
@@ -206,7 +222,6 @@ describe("render.tsx", () => {
 
     test("handles throw redirect() as redirect result", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({
         path: "/with-loader",
@@ -224,7 +239,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const result = await runLoaders(customRoute, ctx, root.route);
+      const result = await runLoaders(customRoute, ctx);
 
       expect(result.type).toBe("redirect");
       if (result.type === "redirect") {
@@ -235,7 +250,6 @@ describe("render.tsx", () => {
 
     test("handles arbitrary throw as error result", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
 
@@ -252,7 +266,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const result = await runLoaders(customRoute, ctx, root.route);
+      const result = await runLoaders(customRoute, ctx);
 
       expect(result.type).toBe("error");
       if (result.type === "error") {
@@ -264,7 +278,6 @@ describe("render.tsx", () => {
     test("handles throw notFound() as not-found result", async () => {
       const { notFound } = await import("../src/not-found");
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
 
@@ -276,7 +289,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const result = await runLoaders(customRoute, ctx, root.route);
+      const result = await runLoaders(customRoute, ctx);
 
       expect(result.type).toBe("not-found");
       if (result.type === "not-found") {
@@ -298,13 +311,12 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], producer, consumer],
           page: { ...withLoaderRoute.page, loader: undefined },
         } as ResolvedRoute;
-        await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedToken).toBe("secret");
       });
 
@@ -325,13 +337,12 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], grandparent, parent, child],
           page: { ...withLoaderRoute.page, loader: undefined },
         } as ResolvedRoute;
-        await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedOrg).toBe("acme");
         expect(capturedTeam).toBe("engineering");
       });
@@ -347,13 +358,12 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], r],
           page: { ...withLoaderRoute.page, loader: undefined },
         } as ResolvedRoute;
-        await runLoaders(mockRoute, createMockLoaderContext({ path: "/test" }), rootLayout);
+        await runLoaders(mockRoute, createMockLoaderContext({ path: "/test" }));
         // Must be direct values, not Promises
         expect(capturedRequest instanceof Request).toBe(true);
         expect(capturedPath).toBe("/test");
@@ -365,7 +375,6 @@ describe("render.tsx", () => {
           loader: async () => ({ sessionUser: "alice" }),
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], routeLoader],
@@ -377,10 +386,10 @@ describe("render.tsx", () => {
             },
           },
         } as ResolvedRoute;
-        const res = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        const res = await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedFromPage).toBe("alice");
         if (res.type === "data") {
-          expect(res.data.result).toBe("alice");
+          expect(res.syncData.result).toBe("alice");
         }
       });
 
@@ -399,13 +408,12 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], p1, p2, consumer],
           page: { ...withLoaderRoute.page, loader: undefined },
         } as ResolvedRoute;
-        await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedA).toBe(1);
         expect(capturedB).toBe(2);
       });
@@ -434,14 +442,13 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], a1, a2],
           page: { ...withLoaderRoute.page, loader: undefined },
         } as ResolvedRoute;
 
-        await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        await runLoaders(mockRoute, createMockLoaderContext());
 
         // Both loaders started before either one finished (overlap = parallel)
         expect(start0).toBeLessThan(end1);
@@ -452,7 +459,6 @@ describe("render.tsx", () => {
         const a1 = makeRuntimeRoute({ loader: async () => ({ keyA: "valueA" }) });
         const a2 = makeRuntimeRoute({ loader: async () => ({ keyB: "valueB" }) });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = (await getRoot()).route;
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], a1, a2],
@@ -461,12 +467,12 @@ describe("render.tsx", () => {
             loader: async () => ({ keyC: "valueC" }),
           },
         } as unknown as ResolvedRoute;
-        const result = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
+        const result = await runLoaders(mockRoute, createMockLoaderContext());
         expect(result.type).toBe("data");
         if (result.type === "data") {
-          expect(result.data.keyA).toBe("valueA");
-          expect(result.data.keyB).toBe("valueB");
-          expect(result.data.keyC).toBe("valueC");
+          expect(result.syncData.keyA).toBe("valueA");
+          expect(result.syncData.keyB).toBe("valueB");
+          expect(result.syncData.keyC).toBe("valueC");
         }
       });
     });
@@ -493,6 +499,25 @@ describe("render.tsx", () => {
       const result = await renderToHTML(withLoaderRoute, ctx, root);
 
       expect(result.html).toContain("__FURIN_DATA__");
+    });
+
+    test("data script contains params, query and path for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const ctx = createMockLoaderContext({
+        params: { id: "456" },
+        query: { sort: "asc" },
+        path: "/dynamic/456",
+      });
+      const result = await renderToHTML(dynamicRoute, ctx, root);
+
+      const match = result.html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "456" });
+      expect(data.query).toEqual({ sort: "asc" });
+      expect(data.path).toBe("/dynamic/456");
     });
 
     test("injects head tags from page head() function", async () => {
@@ -558,6 +583,26 @@ describe("render.tsx", () => {
       expect(html1).toBe(html2);
     });
 
+    test("injects params into __FURIN_DATA__ for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const result = await prerenderSSG(
+        dynamicRoute,
+        { id: "789" },
+        root,
+        "http://localhost",
+        undefined
+      );
+
+      expect(result instanceof Response).toBe(false);
+      const html = (result as { html: string }).html;
+      const match = html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "789" });
+    });
+
     test("returns redirect Response when loader throws redirect", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
@@ -584,6 +629,10 @@ describe("render.tsx", () => {
   });
 
   describe("renderSSR", () => {
+    afterEach(() => {
+      __resetTemplateState();
+    });
+
     test("returns Response with HTML", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
@@ -594,6 +643,21 @@ describe("render.tsx", () => {
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
       expect(html).toContain("<html");
+    });
+
+    test("injects params into __FURIN_DATA__ for dynamic routes", async () => {
+      const dynamicRoute = await getRoute("/dynamic/:id");
+      const root = await getRoot();
+
+      const ctx = createMockLoaderContext({ params: { id: "123" }, path: "/dynamic/123" });
+      const response = await renderSSR(dynamicRoute, ctx, root, undefined);
+      const html = await response.text();
+
+      const match = html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+
+      expect(data.params).toEqual({ id: "123" });
+      expect(data.path).toBe("/dynamic/123");
     });
 
     test("Link active-state matches client hydration path (no SSR_FALLBACK mismatch)", async () => {
@@ -650,6 +714,46 @@ describe("render.tsx", () => {
       expect(response.headers.get("x-loader-ran")).toBe("true");
     });
 
+    test("does not surface React abort errors for deferred Suspense boundaries", async () => {
+      setProductionTemplateContent(
+        '<!DOCTYPE html><html><head><!--ssr-head--></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="/_hydrate.js"></script></body></html>'
+      );
+      const ssrRoute = await getRoute("/ssr-page");
+      const root = await getRoot();
+      const customRoute = {
+        ...ssrRoute,
+        page: {
+          ...ssrRoute.page,
+          loader: () =>
+            defer({
+              slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
+            }),
+          component: (props: Record<string, unknown>) => {
+            const slow = props.slow as Promise<string>;
+            return createElement(
+              Suspense,
+              { fallback: createElement("span", null, "loading") },
+              createElement(Await, {
+                resolve: slow,
+                // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — Await requires children as a function; cannot be passed as 3rd createElement arg due to TypeScript overloads
+                children: (value: unknown) => createElement("span", null, String(value)),
+              })
+            );
+          },
+        },
+      } as unknown as ResolvedRoute;
+
+      const ctx = createMockLoaderContext({ path: "/ssr-page" });
+      const response = await renderSSR(customRoute, ctx, root, undefined);
+      const html = await response.text();
+
+      expect(html).toContain("done");
+      expect(html).toContain("window.__FURIN_DEFERRED__.resolve");
+      expect(html).not.toContain(
+        "Switched to client rendering because the server rendering aborted"
+      );
+    });
+
     test("returns redirect Response when loader throws redirect", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
@@ -676,6 +780,36 @@ describe("render.tsx", () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/login");
+    });
+
+    test("émet les <script> de résolution dans l'ordre de settlement, pas l'ordre d'insertion", async () => {
+      // 'slow' is inserted FIRST in defer() but resolves LAST. 'fast' is inserted
+      // SECOND but resolves FIRST. The HTML stream MUST emit the fast resolve
+      // <script> before the slow one — otherwise streaming is cosmetic and a
+      // fast field is held hostage by a slow sibling.
+      const ssrRoute = await getRoute("/ssr-page");
+      const root = await getRoot();
+      const customRoute = {
+        ...ssrRoute,
+        page: {
+          ...ssrRoute.page,
+          loader: () =>
+            defer({
+              slow: new Promise((r) => setTimeout(() => r("slow-value"), 80)),
+              fast: new Promise((r) => setTimeout(() => r("fast-value"), 10)),
+            }),
+        },
+      } as unknown as ResolvedRoute;
+
+      const ctx = createMockLoaderContext({ path: "/ssr-page" });
+      const response = await renderSSR(customRoute, ctx, root, undefined);
+      const html = await response.text();
+
+      const fastIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("fast"');
+      const slowIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("slow"');
+      expect(fastIdx).toBeGreaterThan(-1);
+      expect(slowIdx).toBeGreaterThan(-1);
+      expect(fastIdx).toBeLessThan(slowIdx);
     });
 
     describe("Suspense streaming", () => {
@@ -840,13 +974,18 @@ describe("render.tsx", () => {
       // Should not crash; fallback component renders a generic 500 page.
       expect(html).toContain("500");
       expect(ctx.set.status).toBe(500);
+
+      // The shell-error __furinError payload must carry `status` (not just
+      // `digest`) so the SPA client's classifySpaResponse recognises it as an
+      // error sentinel instead of bailing to a full-page reload.
+      const data = JSON.parse((html as string).match(FURIN_DATA_REGEX)?.[1] ?? "{}");
+      expect(data.__furinError).toEqual({ digest: expect.any(String), status: 500 });
     });
   });
 
   describe("error handling", () => {
     test("runLoaders classifies non-Response errors as error result", async () => {
       const withLoaderRoute = await getRoute("/with-loader");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
 
@@ -860,7 +999,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const result = await runLoaders(customRoute, ctx, root.route);
+      const result = await runLoaders(customRoute, ctx);
 
       expect(result.type).toBe("error");
       if (result.type === "error") {
@@ -870,14 +1009,13 @@ describe("render.tsx", () => {
 
     test("runLoaders runs rootLayout loader and merges headers", async () => {
       const route = await getRoute("/");
-      const root = await getRoot();
 
       const ctx = createMockLoaderContext({
         path: "/",
         set: { headers: { "x-custom": "from-set" } as HTTPHeaders },
       });
 
-      const result = await runLoaders(route, ctx, root.route);
+      const result = await runLoaders(route, ctx);
 
       expect(result.type).toBe("data");
       if (result.type === "data") {

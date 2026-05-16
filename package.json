@@ -13,7 +13,7 @@
     "prepare": "lefthook install",
     "fix": "ultracite fix",
     "dev": "bun run --parallel --filter '*' --if-present dev",
-    "test": "bun run --parallel --filter '*' test",
+    "test": "bun run --filter '*' test",
     "test:dev": "bun run --parallel --filter '*' test:dev",
     "tscheck": "bun run --parallel --filter '*' tscheck",
     "build": "bun run --filter '@teyik0/furin' build && bun run --parallel --filter '!@teyik0/furin' build",
@@ -23,23 +23,23 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.14",
-    "@commitlint/cli": "^20.5.3",
-    "@commitlint/config-conventional": "^20.5.3",
+    "@biomejs/biome": "2.4.15",
+    "@commitlint/cli": "^21.0.0",
+    "@commitlint/config-conventional": "^21.0.0",
     "@happy-dom/global-registrator": "^20.9.0",
     "@types/bun": "^1.3.13",
-    "knip": "^6.11.0",
+    "knip": "^6.12.2",
     "lefthook": "^2.1.6",
-    "react-doctor": "^0.0.47",
+    "react-doctor": "^0.1.6",
     "typescript": "^6.0.3",
-    "ultracite": "7.6.2"
+    "ultracite": "7.6.5"
   },
   "catalog": {
     "elysia": "^1.4.28",
-    "evlog": "^2.14.1",
+    "evlog": "^2.17.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   }
 }

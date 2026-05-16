@@ -11,6 +11,9 @@ import type { Cookie, StatusMap } from "elysia";
 import type { AnySchema, HTTPHeaders, UnwrapSchema } from "elysia/types";
 import type { RequestLogger } from "evlog";
 
+// biome-ignore lint/performance/noBarrelFile: client.ts is the canonical DX entry for furin/client consumers — not a barrel
+export { Await, useAsyncError, useAsyncValue } from "./await.tsx";
+
 declare const UNSET: unique symbol;
 type Unset = typeof UNSET;
 
@@ -110,9 +113,12 @@ export interface HeadOptions {
 // Extracts the resolved return type from a loader function type.
 // Using ReturnType + Awaited here means TLoader is inferred as the whole function
 // first, and then we extract the data — so inference is order-independent.
+// The `__isDeferred` key (DEFERRED_BRAND, see below) is stripped: a `defer()`
+// return carries that runtime marker, but it must never surface as a
+// component / head() prop — it is an internal implementation detail.
 type ExtractLoaderReturn<TLoader> = TLoader extends (...args: never[]) => unknown
   ? Awaited<ReturnType<TLoader>> extends object
-    ? ToRecord<Awaited<ReturnType<TLoader>>>
+    ? ToRecord<Omit<Awaited<ReturnType<TLoader>>, "__isDeferred">>
     : {}
   : {};
 
@@ -276,3 +282,54 @@ export type InferProps<T> = T extends {
   : T extends Route<infer D, infer P, infer Q>
     ? D & { children: React.ReactNode } & ComponentProps<P, Q>
     : never;
+
+// ── Deferred data ──────────────────────────────────────────────────────────────
+
+/**
+ * Brand key that marks an object as deferred. Using a `const` string avoids
+ * a `unique symbol` that would complicate cross-module inference.
+ */
+const DEFERRED_BRAND = "__isDeferred" as const;
+
+/**
+ * A loader return value that contains a mix of synchronous scalar fields and
+ * lazy `Promise<T>` fields. Scalar fields are serialised into the initial HTML
+ * shell; Promise fields are streamed as late `<script>` resolution chunks.
+ *
+ * @example
+ * loader: () => defer({
+ *   title: "My Board",          // synchronous — available immediately
+ *   stats: fetchStats(),         // Promise — streamed when it resolves
+ * })
+ */
+export type DeferredData<T extends Record<string, unknown>> = T & {
+  readonly [DEFERRED_BRAND]: true;
+};
+
+/**
+ * Wraps loader data so that Promise-valued fields are streamed lazily while
+ * scalar fields are embedded in the initial HTML shell immediately.
+ *
+ * Use inside a page loader only (not in route / layout loaders — v1 restriction).
+ */
+export function defer<T extends Record<string, unknown>>(data: T): DeferredData<T> {
+  if (Object.hasOwn(data, DEFERRED_BRAND)) {
+    throw new Error(
+      `[furin] defer() received an object with a reserved key "${DEFERRED_BRAND}". Rename this field to avoid conflicts with the deferred-data runtime.`
+    );
+  }
+  return { ...data, [DEFERRED_BRAND]: true } as DeferredData<T>;
+}
+
+/**
+ * Type guard for DeferredData. Used by the render pipeline to distinguish a
+ * plain loader return from a deferred one.
+ */
+export function isDeferred(v: unknown): v is DeferredData<Record<string, unknown>> {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    Object.hasOwn(v, DEFERRED_BRAND) &&
+    (v as Record<typeof DEFERRED_BRAND, unknown>)[DEFERRED_BRAND] === true
+  );
+}

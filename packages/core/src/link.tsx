@@ -103,10 +103,11 @@ function LinkInteractive<To extends RouteTo>({
   const effectiveDelay = preloadDelay ?? router.defaultPreloadDelay;
   const effectiveStaleTime = preloadStaleTime ?? router.defaultPreloadStaleTime;
 
+  const { prefetch } = router;
   const triggerPrefetch = useCallback(() => {
     // prefetch() expects the logical href (no basePath prefix).
-    router.prefetch(logicalHref, { staleTime: effectiveStaleTime });
-  }, [router, logicalHref, effectiveStaleTime]);
+    prefetch(logicalHref, { staleTime: effectiveStaleTime });
+  }, [prefetch, logicalHref, effectiveStaleTime]);
 
   // "render": preload immediately on mount
   useEffect(() => {
@@ -175,6 +176,12 @@ function LinkInteractive<To extends RouteTo>({
       return;
     }
     e.preventDefault();
+    // When there is no RouterProvider, fall back to a full-page navigation so
+    // the link is still functional (e.g. in storybooks or third-party pages).
+    if (typeof window !== "undefined" && router.navigate === SSR_FALLBACK_ROUTER.navigate) {
+      window.location.href = href;
+      return;
+    }
     // navigate() expects the logical href (no basePath prefix).
     router.navigate(logicalHref, { replace, resetScroll: resetScroll ?? true });
   };
@@ -310,7 +317,7 @@ export function Link<To extends RouteTo>(props: LinkProps<To>): React.ReactEleme
     // when link.tsx is loaded under a second React instance via the
     // furin-dev-page virtual namespace after a Bun HMR reload.
     return createElement(RouterContext.Consumer, {
-      // biome-ignore lint/correctness/noChildrenProp: render-prop pattern requires children-as-function
+      // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — RouterContext.Consumer requires children as a function; cannot be passed as createElement 3rd arg due to TypeScript overloads
       children: (routerCtx: RouterContextValue | null) =>
         renderLinkElement(props, routerCtx ?? SSR_FALLBACK_ROUTER),
     });
@@ -322,3 +329,9 @@ export function Link<To extends RouteTo>(props: LinkProps<To>): React.ReactEleme
     props as LinkProps<RouteTo>
   );
 }
+
+// ── Deferred hydration helpers ─────────────────────────────────────────────────
+// Re-exported here so generated `_hydrate.tsx` files can import from
+// `@teyik0/furin/link` (already a client-only bundle entry) without requiring
+// apps to add "seroval" as a direct dependency.
+export { fromCrossJSON } from "seroval";

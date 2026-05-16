@@ -107,6 +107,8 @@ import { createElement } from "react";
 import { initLogger, log } from "evlog";
 import { createHttpLogDrain } from "evlog/http";
 import { RouterProvider } from "@teyik0/furin/link";
+import { fromCrossJSON } from "@teyik0/furin/link";
+import type { SerovalNode } from "seroval";
 import { route as root } from "${rootLayout.replace(/\\/g, "/")}";${conventionImportsBlock}
 
 initLogger({ drain: createHttpLogDrain({ drain: { endpoint: ${logEndpoint} } }) });
@@ -127,6 +129,71 @@ const _match = routes.find((r) => r.regex.test(pathname));
 //     former does not — so the two cases fork on _match below.
 const dataEl = document.getElementById("__FURIN_DATA__");
 const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
+
+// ── Deferred data hydration ─────────────────────────────────────────────────
+// window.__FURIN_DEFERRED__ is injected by the server when a loader returns
+// defer(). It carries:
+//   - _data: sync fields (mirrors __FURIN_DATA__)
+//   - _chunks: raw CrossJSON chunks keyed by field name (from late <script> tags)
+// We deserialise each chunk with fromCrossJSON and create a Promise so <Await>
+// components receive a proper resolved Promise instead of the raw CrossJSON node.
+interface FurinDeferredRegistry {
+  _chunks: Record<string, { a: 0 | 1; v: SerovalNode }>;
+  _data: Record<string, unknown>;
+  _deferredKeys: string[];
+  _resolvers: Record<string, {
+    promise: Promise<unknown>;
+    reject: (reason: unknown) => void;
+    resolve: (value: unknown) => void;
+  }>;
+  getPromise: (key: string) => Promise<unknown>;
+  reject: (key: string, chunk: SerovalNode) => void;
+  resolve: (key: string, chunk: SerovalNode) => void;
+}
+const __deferred = (window as unknown as { __FURIN_DEFERRED__?: FurinDeferredRegistry })
+  .__FURIN_DEFERRED__;
+const deferredData: Record<string, Promise<unknown>> = {};
+if (__deferred && __deferred._chunks) {
+  // Patch resolve/reject so any chunks that arrive AFTER this entry has run
+  // settle immediately. The previous version stored late chunks in _chunks
+  // when no resolver was registered yet, but the drain loop below only runs
+  // ONCE at hydrate time — so any chunk landing after the drain would stay
+  // orphaned and the corresponding Await would hang forever. Eagerly creating
+  // the resolver via getPromise() fixes the race.
+  __deferred.resolve = (key: string, chunk: SerovalNode) => {
+    __deferred.getPromise(key);
+    __deferred._resolvers[key].resolve(fromCrossJSON(chunk, {}));
+  };
+  __deferred.reject = (key: string, chunk: SerovalNode) => {
+    __deferred.getPromise(key);
+    __deferred._resolvers[key].reject(fromCrossJSON(chunk, {}));
+  };
+    for (const key of Object.keys(__deferred._chunks)) {
+      const entry = __deferred._chunks[key] as { a: 0 | 1; v: SerovalNode };
+      const p = __deferred.getPromise(key) as Promise<unknown>;
+      const resolver = __deferred._resolvers[key];
+      const value = fromCrossJSON(entry.v, {});
+      if (entry.a === 0) {
+        resolver.resolve(value);
+      } else {
+        resolver.reject(value);
+      }
+      deferredData[key] = p;
+    }
+    for (const key of __deferred._deferredKeys ?? []) {
+      if (!(key in deferredData)) {
+        deferredData[key] = __deferred.getPromise(key) as Promise<unknown>;
+      }
+    }
+    // Keys that have a resolver (getPromise was called by <Await>) but no
+    // chunk yet (the late <script> hasn't arrived) still need a Promise entry
+    // so the hydration data record is complete.
+    for (const key of Object.keys(__deferred._resolvers ?? {})) {
+      if (!(key in deferredData)) {
+        deferredData[key] = __deferred.getPromise(key) as Promise<unknown>;
+      }
+    }
+  }
 const rootEl = document.getElementById("root") as HTMLElement;
 
 // Eagerly load only the current page module for initial hydration.
@@ -145,7 +212,7 @@ const rootEl = document.getElementById("root") as HTMLElement;
       routes,
       root,
       initialMatch: match,
-      initialData: loaderData,
+      initialData: { ...loaderData, ...deferredData },
       initialDigest: loaderData.__furinError?.digest,
       initialNotFound: isNotFound ? (loaderData.__furinNotFound ?? loaderData) : undefined,${routerProviderDefaults}
     } as any);
